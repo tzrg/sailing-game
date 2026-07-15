@@ -5,9 +5,11 @@ import { clamp, normAngle, dirVec, angleOf, rotCW, MS_TO_KN, TAU } from './util.
 import { MARK_RADIUS, formatTime } from './race.js';
 
 const SCALE = 8;        // Pixel pro Meter bei Zoom 1
-const CHUNK_M = 48;     // Kantenlänge eines Gelände-Chunks in Metern
-const SAMPLE_M = 0.5;   // Abtastung innerhalb eines Chunks
-const CHUNK_N = Math.round(CHUNK_M / SAMPLE_M); // Samples je Chunk-Kante
+// Gelände-Chunks in zwei Auflösungen: fein für Nahsicht, grob für Übersicht
+const TIERS = {
+  fine: { m: 48, step: 0.5 },
+  coarse: { m: 192, step: 2 },
+};
 
 function hashCell(x, y, seed) {
   let h = Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ seed;
@@ -81,19 +83,21 @@ export class Renderer {
 
   // ---- Gelände ----------------------------------------------------------
   // Chunks werden mit 1 Pixel pro Sample gecacht und beim Zeichnen skaliert
-  chunkCanvas(cx, cy) {
-    const key = cx + ',' + cy;
+  chunkCanvas(tier, cx, cy) {
+    const key = tier + ':' + cx + ',' + cy;
     let c = this.chunks.get(key);
     if (c) return c;
+    const { m, step } = TIERS[tier];
+    const n = Math.round(m / step);
     c = document.createElement('canvas');
-    c.width = CHUNK_N;
-    c.height = CHUNK_N;
+    c.width = n;
+    c.height = n;
     const g = c.getContext('2d');
     const thr = this.terrain.threshold;
-    for (let j = 0; j < CHUNK_N; j++) {
-      for (let i = 0; i < CHUNK_N; i++) {
-        const wx = cx * CHUNK_M + (i + 0.5) * SAMPLE_M;
-        const wy = cy * CHUNK_M + (j + 0.5) * SAMPLE_M;
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const wx = cx * m + (i + 0.5) * step;
+        const wy = cy * m + (j + 0.5) * step;
         const h = this.terrain.height(wx, wy);
         let col = null;
         if (h > thr) {
@@ -113,7 +117,7 @@ export class Renderer {
       }
     }
     this.chunks.set(key, c);
-    if (this.chunks.size > 420) {
+    if (this.chunks.size > 700) {
       this.chunks.delete(this.chunks.keys().next().value);
     }
     return c;
@@ -122,17 +126,19 @@ export class Renderer {
   drawTerrain(cam) {
     const { ctx } = this;
     const S = SCALE * this.zoom;
-    const sizePx = CHUNK_M * S;
-    const x0 = Math.floor((cam.x - this.W / 2 / S) / CHUNK_M);
-    const x1 = Math.floor((cam.x + this.W / 2 / S) / CHUNK_M);
-    const y0 = Math.floor((cam.y - this.H / 2 / S) / CHUNK_M);
-    const y1 = Math.floor((cam.y + this.H / 2 / S) / CHUNK_M);
+    const tier = this.zoom < 0.3 ? 'coarse' : 'fine';
+    const M = TIERS[tier].m;
+    const sizePx = M * S;
+    const x0 = Math.floor((cam.x - this.W / 2 / S) / M);
+    const x1 = Math.floor((cam.x + this.W / 2 / S) / M);
+    const y0 = Math.floor((cam.y - this.H / 2 / S) / M);
+    const y1 = Math.floor((cam.y + this.H / 2 / S) / M);
     ctx.imageSmoothingEnabled = false;
     for (let cy = y0; cy <= y1; cy++) {
       for (let cx = x0; cx <= x1; cx++) {
-        const img = this.chunkCanvas(cx, cy);
-        const sx = (cx * CHUNK_M - cam.x) * S + this.W / 2;
-        const sy = (cy * CHUNK_M - cam.y) * S + this.H / 2;
+        const img = this.chunkCanvas(tier, cx, cy);
+        const sx = (cx * M - cam.x) * S + this.W / 2;
+        const sy = (cy * M - cam.y) * S + this.H / 2;
         ctx.drawImage(img, sx, sy, sizePx + 0.6, sizePx + 0.6);
       }
     }
@@ -145,8 +151,8 @@ export class Renderer {
     const S = SCALE * this.zoom;
     ctx.fillStyle = '#2e6fa3';
     ctx.fillRect(0, 0, this.W, this.H);
-    // dezente Wellenringe auf einem Weltraster
-    const cell = 14; // Meter
+    // dezente Wellenringe auf einem Weltraster (bei Übersicht gröber)
+    const cell = this.zoom < 0.5 ? 14 / (this.zoom * 2) : 14; // Meter
     const gx0 = Math.floor((cam.x - this.W / 2 / S) / cell);
     const gx1 = Math.floor((cam.x + this.W / 2 / S) / cell);
     const gy0 = Math.floor((cam.y - this.H / 2 / S) / cell);
@@ -287,13 +293,13 @@ export class Renderer {
       ctx.restore();
     }
 
-    // Pinne
+    // Ruderblatt am Heck (schlägt zur Kurvenseite aus)
     const ra = boat.rudder * 0.6;
     ctx.strokeStyle = '#5b3a1e';
     ctx.lineWidth = 0.12;
     ctx.beginPath();
     ctx.moveTo(0, 2.45);
-    ctx.lineTo(Math.sin(-ra) * 0.8, 2.45 + Math.cos(ra) * 0.8);
+    ctx.lineTo(Math.sin(ra) * 0.8, 2.45 + Math.cos(ra) * 0.8);
     ctx.stroke();
 
     // Rigg-Geometrie je Bauart (Zeichnungseinheiten eines 5,5-m-Boots)
@@ -844,9 +850,10 @@ export class Renderer {
     if (race.state === 'idle') return;
     const { ctx } = this;
     const w = 240, h = 52;
-    // unter Toolbar bzw. auf sehr schmalen Screens unter die Windrose rutschen
+    // die Toolbar ist nur noch der Menü-Knopf; nur auf sehr schmalen
+    // Screens muss das Panel unter die Windrose ausweichen
     const x = this.W / 2 - w / 2;
-    const y = this.W < 520 ? this.rose.y + this.rose.r + 26 : this.W < 1100 ? 62 : 10;
+    const y = this.W < 520 ? this.rose.y + this.rose.r + 26 : 10;
     ctx.save();
     ctx.fillStyle = 'rgba(8,25,42,0.6)';
     this.roundRect(x, y, w, h, 10);
@@ -860,16 +867,21 @@ export class Renderer {
       line2 = 'Über die Startlinie!';
     } else if (race.state === 'running') {
       line1 = formatTime(race.t);
-      line2 = race.nextIdx < race.marks.length
-        ? `Nächste: Boje ${race.nextIdx + 1} von ${race.marks.length}`
-        : 'Zurück zur Ziellinie!';
+      line2 = race.penaltyFlash > 0
+        ? '+10 s Strafe (Grundberührung)'
+        : race.nextIdx < race.marks.length
+          ? `Nächste: Boje ${race.nextIdx + 1} von ${race.marks.length}`
+          : 'Zurück zur Ziellinie!';
     } else {
       line1 = `🏁 ${formatTime(race.t)}`;
       line2 = race.isNewBest ? 'Neue Bestzeit!' : `Bestzeit: ${formatTime(race.best)}`;
     }
     ctx.fillText(line1, this.W / 2, y + 24);
     ctx.font = '12px system-ui, sans-serif';
-    ctx.fillStyle = race.state === 'finished' && race.isNewBest ? '#ffd166' : 'rgba(255,255,255,0.85)';
+    ctx.fillStyle =
+      race.state === 'running' && race.penaltyFlash > 0 ? '#ff9a8a' :
+      race.state === 'finished' && race.isNewBest ? '#ffd166' :
+      'rgba(255,255,255,0.85)';
     ctx.fillText(line2, this.W / 2, y + 42);
     ctx.restore();
   }
@@ -896,6 +908,15 @@ export class Renderer {
     this.updateParticles(cam, wind, dt);
     this.drawGhost(race, cam);
     this.drawBoat(boat, time);
+    if (this.zoom < 0.25) {
+      // Übersicht: Markierungsring, damit man das winzige Boot findet
+      const { ctx } = this;
+      ctx.beginPath();
+      ctx.arc(this.W / 2, this.H / 2, 14, 0, TAU);
+      ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
     this.drawVectors(boat, wind);
     this.drawRose(wind, boat);
     this.drawHUD(boat, wind);

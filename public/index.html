@@ -12,19 +12,50 @@
   <canvas id="game"></canvas>
 
   <div id="toolbar">
-    <button id="btn-map">🗺 Neue Karte</button>
-    <button id="btn-wander">🌬 Wind wandert: an</button>
-    <button id="btn-boat">⛵ Jolle</button>
-    <button id="btn-race">🏁 Regatta</button>
-    <button id="btn-autotrim">🪄 Autotrim: aus</button>
-    <button id="btn-vectors">📐 Vektoren: aus</button>
-    <button id="btn-help">?</button>
+    <button id="btn-menu">☰</button>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>Einstellungen</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <button class="menu-btn" id="btn-race">🏁 Regatta</button>
+      <button class="menu-btn" id="btn-boat">⛵ Jolle</button>
+      <button class="menu-btn" id="btn-autotrim">🪄 Autotrim: aus</button>
+      <button class="menu-btn" id="btn-wander">🌬 Wind wandert: an</button>
+      <button class="menu-btn" id="btn-vectors">📐 Vektoren: aus</button>
+
+      <div class="menu-group">
+        <div class="group-title">Karte</div>
+        <div class="seg">
+          <button id="mode-see" class="active">See</button>
+          <button id="mode-meer">Offenes Meer</button>
+        </div>
+        <label id="row-lake">Seegröße
+          <input type="range" id="rng-lake" min="0" max="1" step="0.05" value="0.5">
+        </label>
+        <label>Inseldichte
+          <input type="range" id="rng-dens" min="0" max="1" step="0.05" value="0.5">
+        </label>
+        <label>Inselgröße
+          <input type="range" id="rng-size" min="0" max="1" step="0.05" value="0.4">
+        </label>
+        <button class="menu-btn" id="btn-map">🗺 Neue Karte erzeugen</button>
+      </div>
+
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
   </div>
 
   <div id="zoombar">
     <button id="btn-zoom-in">＋</button>
     <button id="btn-zoom-out">－</button>
   </div>
+
+  <button id="btn-free" class="hidden">⚓ Freikommen</button>
 
   <div id="help">
     <div class="panel">
@@ -37,6 +68,8 @@
         <li><b>🪄 Autotrim</b> – Segel stellen sich selbst optimal, inkl. automatischem Spi-Setzen und -Bergen; manuelles Trimmen schaltet es ab</li>
         <li><b>📐 Vektoren</b> – zeigt Wind, scheinbaren Wind, Fahrt, Vortrieb und Drift am Boot</li>
         <li><b>Windrose</b> (oben rechts) – ziehen: Windrichtung und -stärke einstellen</li>
+        <li><b>☰ Menü</b> (oben links) – Boot, Regatta, Autotrim und die Karte: <b>See oder offenes Meer</b>, Seegröße, Inseldichte und Inselgröße</li>
+        <li><b>Aufgelaufen?</b> – der Knopf „⚓ Freikommen“ setzt dich ein paar Bootslängen vor der Küste wieder aus (im Rennen: +10 s Strafe)</li>
         <li><b>🏁 Regatta</b> – über die Startlinie, Bojen 1–3 in Reihenfolge, zurück ins Ziel. Die Uhr läuft! Pfeile am Rand zeigen zur nächsten Boje; deine Bestzeit segelt als <b>Geisterboot</b> mit.</li>
         <li><b>＋/－</b> (links) – Zoom, um Kurs und Küste zu überblicken</li>
         <li>Desktop: Pfeiltasten ← → Ruder, ↑ ↓ Schoten, +/− Zoom</li>

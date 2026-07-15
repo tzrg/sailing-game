@@ -25,14 +25,29 @@ function valueNoise(x, y, seed) {
 }
 
 export class Terrain {
-  constructor(seed) {
+  // cfg: mode 'see' (Binnensee mit Ufer) | 'meer' (offenes Meer),
+  //      lakeSize, islandDensity, islandSize jeweils 0..1
+  constructor(seed, cfg = {}) {
     this.seed = seed | 0;
-    this.threshold = 0.57; // darüber ist Land
+    this.mode = cfg.mode === 'meer' ? 'meer' : 'see';
+    this.islandDensity = cfg.islandDensity ?? 0.5;
+    this.islandSize = cfg.islandSize ?? 0.4;
+    this.lakeSize = cfg.lakeSize ?? 0.5;
+    // mehr Dichte -> niedrigere Landschwelle; mehr Größe -> längere Wellenlänge
+    this.threshold = 0.68 - 0.18 * this.islandDensity;
+    this.wavelength = 250 + 900 * this.islandSize;
+    this.lakeR = 220 + 1080 * this.lakeSize; // Seeradius in Metern
+  }
+
+  // Wie stark der Regattakurs schrumpfen muss, damit er ins Gewässer passt
+  get courseScale() {
+    if (this.mode !== 'see') return 1;
+    return Math.min(1, Math.max(0.35, (this.lakeR * 0.75) / 380));
   }
 
   // "Höhe" 0..1 an Weltposition (Meter); um den Start herum wird Wasser garantiert
   height(x, y) {
-    let h = 0, amp = 0.5, freq = 1 / 700;
+    let h = 0, amp = 0.5, freq = 1 / this.wavelength;
     for (let o = 0; o < 4; o++) {
       h += amp * valueNoise(x * freq, y * freq, this.seed + o * 131);
       amp *= 0.5;
@@ -40,7 +55,13 @@ export class Terrain {
     }
     h /= 0.9375;
     const r2 = x * x + y * y;
-    h -= 0.32 * Math.exp(-r2 / (2 * 260 * 260));
+    if (this.mode === 'see') {
+      // außerhalb des Seeradius steigt das Ufer an; das Rauschen
+      // macht die Uferlinie unregelmäßig
+      const r = Math.sqrt(r2);
+      h += Math.min(1.2, Math.max(0, (r - this.lakeR) / 180) * 0.5);
+    }
+    h -= 0.32 * Math.exp(-r2 / (2 * 220 * 220));
     return h;
   }
 

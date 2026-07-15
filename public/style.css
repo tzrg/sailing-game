@@ -24,11 +24,150 @@ html, body {
   top: env(safe-area-inset-top, 0);
   left: 0;
   padding: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: 70vw;
   z-index: 10;
+}
+
+#btn-menu {
+  width: 46px;
+  height: 46px;
+  font-size: 20px;
+}
+
+#menu {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 16, 28, 0.45);
+  z-index: 25;
+}
+
+#menu.hidden {
+  display: none;
+}
+
+.menu-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(320px, 86vw);
+  background: rgba(10, 30, 50, 0.97);
+  border-right: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 14px 16px calc(20px + env(safe-area-inset-bottom, 0));
+  overflow-y: auto;
+  color: #eaf3fa;
+}
+
+.menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.menu-head h2 {
+  font-size: 18px;
+}
+
+#btn-menu-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.menu-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: 6px 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.menu-btn:active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.menu-group {
+  margin: 14px 0;
+  padding: 12px 12px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+}
+
+.group-title {
+  font-size: 13px;
+  color: #9fc0d8;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.seg {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.seg button {
+  flex: 1;
+  padding: 9px 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.seg button.active {
+  background: #2f9e6e;
+  border-color: #2f9e6e;
+}
+
+.menu-group label {
+  display: block;
+  font-size: 13px;
+  margin: 10px 0;
+  color: #cfe2f0;
+}
+
+.menu-group input[type="range"] {
+  width: 100%;
+  margin-top: 4px;
+  accent-color: #6fd6ff;
+}
+
+#row-lake.hidden {
+  display: none;
+}
+
+#btn-free {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 170px;
+  z-index: 12;
+  background: #d9822b;
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+#btn-free.hidden {
+  display: none;
 }
 
 #toolbar button {

@@ -22,7 +22,7 @@ function isClear(terrain, x, y, r) {
   return true;
 }
 
-function findWaterSpot(terrain, x, y, clearance = 20) {
+export function findWaterSpot(terrain, x, y, clearance = 20) {
   if (isClear(terrain, x, y, clearance)) return { x, y };
   for (let r = 15; r < 500; r += 15) {
     for (let a = 0; a < TAU - 0.01; a += 0.35) {
@@ -74,11 +74,13 @@ export class Race {
       a: findWaterSpot(terrain, c.x + perp.x * 30, c.y + perp.y * 30, 10),
       b: findWaterSpot(terrain, c.x - perp.x * 30, c.y - perp.y * 30, 10),
     };
-    // Dreieckskurs: Kreuz nach oben, Raumschots-Schenkel, zurück zur Linie
+    // Dreieckskurs: Kreuz nach oben, Raumschots-Schenkel, zurück zur Linie;
+    // in kleinen Seen wird der Kurs entsprechend geschrumpft
+    const cs = terrain.courseScale ?? 1;
     this.marks = [
-      findWaterSpot(terrain, c.x + d.x * 380, c.y + d.y * 380),
-      findWaterSpot(terrain, c.x + d.x * 200 + perp.x * 260, c.y + d.y * 200 + perp.y * 260),
-      findWaterSpot(terrain, c.x + d.x * 40 - perp.x * 240, c.y + d.y * 40 - perp.y * 240),
+      findWaterSpot(terrain, c.x + d.x * 380 * cs, c.y + d.y * 380 * cs),
+      findWaterSpot(terrain, c.x + (d.x * 200 + perp.x * 260) * cs, c.y + (d.y * 200 + perp.y * 260) * cs),
+      findWaterSpot(terrain, c.x + (d.x * 40 - perp.x * 240) * cs, c.y + (d.y * 40 - perp.y * 240) * cs),
     ];
   }
 
@@ -97,9 +99,18 @@ export class Race {
     this.t = 0;
     this.nextIdx = 0;
     this.isNewBest = false;
+    this.penaltyFlash = 0;
     this.best = this.loadBest(boat);
     this.ghost = this.loadGhost(boat);
     this.rec = null;
+  }
+
+  // Strafsekunden (z. B. Grundberührung): Uhr springt vor,
+  // damit rückt auch das Geisterboot entsprechend voraus
+  addPenalty(seconds) {
+    if (this.state !== 'running') return;
+    this.t += seconds;
+    this.penaltyFlash = 4;
   }
 
   cancel() {
@@ -170,6 +181,7 @@ export class Race {
       }
     } else if (this.state === 'running') {
       this.t += dt;
+      this.penaltyFlash = Math.max(0, this.penaltyFlash - dt);
       // Fahrt für das Geisterboot aufzeichnen (festes Raster)
       if (this.rec) {
         while (this.rec.x.length * REC_DT <= this.t) {

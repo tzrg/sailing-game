@@ -4,10 +4,12 @@ import { clamp, angleOf, normAngle, MS_TO_KN } from './util.js';
 import { Terrain } from './terrain.js';
 import { Boat, Wind, BOAT_TYPES } from './boat.js';
 import { Renderer } from './render.js';
-import { Race } from './race.js';
+import { Race, findWaterSpot } from './race.js';
 
 const canvas = document.getElementById('game');
-let terrain = new Terrain(Math.floor(Math.random() * 1e9));
+// Karten-Einstellungen (im Menü einstellbar, wirken bei "Neue Karte")
+const mapCfg = { mode: 'see', lakeSize: 0.5, islandDensity: 0.5, islandSize: 0.4 };
+let terrain = new Terrain(Math.floor(Math.random() * 1e9), mapCfg);
 const wind = new Wind();
 const boat = new Boat(BOAT_TYPES.jolle);
 boat.reset(normAngle(wind.dirFrom + Math.PI / 2)); // Start auf Halbwindkurs
@@ -100,10 +102,11 @@ canvas.addEventListener('pointermove', (e) => {
 
 function endPointer(e) {
   const st = pointers.get(e.pointerId);
-  if (st && (st.role === 'steer' || st.role === 'rudbar')) {
-    boat.rudder = 0; // Ruder geht mittschiffs
+  if (st && st.role === 'steer') {
+    boat.rudder = 0; // Geste losgelassen -> Ruder mittschiffs
     steerPointer = null;
   }
+  // der Ruder-Schieber dagegen bleibt stehen, wo man ihn hingezogen hat
   pointers.delete(e.pointerId);
 }
 canvas.addEventListener('pointerup', endPointer);
@@ -125,15 +128,21 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key));
 
+let keySteerActive = false; // nur Tasten-Steuerung zentriert von selbst zurück
 function applyKeys(dt) {
   if (steerPointer === null) {
     let r = 0;
     if (keys.has('ArrowLeft')) r -= 1;
     if (keys.has('ArrowRight')) r += 1;
-    if (r !== 0) boat.rudder = clamp(boat.rudder + r * dt * 3, -1, 1);
-    else if (keys.size >= 0 && boat.rudder !== 0 && !keys.has('ArrowLeft') && !keys.has('ArrowRight')) {
+    if (r !== 0) {
+      boat.rudder = clamp(boat.rudder + r * dt * 3, -1, 1);
+      keySteerActive = true;
+    } else if (keySteerActive) {
       boat.rudder *= Math.max(0, 1 - dt * 6);
-      if (Math.abs(boat.rudder) < 0.02) boat.rudder = 0;
+      if (Math.abs(boat.rudder) < 0.02) {
+        boat.rudder = 0;
+        keySteerActive = false;
+      }
     }
   }
   if (keys.has('ArrowUp')) {
@@ -148,20 +157,57 @@ function applyKeys(dt) {
   }
 }
 
-// ---- UI-Buttons ------------------------------------------------------------
+// ---- UI: Hamburger-Menü ------------------------------------------------------
 const helpEl = document.getElementById('help');
+const menuEl = document.getElementById('menu');
 function hideHelp() {
   helpEl.classList.add('hidden');
 }
+function closeMenu() {
+  menuEl.classList.add('hidden');
+}
+document.getElementById('btn-menu').addEventListener('click', () => {
+  menuEl.classList.remove('hidden');
+});
+document.getElementById('btn-menu-close').addEventListener('click', closeMenu);
+menuEl.addEventListener('click', (e) => {
+  if (e.target === menuEl) closeMenu(); // Klick auf den Hintergrund
+});
 document.getElementById('btn-start').addEventListener('click', hideHelp);
 document.getElementById('btn-help').addEventListener('click', () => {
+  closeMenu();
   helpEl.classList.remove('hidden');
 });
+
+// Karten-Einstellungen
+const modeSee = document.getElementById('mode-see');
+const modeMeer = document.getElementById('mode-meer');
+const rowLake = document.getElementById('row-lake');
+function setMode(mode) {
+  mapCfg.mode = mode;
+  modeSee.classList.toggle('active', mode === 'see');
+  modeMeer.classList.toggle('active', mode === 'meer');
+  rowLake.classList.toggle('hidden', mode !== 'see');
+}
+modeSee.addEventListener('click', () => setMode('see'));
+modeMeer.addEventListener('click', () => setMode('meer'));
+document.getElementById('rng-lake').addEventListener('input', (e) => {
+  mapCfg.lakeSize = parseFloat(e.target.value);
+});
+document.getElementById('rng-dens').addEventListener('input', (e) => {
+  mapCfg.islandDensity = parseFloat(e.target.value);
+});
+document.getElementById('rng-size').addEventListener('input', (e) => {
+  mapCfg.islandSize = parseFloat(e.target.value);
+});
+
 document.getElementById('btn-map').addEventListener('click', () => {
-  terrain = new Terrain(Math.floor(Math.random() * 1e9));
+  terrain = new Terrain(Math.floor(Math.random() * 1e9), mapCfg);
   renderer.setTerrain(terrain);
   boat.reset(normAngle(wind.dirFrom + Math.PI / 2));
   race.cancel();
+  raceLabel();
+  closeMenu();
 });
 
 // Bootstyp durchschalten
@@ -187,6 +233,7 @@ function raceLabel() {
 }
 btnRace.addEventListener('click', () => {
   hideHelp();
+  closeMenu();
   if (race.state === 'idle' || race.state === 'finished') {
     race.arm(terrain, boat);
   } else {
@@ -195,9 +242,59 @@ btnRace.addEventListener('click', () => {
   raceLabel();
 });
 raceLabel();
+
+// ---- Grundberührung: Freikommen ---------------------------------------------
+const btnFree = document.getElementById('btn-free');
+let groundedT = 0;
+btnFree.addEventListener('click', () => {
+  // Richtung ins tiefe Wasser (bergab im Höhenfeld)
+  const e = 3;
+  const gx = terrain.height(boat.x + e, boat.y) - terrain.height(boat.x - e, boat.y);
+  const gy = terrain.height(boat.x, boat.y + e) - terrain.height(boat.x, boat.y - e);
+  const nl = Math.hypot(gx, gy);
+  let nx, ny;
+  if (nl > 1e-6) {
+    nx = -gx / nl;
+    ny = -gy / nl;
+  } else {
+    nx = -Math.sin(boat.heading); // Notfall: rückwärts
+    ny = Math.cos(boat.heading);
+  }
+  const L = boat.type.lengthM;
+  let spot = null;
+  for (const d of [3, 5, 8, 12, 18, 28]) {
+    const px = boat.x + nx * d * L;
+    const py = boat.y + ny * d * L;
+    if (!terrain.isLand(px, py)) {
+      spot = findWaterSpot(terrain, px, py, 8);
+      break;
+    }
+  }
+  if (!spot) spot = findWaterSpot(terrain, boat.x, boat.y, 8);
+  boat.x = spot.x;
+  boat.y = spot.y;
+  boat.vx = 0;
+  boat.vy = 0;
+  boat.angVel = 0;
+  race.addPenalty(10);
+  groundedT = 0;
+});
+
+let btnFreeVisible = false;
+function updateFreeButton(dt) {
+  groundedT = Math.max(0, groundedT - dt);
+  const show = groundedT > 0;
+  if (show !== btnFreeVisible) {
+    btnFreeVisible = show;
+    btnFree.classList.toggle('hidden', !show);
+    btnFree.textContent = race.state === 'running'
+      ? '⚓ Freikommen (+10 s)'
+      : '⚓ Freikommen';
+  }
+}
 // Zoomstufen (herausgezoomt sieht man Kurs und Küste)
-const ZOOM_LEVELS = [0.35, 0.6, 1, 1.5];
-let zoomIdx = 2;
+const ZOOM_LEVELS = [0.1, 0.2, 0.35, 0.6, 1, 1.5];
+let zoomIdx = 4;
 function setZoom(i) {
   zoomIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, i));
   renderer.zoom = ZOOM_LEVELS[zoomIdx];
@@ -259,6 +356,7 @@ function hullHitsLand() {
 
 function resolveCollision() {
   if (!hullHitsLand()) return;
+  groundedT = 1.5; // Freikommen-Knopf zeigen, solange wir festhängen
   // Gefälle des Geländes -> Richtung zurück ins Wasser
   const e = 3;
   const gx = terrain.height(boat.x + e, boat.y) - terrain.height(boat.x - e, boat.y);
@@ -309,6 +407,7 @@ function frame(now) {
   const prevState = race.state;
   race.update(boat, prevPos, dt);
   if (race.state !== prevState) raceLabel();
+  updateFreeButton(dt);
   renderer.draw(boat, wind, race, time, dt);
 
   requestAnimationFrame(frame);

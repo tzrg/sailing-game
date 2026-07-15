@@ -10,8 +10,13 @@ keine Build-Tools) und wird als Docker-Container deployt.
   oben rechts (ziehen = Richtung, Abstand von der Mitte = Stärke). Optional
   wandert der Wind langsam von selbst.
 - Das Boot ist in der Bildschirmmitte, die Welt bewegt sich darunter.
-- Der See mit Ufer und Inseln wird **prozedural generiert** („Neue Karte“
-  erzeugt eine neue Welt). Mit Land kann man kollidieren.
+- Das Gewässer wird **prozedural generiert**. Im ☰-Menü wählbar: **See**
+  (geschlossenes Ufer, einstellbare Seegröße) oder **offenes Meer**, jeweils
+  mit Reglern für **Inseldichte** und **Inselgröße**; „Neue Karte“ erzeugt
+  damit eine neue Welt. Mit Land kann man kollidieren – wer aufläuft, kommt
+  über „⚓ Freikommen“ ein paar Bootslängen vor der Küste wieder frei
+  (im Rennen kostet das 10 Strafsekunden, die auch das Geisterboot nach
+  vorn springen lassen).
 - **Vier Bootstypen** (umschaltbar): wendige, kipplige **Jolle**, ein großes,
   träges, schnelles **Kielboot** mit wenig Abdrift, ein pfeilschneller
   **Katamaran**, der nur widerwillig und unter großem Fahrtverlust wendet,
