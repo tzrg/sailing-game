@@ -33,8 +33,9 @@ export class Terrain {
     this.islandDensity = cfg.islandDensity ?? 0.5;
     this.islandSize = cfg.islandSize ?? 0.4;
     this.lakeSize = cfg.lakeSize ?? 0.5;
-    // mehr Dichte -> niedrigere Landschwelle; mehr Größe -> längere Wellenlänge
-    this.threshold = 0.68 - 0.18 * this.islandDensity;
+    // mehr Dichte -> niedrigere Landschwelle; mehr Größe -> längere Wellenlänge.
+    // Kalibriert auf ~2% Landanteil bei Dichte 0, ~12% bei 0,5, ~40% bei 1.
+    this.threshold = 0.70 - 0.17 * this.islandDensity;
     this.wavelength = 250 + 900 * this.islandSize;
     this.lakeR = 220 + 1080 * this.lakeSize; // Seeradius in Metern
   }
@@ -61,7 +62,9 @@ export class Terrain {
       const r = Math.sqrt(r2);
       h += Math.min(1.2, Math.max(0, (r - this.lakeR) / 180) * 0.5);
     }
-    h -= 0.32 * Math.exp(-r2 / (2 * 220 * 220));
+    // kleiner Freiraum am Startpunkt (nur so groß wie nötig, damit
+    // Inseln in Seen nicht weggebügelt werden)
+    h -= 0.3 * Math.exp(-r2 / (2 * 130 * 130));
     return h;
   }
 

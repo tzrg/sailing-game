@@ -8,7 +8,7 @@ import { Race, findWaterSpot } from './race.js';
 
 const canvas = document.getElementById('game');
 // Karten-Einstellungen (im Menü einstellbar, wirken bei "Neue Karte")
-const mapCfg = { mode: 'see', lakeSize: 0.5, islandDensity: 0.5, islandSize: 0.4 };
+const mapCfg = { mode: 'see', lakeSize: 0.5, islandDensity: 0.5, islandSize: 0.3 };
 let terrain = new Terrain(Math.floor(Math.random() * 1e9), mapCfg);
 const wind = new Wind();
 const boat = new Boat(BOAT_TYPES.jolle);
@@ -205,10 +205,19 @@ document.getElementById('btn-map').addEventListener('click', () => {
   terrain = new Terrain(Math.floor(Math.random() * 1e9), mapCfg);
   renderer.setTerrain(terrain);
   boat.reset(normAngle(wind.dirFrom + Math.PI / 2));
+  placeBoatOnWater();
   race.cancel();
   raceLabel();
   closeMenu();
 });
+
+// Startpunkt notfalls auf freies Wasser schieben
+function placeBoatOnWater() {
+  const spot = findWaterSpot(terrain, boat.x, boat.y, 10);
+  boat.x = spot.x;
+  boat.y = spot.y;
+}
+placeBoatOnWater();
 
 // Bootstyp durchschalten
 const btnBoat = document.getElementById('btn-boat');
