@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Segelspiel</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛵%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-map">🗺 Neue Karte</button>
+    <button id="btn-wander">🌬 Wind wandert: an</button>
+    <button id="btn-help">?</button>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>⛵ Segelspiel</h1>
+      <ul>
+        <li><b>Linke Bildschirmhälfte</b> – Finger horizontal ziehen: <b>Ruder</b> (loslassen = Ruder mittschiffs)</li>
+        <li><b>Rechte Bildschirmhälfte</b> – Finger vertikal ziehen: <b>Schot</b> dichtholen (hoch) / fieren (runter)</li>
+        <li><b>Windrose</b> (oben rechts) – ziehen: Windrichtung und -stärke einstellen</li>
+        <li>Desktop: Pfeiltasten ← → Ruder, ↑ ↓ Schot</li>
+      </ul>
+      <p>Direkt gegen den Wind geht es nicht – kreuze mit ca. 45° Wendewinkel.
+        Segel richtig trimmen: dichter am Wind, offener auf raumen Kursen.
+        Achtung vor Untiefen und Inseln!</p>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

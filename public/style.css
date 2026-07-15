@@ -1,0 +1,102 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: #2e6fa3;
+  font-family: system-ui, -apple-system, sans-serif;
+  overscroll-behavior: none;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  display: block;
+}
+
+#toolbar {
+  position: fixed;
+  top: env(safe-area-inset-top, 0);
+  left: 0;
+  padding: 10px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+}
+
+#toolbar button {
+  background: rgba(8, 25, 42, 0.55);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+#toolbar button:active {
+  background: rgba(8, 25, 42, 0.8);
+}
+
+#help {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 16, 28, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  padding: 16px;
+}
+
+#help.hidden {
+  display: none;
+}
+
+#help .panel {
+  background: rgba(10, 30, 50, 0.95);
+  color: #eaf3fa;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 14px;
+  padding: 22px 26px;
+  max-width: 460px;
+  line-height: 1.5;
+}
+
+#help h1 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+
+#help ul {
+  padding-left: 18px;
+  margin-bottom: 12px;
+}
+
+#help li {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+#help p {
+  font-size: 13px;
+  color: #b9cede;
+  margin-bottom: 14px;
+}
+
+#help button {
+  background: #2f9e6e;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 15px;
+  cursor: pointer;
+  width: 100%;
+}
