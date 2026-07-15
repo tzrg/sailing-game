@@ -37,8 +37,8 @@ export class Terrain {
     // Inseln werden als Einzelfeatures auf einem gejitterten Raster gestreut:
     // Dichte = Wahrscheinlichkeit pro Rasterzelle, Größe = Zellabstand/Radius.
     // So entstehen viele getrennte kleine Inseln statt zusammenhängender Klumpen.
-    this.islandProb = 0.25 + 0.65 * this.islandDensity;
-    this.spacing = 130 + 220 * this.islandSize;
+    this.islandProb = 0.45 + 0.55 * this.islandDensity;
+    this.spacing = 100 + 180 * this.islandSize;
     // schwaches Großrelief (größere Landmassen nur bei großer Inselgröße)
     this.bgWeight = 0.15 + 0.5 * this.islandSize;
     this.wavelength = 500 + 700 * this.islandSize;
@@ -46,9 +46,10 @@ export class Terrain {
   }
 
   // Wie stark der Regattakurs schrumpfen muss, damit er ins Gewässer passt
+  // (längster Kursschenkel ist ~230 m)
   get courseScale() {
     if (this.mode !== 'see') return 1;
-    return Math.min(1, Math.max(0.35, (this.lakeR * 0.75) / 380));
+    return Math.min(1, Math.max(0.35, (this.lakeR * 0.75) / 230));
   }
 
   // gestreute Einzelinseln: 0 = Wasser, bis ~1 im Inselzentrum

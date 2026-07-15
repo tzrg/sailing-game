@@ -102,11 +102,10 @@ canvas.addEventListener('pointermove', (e) => {
 
 function endPointer(e) {
   const st = pointers.get(e.pointerId);
-  if (st && st.role === 'steer') {
-    boat.rudder = 0; // Geste losgelassen -> Ruder mittschiffs
+  if (st && (st.role === 'steer' || st.role === 'rudbar')) {
+    boat.rudder = 0; // Loslassen -> Ruder mittschiffs
     steerPointer = null;
   }
-  // der Ruder-Schieber dagegen bleibt stehen, wo man ihn hingezogen hat
   pointers.delete(e.pointerId);
 }
 canvas.addEventListener('pointerup', endPointer);

@@ -5,7 +5,7 @@
 import { TAU, dirVec, rotCW, normAngle, lerp } from './util.js';
 
 const REC_DT = 0.15;   // Abtastintervall der Geisterboot-Aufzeichnung (s)
-const KEY_VER = '2';   // bei Kursänderungen erhöhen -> alte Bestzeiten verfallen
+const KEY_VER = '3';   // bei Kursänderungen erhöhen -> alte Bestzeiten verfallen
 
 function hashAngle(seed) {
   let h = Math.imul(seed ^ 0x5bd1e995, 0x27d4eb2d);
@@ -71,16 +71,16 @@ export class Race {
     const c = findWaterSpot(terrain, 0, 0, 40);
     this.center = c;
     this.line = {
-      a: findWaterSpot(terrain, c.x + perp.x * 30, c.y + perp.y * 30, 10),
-      b: findWaterSpot(terrain, c.x - perp.x * 30, c.y - perp.y * 30, 10),
+      a: findWaterSpot(terrain, c.x + perp.x * 25, c.y + perp.y * 25, 10),
+      b: findWaterSpot(terrain, c.x - perp.x * 25, c.y - perp.y * 25, 10),
     };
-    // Dreieckskurs: Kreuz nach oben, Raumschots-Schenkel, zurück zur Linie;
-    // in kleinen Seen wird der Kurs entsprechend geschrumpft
+    // kompakter Dreieckskurs: Kreuz nach oben, Raumschots-Schenkel, zurück;
+    // in kleinen Seen wird der Kurs zusätzlich geschrumpft
     const cs = terrain.courseScale ?? 1;
     this.marks = [
-      findWaterSpot(terrain, c.x + d.x * 380 * cs, c.y + d.y * 380 * cs),
-      findWaterSpot(terrain, c.x + (d.x * 200 + perp.x * 260) * cs, c.y + (d.y * 200 + perp.y * 260) * cs),
-      findWaterSpot(terrain, c.x + (d.x * 40 - perp.x * 240) * cs, c.y + (d.y * 40 - perp.y * 240) * cs),
+      findWaterSpot(terrain, c.x + d.x * 230 * cs, c.y + d.y * 230 * cs),
+      findWaterSpot(terrain, c.x + (d.x * 125 + perp.x * 160) * cs, c.y + (d.y * 125 + perp.y * 160) * cs),
+      findWaterSpot(terrain, c.x + (d.x * 25 - perp.x * 150) * cs, c.y + (d.y * 25 - perp.y * 150) * cs),
     ];
   }
 
