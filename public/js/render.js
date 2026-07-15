@@ -28,7 +28,11 @@ export class Renderer {
     this.W = 0;
     this.H = 0;
     this.rose = { x: 0, y: 0, r: 56 };
-    this.trimBars = { jib: { x: 0, y: 0, w: 0, h: 0 }, main: { x: 0, y: 0, w: 0, h: 0 } };
+    this.trimBars = {
+      jib: { x: 0, y: 0, w: 0, h: 0 },
+      main: { x: 0, y: 0, w: 0, h: 0 },
+      spi: { x: 0, y: 0, w: 0, h: 0 },
+    };
     this.zoom = 1; // 1 = Normalansicht, <1 = herausgezoomt
     this.showVectors = false;
     this.rudderBar = { x: 0, y: 0, w: 0, h: 0 };
@@ -64,9 +68,9 @@ export class Renderer {
     return p.x >= b.x - 12 && p.x <= b.x + b.w + 12 && p.y >= b.y - 12 && p.y <= b.y + b.h + 12;
   }
 
-  // liegt der Punkt auf einem der Schot-Regler? -> 'main' | 'jib' | null
+  // liegt der Punkt auf einem der Regler? -> 'main' | 'jib' | 'spi' | null
   hitTrimBar(p) {
-    for (const key of ['main', 'jib']) {
+    for (const key of ['main', 'jib', 'spi']) {
       const b = this.trimBars[key];
       if (p.x >= b.x - 14 && p.x <= b.x + b.w + 14 && p.y >= b.y - 14 && p.y <= b.y + b.h + 14) {
         return key;
@@ -299,10 +303,10 @@ export class Renderer {
         ? { mastY: -0.5, boom: 2.8, jibTackY: -2.6, jib: 2.0, spi: 3.2 }
         : { mastY: -0.6, boom: 3.0, jibTackY: -2.8, jib: 2.3, spi: 3.4 };
 
-    // Spinnaker: großer bunter Ballon vor dem Bug (nur wenn gesetzt)
-    if (boat.spi && type.spi) {
+    // Spinnaker: großer bunter Ballon vor dem Bug, wächst mit dem Setzgrad
+    if (type.spi && boat.spiHoist > 0.08) {
       const st = { x: heelOff * 0.3, y: rig.jibTackY - 0.1 };
-      const sl = rig.spi;
+      const sl = rig.spi * (0.35 + 0.65 * boat.spiHoist);
       const sEnd = {
         x: st.x - Math.sin(boat.spiBoom) * sl,
         y: st.y + Math.cos(boat.spiBoom) * sl,
@@ -312,7 +316,7 @@ export class Renderer {
       this.drawSail(
         st, sEnd,
         boat.spiEff > 0.3 ? Math.sign(boat.spiBoom || 1) * 1.1 : 0,
-        boat.apparentSpd, time, 1.9, '#ff6b6b',
+        boat.apparentSpd, time, 1.9 * boat.spiHoist, '#ff6b6b',
       );
       ctx.restore();
     }
@@ -585,41 +589,47 @@ export class Renderer {
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillText(this.pointOfSail(wind, boat), 26, this.H - 26);
 
-    // Schoten rechts: zwei Regler (Fock und Groß), direkt anfassbar
+    // Regler rechts: Spi (setzen/bergen), Fock- und Großschot, direkt anfassbar
     const bh = 130, bwd = 18;
-    const panelW = 110;
+    const offscreen = { x: -9999, y: -9999, w: 0, h: 0 };
+    const bars = [];
+    if (boat.type.spi) {
+      bars.push({ key: 'spi', label: 'Spi', color: '#ff8fa3', trim: boat.spiHoist });
+    } else {
+      this.trimBars.spi = offscreen;
+    }
+    if (boat.type.sails.length > 1) {
+      bars.push({ key: 'jib', label: 'Fock', color: '#8fe3a1', trim: boat.trimJib });
+    } else {
+      this.trimBars.jib = offscreen;
+    }
+    bars.push({ key: 'main', label: 'Groß', color: '#6fd6ff', trim: boat.trimMain });
+    const panelW = 16 + bars.length * 48;
     const px0 = this.W - panelW - 12;
     const by = this.H - 200;
     ctx.fillStyle = 'rgba(8,25,42,0.5)';
     this.roundRect(px0, by - 30, panelW, bh + 64, 10);
     ctx.fill();
-    const bars = [
-      { key: 'main', x: px0 + 68, label: 'Groß', color: '#6fd6ff', trim: boat.trimMain },
-    ];
-    if (boat.type.sails.length > 1) {
-      bars.push({ key: 'jib', x: px0 + 20, label: 'Fock', color: '#8fe3a1', trim: boat.trimJib });
-    } else {
-      this.trimBars.jib = { x: -9999, y: -9999, w: 0, h: 0 };
-    }
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    for (const b of bars) {
-      this.trimBars[b.key] = { x: b.x, y: by, w: bwd, h: bh };
+    bars.forEach((b, i) => {
+      const bx = px0 + 24 + i * 48 - bwd / 2;
+      this.trimBars[b.key] = { x: bx, y: by, w: bwd, h: bh };
       ctx.strokeStyle = 'rgba(255,255,255,0.5)';
       ctx.lineWidth = 1;
-      ctx.strokeRect(b.x, by, bwd, bh);
+      ctx.strokeRect(bx, by, bwd, bh);
       ctx.fillStyle = b.color;
       const fh = bh * b.trim;
-      ctx.fillRect(b.x, by + bh - fh, bwd, fh);
+      ctx.fillRect(bx, by + bh - fh, bwd, fh);
       // Griff
       ctx.fillStyle = '#fff';
-      ctx.fillRect(b.x - 3, by + bh - fh - 2, bwd + 6, 4);
+      ctx.fillRect(bx - 3, by + bh - fh - 2, bwd + 6, 4);
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillText(b.label, b.x + bwd / 2, by + bh + 16);
-    }
+      ctx.fillText(b.label, bx + bwd / 2, by + bh + 16);
+    });
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    ctx.fillText('dicht', px0 + panelW / 2, by - 16);
-    ctx.fillText('offen', px0 + panelW / 2, by + bh + 30);
+    ctx.fillText('dicht · oben', px0 + panelW / 2, by - 16);
+    ctx.fillText('offen · unten', px0 + panelW / 2, by + bh + 30);
 
     // Ruder-Schieber links über dem Tacho (anfassbar; loslassen = mittschiffs)
     const rb = { x: 14, y: this.H - 122, w: 170, h: 28 };

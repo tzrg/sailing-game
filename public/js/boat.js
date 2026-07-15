@@ -170,11 +170,10 @@ export class Boat {
     this.heel = 0;     // visuelle Krängung (rad)
     this.apparentSpd = 0;
     this.apparentFrom = 0;
-    this.spi = false;      // Spinnaker gesetzt?
+    this.spiHoist = 0;     // Spinnaker 0 = geborgen .. 1 = voll gesetzt
+    this.spiTarget = 0;    // Zielwert des Auto-Spi (Hysterese)
     this.spiBoom = 0;
     this.spiEff = 0;       // 0 = eingefallen, 1 = voll stehend
-    this.spiHoistT = 0;    // Hysterese-Timer für Auto-Spi
-    this.spiDouseT = 0;
     this.autoTrim = false; // Schoten automatisch trimmen
     this.aeroFx = 0;       // Segel-Gesamtkraft (für Vektoranzeige)
     this.aeroFy = 0;
@@ -187,7 +186,10 @@ export class Boat {
   // Bootstyp wechseln, Fahrtzustand bleibt erhalten
   setType(type) {
     this.type = type;
-    if (!type.spi) this.spi = false; // z. B. das Floß hat keinen Spinnaker
+    if (!type.spi) { // z. B. das Floß hat keinen Spinnaker
+      this.spiHoist = 0;
+      this.spiTarget = 0;
+    }
   }
 
   // Schotgrenze (max. Baumwinkel) aus Trimm 0..1
@@ -220,20 +222,12 @@ export class Boat {
         const desJ = toTrim(Math.max(0, bFreeAbs - 0.28));
         this.trimMain += (desM - this.trimMain) * Math.min(1, dt * 2.5);
         this.trimJib += (desJ - this.trimJib) * Math.min(1, dt * 2.5);
-        // Auto-Spi: auf tiefen Kursen setzen, beim Anluven bergen (Hysterese)
+        // Auto-Spi: auf tiefen Kursen setzen, beim Anluven bergen.
+        // Totband zwischen den Schwellen = Hysterese, sanftes Durchziehen.
         if (t.spi) {
-          if (!this.spi && bFreeAbs > 1.45) {
-            this.spiHoistT += dt;
-            if (this.spiHoistT > 1.5) { this.spi = true; this.spiHoistT = 0; }
-          } else {
-            this.spiHoistT = 0;
-          }
-          if (this.spi && bFreeAbs < 1.1) {
-            this.spiDouseT += dt;
-            if (this.spiDouseT > 1.0) { this.spi = false; this.spiDouseT = 0; }
-          } else {
-            this.spiDouseT = 0;
-          }
+          if (bFreeAbs > 1.45) this.spiTarget = 1;
+          else if (bFreeAbs < 1.1) this.spiTarget = 0;
+          this.spiHoist += (this.spiTarget - this.spiHoist) * Math.min(1, dt * 0.7);
         }
       }
 
@@ -262,7 +256,7 @@ export class Boat {
 
       // Spinnaker: steht nur auf tiefen Kursen, trimmt sich selbst
       this.spiEff = 0;
-      if (this.spi && t.spi) {
+      if (t.spi && this.spiHoist > 0.03) {
         let bFree = normAngle(flowA - this.heading - Math.PI);
         if (Math.PI - Math.abs(bFree) < 0.4 && this.spiBoom !== 0) {
           bFree = Math.sign(this.spiBoom) * Math.abs(bFree);
@@ -274,7 +268,8 @@ export class Boat {
         if (eff > 0) {
           const s = t.spi;
           const aoa = normAngle(bFree - b);
-          const q = 0.5 * RHO_AIR * s.area * aspd * aspd * eff;
+          // wirksame Fläche wächst mit dem Setzgrad
+          const q = 0.5 * RHO_AIR * s.area * this.spiHoist * aspd * aspd * eff;
           const CL = s.cl * Math.sin(2 * aoa);
           const sa = Math.sin(Math.abs(aoa));
           const CD = s.cd0 + s.cdMax * sa * sa;

@@ -17,9 +17,11 @@ keine Build-Tools) und wird als Docker-Container deployt.
   **Katamaran**, der nur widerwillig und unter großem Fahrtverlust wendet,
   und ein **Floß** mit absichtlich katastrophalen Segeleigenschaften
   (driftet quer, geht kaum an den Wind, kein Spinnaker).
-- **Spinnaker** (außer Floß): per Button setzen/bergen, steht nur bei
-  achterlichem Wind. **Autotrim** stellt Schoten optimal und setzt/birgt
-  den Spi automatisch je nach Kurs (mit Hysterese).
+- **Spinnaker** (außer Floß): über den **Spi-Regler** neben den Schoten
+  stufenlos setzen (hochziehen) und bergen (runterziehen); er steht nur bei
+  achterlichem Wind. **Autotrim** stellt Schoten optimal und fährt den Spi
+  automatisch je nach Kurs aus bzw. ein (mit Hysterese); manuelles Trimmen
+  schaltet Autotrim ab.
 - **Regattamodus** (🏁): über die Startlinie, drei nummerierte Bojen in
   Reihenfolge anlaufen, zurück über die Ziellinie. Die Uhr startet beim
   Startlinien-Durchgang und stoppt im Ziel; **Bestzeiten** werden pro Karte
