@@ -194,6 +194,31 @@ html, body {
   display: none;
 }
 
+#btn-fire {
+  position: fixed;
+  right: 12px;
+  bottom: 252px;
+  z-index: 12;
+  background: #b3372e;
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+#btn-fire:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+#btn-fire.hidden {
+  display: none;
+}
+
 #toolbar button {
   background: rgba(8, 25, 42, 0.55);
   color: #fff;

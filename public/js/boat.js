@@ -125,13 +125,25 @@ export const BOAT_TYPES = {
     mass: 120000,
     // Rahsegel lassen sich nur begrenzt brassen (minB/maxB) - hoch am Wind
     // geht fast nichts, raume Kurse sind das Revier des Dreimasters.
-    // Physik je Rah-Etage über alle drei Masten zusammengefasst.
+    // JEDES Segel wird einzeln getrimmt (perSailTrim): 3 Masten x 3 Rahen
+    // plus zwei Vorsegel - manuell herrlich nervig, Autotrim hilft.
+    perSailTrim: true,
+    sailLabels: ['F1', 'F2', 'F3', 'G1', 'G2', 'G3', 'B1', 'B2', 'B3', 'V1', 'V2'],
     sails: [
-      { kind: 'square', ctl: 'main', area: 285, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 210, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 135, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'jib',    ctl: 'jib',  area: 120, cl: 1.3, cd0: 0.06, cdMax: 1.4 },
+      { kind: 'square', ctl: 'main', area: 95, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 70, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 45, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 95, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 70, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 45, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 95, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 70, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 45, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'jib',    ctl: 'jib',  area: 60, cl: 1.3, cd0: 0.06, cdMax: 1.4 },
+      { kind: 'jib',    ctl: 'jib',  area: 60, cl: 1.3, cd0: 0.06, cdMax: 1.4 },
     ],
+    // Breitseite statt Spinnaker
+    cannons: { perSide: 3, range: 170, speed: 55, cooldown: 4 },
     dragFwdLin: 400,
     dragFwdQuad: 780,
     dragLatLin: 4000,
@@ -225,6 +237,8 @@ export class Boat {
     this.rudder = 0;      // -1..1
     this.trimMain = 0.45; // Großschot: 0 = ganz gefiert, 1 = dicht geholt
     this.trimJib = 0.45;  // Fockschot
+    this.initSailArrays();
+    this.cannonCd = 0;    // Nachladezeit der Kanonen
     this.boom = 0;        // Baumwinkel Groß (Bootskoordinaten, + = Backbord)
     this.jibBoom = 0;
     this.aoaMain = 0;
@@ -256,6 +270,16 @@ export class Boat {
       this.spiHoist = 0;
       this.spiTarget = 0;
     }
+    this.initSailArrays();
+  }
+
+  initSailArrays() {
+    // Einzeltrimm (Piratenschiff): ein Trimmwert je Segel
+    this.sailTrims = this.type.perSailTrim
+      ? this.type.sails.map(() => 0.45)
+      : null;
+    this.sailBooms = this.type.sails.map(() => 0);
+    this.sailAoas = this.type.sails.map(() => 0);
   }
 
   // Schotgrenze (max. Baumwinkel) aus Trimm 0..1
@@ -265,6 +289,7 @@ export class Boat {
 
   update(dt, wind) {
     const t = this.type;
+    if (this.cannonCd > 0) this.cannonCd = Math.max(0, this.cannonCd - dt);
 
     // gekentert: treiben, keine Segelkräfte, bis aufgerichtet wird
     if (this.capsized) {
@@ -303,6 +328,13 @@ export class Boat {
           clamp((t.maxSheet - bDes) / (t.maxSheet - t.minSheet), 0, 1);
         const desM = toTrim(Math.max(0, bFreeAbs - 0.32));
         const desJ = toTrim(Math.max(0, bFreeAbs - 0.28));
+        if (this.sailTrims) {
+          // Einzeltrimm: die Crew trimmt jedes Segel für sich
+          for (let i = 0; i < t.sails.length; i++) {
+            const des = t.sails[i].ctl === 'jib' ? desJ : desM;
+            this.sailTrims[i] += (des - this.sailTrims[i]) * Math.min(1, dt * 2.5);
+          }
+        }
         this.trimMain += (desM - this.trimMain) * Math.min(1, dt * 2.5);
         this.trimJib += (desJ - this.trimJib) * Math.min(1, dt * 2.5);
         // Auto-Spi: auf tiefen Kursen setzen, beim Anluven bergen.
@@ -322,10 +354,13 @@ export class Boat {
         let bFree = normAngle(flowA - this.heading - Math.PI);
         if (Math.PI - Math.abs(bFree) < 0.4) {
           // vor dem Wind: Baumseite beibehalten, kein Flackern beim Halsen
-          const prev = isJib ? this.jibBoom : this.boom;
+          const prev = this.sailBooms[i] || (isJib ? this.jibBoom : this.boom);
           if (prev !== 0) bFree = Math.sign(prev) * Math.abs(bFree);
         }
-        let lim = this.sheetLimit(isJib ? this.trimJib : this.trimMain);
+        const trim = this.sailTrims
+          ? this.sailTrims[i]
+          : isJib ? this.trimJib : this.trimMain;
+        let lim = this.sheetLimit(trim);
         if (s.maxB) lim = Math.min(lim, s.maxB); // Rahen lassen sich nur begrenzt brassen
         let b = clamp(bFree, -lim, lim);
         if (s.minB && Math.abs(b) < s.minB) {
@@ -333,6 +368,8 @@ export class Boat {
           b = (b !== 0 ? Math.sign(b) : bFree >= 0 ? 1 : -1) * s.minB;
         }
         const aoa = normAngle(bFree - b); // Anstellwinkel (signiert); 0 = Segel killt
+        this.sailBooms[i] = b;
+        this.sailAoas[i] = aoa;
         if (!isJib && !mainSet) { this.boom = b; this.aoaMain = aoa; mainSet = true; }
         if (isJib && !jibSet) { this.jibBoom = b; this.aoaJib = aoa; jibSet = true; }
 

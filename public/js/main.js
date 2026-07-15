@@ -1,6 +1,6 @@
 // Spielschleife, Eingaben (Touch/Maus/Tastatur) und Kollision mit Land.
 
-import { clamp, angleOf, normAngle, MS_TO_KN } from './util.js';
+import { clamp, angleOf, normAngle, dirVec, rotCW, MS_TO_KN } from './util.js';
 import { Terrain } from './terrain.js';
 import { Boat, Wind, BOAT_TYPES } from './boat.js';
 import { Renderer } from './render.js';
@@ -28,12 +28,16 @@ let steerPointer = null;
 
 function applyTrimBar(which, p) {
   const r = renderer.trimBars[which];
+  if (!r) return;
   const v = clamp((r.y + r.h - p.y) / r.h, 0, 1);
   if (which === 'main') boat.trimMain = v;
   else if (which === 'jib') boat.trimJib = v;
   else if (which === 'spi') {
     boat.spiHoist = v;
     boat.spiTarget = v;
+  } else if (which.startsWith('sail')) {
+    const i = Number(which.slice(4));
+    if (boat.sailTrims && i < boat.sailTrims.length) boat.sailTrims[i] = v;
   }
   disableAutoTrim();
 }
@@ -361,6 +365,88 @@ btnWander.addEventListener('click', () => {
 });
 wanderLabel();
 
+// ---- Kanonen (Piratenschiff): Breitseite auf die Inseln! --------------------
+const shots = [];
+const effects = [];
+const btnFire = document.getElementById('btn-fire');
+
+function fireCannons() {
+  const c = boat.type.cannons;
+  if (!c || boat.cannonCd > 0 || boat.capsized) return;
+  boat.cannonCd = c.cooldown;
+  const f = dirVec(boat.heading);
+  const lat = rotCW(f);
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < c.perSide; i++) {
+      // Rohre entlang des Rumpfs verteilt
+      const along = (i - (c.perSide - 1) / 2) * 0.27 * boat.type.lengthM;
+      const px = boat.x - f.x * along + lat.x * side * boat.type.beamM * 0.45;
+      const py = boat.y - f.y * along + lat.y * side * boat.type.beamM * 0.45;
+      const spread = (Math.random() - 0.5) * 0.12;
+      const cs = Math.cos(spread), sn = Math.sin(spread);
+      const dx = (lat.x * cs - lat.y * sn) * side;
+      const dy = (lat.x * sn + lat.y * cs) * side;
+      const speed = c.speed * (0.92 + Math.random() * 0.16);
+      shots.push({
+        x: px, y: py,
+        vx: dx * speed + boat.vx * 0.3,
+        vy: dy * speed + boat.vy * 0.3,
+        t: 0,
+        ttl: (c.range * (0.7 + Math.random() * 0.5)) / speed,
+      });
+      effects.push({ x: px, y: py, t: 0, ttl: 0.25, kind: 'boom' });
+    }
+  }
+}
+btnFire.addEventListener('click', fireCannons);
+window.addEventListener('keydown', (e) => {
+  if (e.key === ' ' && boat.type.cannons) {
+    e.preventDefault();
+    fireCannons();
+  }
+});
+
+function updateShots(dt) {
+  for (let i = shots.length - 1; i >= 0; i--) {
+    const s = shots[i];
+    s.t += dt;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    const landed = s.t >= s.ttl;
+    // Einschlag am Ende der Flugbahn oder wenn die Kugel Land erreicht
+    if (landed || (s.t > s.ttl * 0.4 && terrain.isLand(s.x, s.y))) {
+      if (terrain.isLand(s.x, s.y)) {
+        terrain.addCrater(s.x, s.y, 12 + Math.random() * 5);
+        renderer.invalidateArea(s.x, s.y, 20);
+        effects.push({ x: s.x, y: s.y, t: 0, ttl: 0.9, kind: 'boom' });
+      } else {
+        effects.push({ x: s.x, y: s.y, t: 0, ttl: 0.7, kind: 'splash' });
+      }
+      shots.splice(i, 1);
+    }
+  }
+  for (let i = effects.length - 1; i >= 0; i--) {
+    effects[i].t += dt;
+    if (effects[i].t >= effects[i].ttl) effects.splice(i, 1);
+  }
+}
+
+let fireVisible = false;
+let fireLabel = '';
+function updateFireButton() {
+  const show = !!boat.type.cannons;
+  const label = !show ? '' : boat.cannonCd > 0
+    ? `💥 Laden … ${Math.ceil(boat.cannonCd)}`
+    : '💥 Breitseite';
+  if (show !== fireVisible || label !== fireLabel) {
+    fireVisible = show;
+    fireLabel = label;
+    btnFire.classList.toggle('hidden', !show);
+    btnFire.disabled = boat.cannonCd > 0;
+    btnFire.textContent = label;
+  }
+}
+
 // ---- Kollision mit Land ----------------------------------------------------
 const HULL_POINTS = [[0, -2.9], [0.9, 0.2], [-0.9, 0.2], [0, 2.5]];
 
@@ -428,8 +514,10 @@ function frame(now) {
   const prevState = race.state;
   race.update(boat, prevPos, dt);
   if (race.state !== prevState) raceLabel();
+  updateShots(dt);
   updateFreeButton(dt);
-  renderer.draw(boat, wind, race, time, dt);
+  updateFireButton();
+  renderer.draw(boat, wind, race, time, dt, { shots, effects });
 
   requestAnimationFrame(frame);
 }

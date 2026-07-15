@@ -70,15 +70,29 @@ export class Renderer {
     return p.x >= b.x - 12 && p.x <= b.x + b.w + 12 && p.y >= b.y - 12 && p.y <= b.y + b.h + 12;
   }
 
-  // liegt der Punkt auf einem der Regler? -> 'main' | 'jib' | 'spi' | null
+  // liegt der Punkt auf einem der Regler? -> Reglername oder null
   hitTrimBar(p) {
-    for (const key of ['main', 'jib', 'spi']) {
-      const b = this.trimBars[key];
-      if (p.x >= b.x - 14 && p.x <= b.x + b.w + 14 && p.y >= b.y - 14 && p.y <= b.y + b.h + 14) {
-        return key;
+    let best = null, bestDx = Infinity;
+    for (const [key, b] of Object.entries(this.trimBars)) {
+      if (!b || b.w <= 0) continue;
+      const pad = Math.min(14, b.gap ?? 14);
+      if (p.x >= b.x - pad && p.x <= b.x + b.w + pad && p.y >= b.y - 14 && p.y <= b.y + b.h + 14) {
+        const dx = Math.abs(p.x - (b.x + b.w / 2));
+        if (dx < bestDx) { bestDx = dx; best = key; }
       }
     }
-    return null;
+    return best;
+  }
+
+  // Gelände-Cache rund um einen Einschlag verwerfen
+  invalidateArea(x, y, r) {
+    for (const key of [...this.chunks.keys()]) {
+      const [tier, rest] = key.split(':');
+      const [cx, cy] = rest.split(',').map(Number);
+      const m = TIERS[tier].m;
+      if (x + r < cx * m || x - r > (cx + 1) * m || y + r < cy * m || y - r > (cy + 1) * m) continue;
+      this.chunks.delete(key);
+    }
   }
 
   // ---- Gelände ----------------------------------------------------------
@@ -458,18 +472,21 @@ export class Renderer {
     ctx.stroke();
   }
 
-  // Rahsegel an drei Masten + Vorsegel am Bugspriet
+  // Rahsegel an drei Masten + Vorsegel am Bugspriet; jedes Segel hat
+  // seinen eigenen Brasswinkel (Einzeltrimm)
   drawShipRig(boat, time) {
     const { ctx } = this;
     const masts = [-1.6, -0.1, 1.35];
-    const b = boat.boom;      // Brasswinkel aller Rahen
-    const yaw = { x: -Math.cos(b), y: -Math.sin(b) };  // Richtung der Rah
-    const luff = Math.abs(boat.aoaMain) < 0.06 && boat.apparentSpd > 1.5;
-    for (const my of masts) {
-      // drei Rahsegel je Mast, nach oben schmaler
-      const widths = [1.45, 1.15, 0.85];
-      const offs = [0, 0.12, 0.24]; // leicht versetzt für Staffelung
+    const widths = [1.45, 1.15, 0.85];
+    const offs = [0, 0.12, 0.24]; // leicht versetzt für Staffelung
+    for (let m = 0; m < masts.length; m++) {
+      const my = masts[m];
       for (let s = 0; s < 3; s++) {
+        const idx = m * 3 + s;
+        const b = boat.sailBooms[idx] ?? boat.boom;
+        const aoa = boat.sailAoas[idx] ?? 0;
+        const yaw = { x: -Math.cos(b), y: -Math.sin(b) }; // Richtung der Rah
+        const luff = Math.abs(aoa) < 0.06 && boat.apparentSpd > 1.5;
         const w = widths[s];
         const ox = Math.sin(b) * offs[s];
         const oy = -Math.cos(b) * offs[s];
@@ -492,13 +509,64 @@ export class Renderer {
       ctx.fill();
     }
     // Vorsegel vom Bugspriet zum Fockmast
-    for (const [tx, len] of [[-3.8, 2.1], [-3.3, 1.7]]) {
+    const jibs = [[-3.8, 2.1, 9], [-3.3, 1.7, 10]];
+    for (const [tx, len, idx] of jibs) {
+      const jb = boat.sailBooms[idx] ?? boat.jibBoom;
+      const ja = boat.sailAoas[idx] ?? boat.aoaJib;
       const tack = { x: 0, y: tx };
       const clew = {
-        x: -Math.sin(boat.jibBoom) * len,
-        y: tx + Math.cos(boat.jibBoom) * len,
+        x: -Math.sin(jb) * len,
+        y: tx + Math.cos(jb) * len,
       };
-      this.drawSail(tack, clew, boat.aoaJib, boat.apparentSpd, time, 0.5, 'rgba(240,234,215,0.9)');
+      this.drawSail(tack, clew, ja, boat.apparentSpd, time, 0.5, 'rgba(240,234,215,0.9)');
+    }
+  }
+
+  // ---- Kanonenkugeln und Einschläge --------------------------------------
+  drawShots(fx, cam, time) {
+    if (!fx) return;
+    const { ctx } = this;
+    const S = SCALE * this.zoom;
+    for (const s of fx.shots) {
+      const sx = (s.x - cam.x) * S + this.W / 2;
+      const sy = (s.y - cam.y) * S + this.H / 2;
+      // ballistische "Höhe" rein optisch: Kugel wird mittig größer
+      const ph = Math.sin(Math.PI * Math.min(1, s.t / s.ttl));
+      const r = (1.6 + ph * 2.2) * this.zoom + 1;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.beginPath();
+      ctx.arc(sx + 3 * this.zoom, sy + (4 + ph * 6) * this.zoom, r * 0.8, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = '#1c1c1c';
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, TAU);
+      ctx.fill();
+    }
+    for (const e of fx.effects) {
+      const sx = (e.x - cam.x) * S + this.W / 2;
+      const sy = (e.y - cam.y) * S + this.H / 2;
+      const f = e.t / e.ttl; // 0..1
+      if (e.kind === 'boom') {
+        ctx.globalAlpha = 1 - f;
+        ctx.fillStyle = '#ff9c3f';
+        ctx.beginPath();
+        ctx.arc(sx, sy, (4 + f * 16) * Math.max(0.4, this.zoom) * 3, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(90,80,70,0.8)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(sx, sy, (8 + f * 30) * Math.max(0.4, this.zoom) * 3, 0, TAU);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.globalAlpha = 0.7 * (1 - f);
+        ctx.strokeStyle = '#eaf6ff';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(sx, sy, (2 + f * 14) * Math.max(0.4, this.zoom) * 3, 0, TAU);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
   }
 
@@ -731,33 +799,44 @@ export class Renderer {
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillText(this.pointOfSail(wind, boat), 26, this.H - 26);
 
-    // Regler rechts: Spi (setzen/bergen), Fock- und Großschot, direkt anfassbar
-    const bh = 130, bwd = 18;
-    const offscreen = { x: -9999, y: -9999, w: 0, h: 0 };
+    // Regler rechts: Spi, Schoten - beim Piratenschiff jedes Segel einzeln
+    const bh = 130;
     const bars = [];
-    if (boat.type.spi) {
-      bars.push({ key: 'spi', label: 'Spi', color: '#ff8fa3', trim: boat.spiHoist });
+    if (boat.sailTrims) {
+      // Einzeltrimm: ein schmaler Regler pro Segel
+      boat.type.sails.forEach((s, i) => {
+        bars.push({
+          key: 'sail' + i,
+          label: boat.type.sailLabels?.[i] ?? String(i + 1),
+          color: s.ctl === 'jib' ? '#8fe3a1' : '#6fd6ff',
+          trim: boat.sailTrims[i],
+        });
+      });
     } else {
-      this.trimBars.spi = offscreen;
+      if (boat.type.spi) {
+        bars.push({ key: 'spi', label: 'Spi', color: '#ff8fa3', trim: boat.spiHoist });
+      }
+      if (boat.type.sails.some((s) => s.ctl === 'jib')) {
+        bars.push({ key: 'jib', label: boat.type.jibLabel || 'Fock', color: '#8fe3a1', trim: boat.trimJib });
+      }
+      bars.push({ key: 'main', label: boat.type.mainLabel || 'Groß', color: '#6fd6ff', trim: boat.trimMain });
     }
-    if (boat.type.sails.some((s) => s.ctl === 'jib')) {
-      bars.push({ key: 'jib', label: boat.type.jibLabel || 'Fock', color: '#8fe3a1', trim: boat.trimJib });
-    } else {
-      this.trimBars.jib = offscreen;
-    }
-    bars.push({ key: 'main', label: boat.type.mainLabel || 'Groß', color: '#6fd6ff', trim: boat.trimMain });
-    const panelW = Math.max(96, 16 + bars.length * 48);
+    const many = bars.length > 6;
+    const bwd = many ? 12 : 18;
+    const step = many ? 26 : 48;
+    const panelW = Math.max(96, 16 + bars.length * step);
     const px0 = this.W - panelW - 12;
     const by = this.H - 200;
     ctx.fillStyle = 'rgba(8,25,42,0.5)';
     this.roundRect(px0, by - 30, panelW, bh + 64, 10);
     ctx.fill();
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = many ? '9px system-ui, sans-serif' : '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    const bars0 = px0 + (panelW - bars.length * 48) / 2; // Regler zentrieren
+    const bars0 = px0 + (panelW - bars.length * step) / 2; // Regler zentrieren
+    const tb = {};
     bars.forEach((b, i) => {
-      const bx = bars0 + 24 + i * 48 - bwd / 2;
-      this.trimBars[b.key] = { x: bx, y: by, w: bwd, h: bh };
+      const bx = bars0 + step / 2 + i * step - bwd / 2;
+      tb[b.key] = { x: bx, y: by, w: bwd, h: bh, gap: step - bwd };
       ctx.strokeStyle = 'rgba(255,255,255,0.5)';
       ctx.lineWidth = 1;
       ctx.strokeRect(bx, by, bwd, bh);
@@ -766,10 +845,12 @@ export class Renderer {
       ctx.fillRect(bx, by + bh - fh, bwd, fh);
       // Griff
       ctx.fillStyle = '#fff';
-      ctx.fillRect(bx - 3, by + bh - fh - 2, bwd + 6, 4);
+      ctx.fillRect(bx - 2, by + bh - fh - 2, bwd + 4, 4);
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
       ctx.fillText(b.label, bx + bwd / 2, by + bh + 16);
     });
+    this.trimBars = tb;
+    ctx.font = '11px system-ui, sans-serif';
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.fillText('dicht · oben', px0 + panelW / 2, by - 16);
     ctx.fillText('offen · unten', px0 + panelW / 2, by + bh + 30);
@@ -1035,7 +1116,7 @@ export class Renderer {
   }
 
   // ---- Hauptzeichnung ---------------------------------------------------
-  draw(boat, wind, race, time, dt) {
+  draw(boat, wind, race, time, dt, fx) {
     const cam = { x: boat.x, y: boat.y };
     this.drawWater(cam, time);
     this.drawTerrain(cam);
@@ -1044,6 +1125,7 @@ export class Renderer {
     this.drawRaceWorld(race, cam, boat, time);
     this.updateParticles(cam, wind, dt);
     this.drawGhost(race, cam);
+    this.drawShots(fx, cam, time);
     this.drawBoat(boat, time);
     if (this.zoom < 0.25) {
       // Übersicht: Markierungsring, damit man das winzige Boot findet

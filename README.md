@@ -24,8 +24,10 @@ keine Build-Tools) und wird als Docker-Container deployt.
   aber blitzschnell nach Lee *und*, wenn beim Foilen der Segeldruck fehlt,
   nach Luv), ein **Piratenschiff** (Dreimaster mit 3×3 Rahsegeln und
   Vorsegeln; Rahen lassen sich nur begrenzt brassen – am Wind chancenlos,
-  auf raumen Kursen majestätisch) und ein **Floß** mit absichtlich
-  katastrophalen Segeleigenschaften.
+  auf raumen Kursen majestätisch; **jedes der elf Segel wird einzeln
+  getrimmt**, und statt Spinnaker gibt es „💥 Breitseite“: Kanonen nach
+  beiden Seiten, deren Treffer **Krater in die Inseln sprengen**) und ein
+  **Floß** mit absichtlich katastrophalen Segeleigenschaften.
 - **Kentern**: Jolle, Katamaran und Moth gehen bei zu viel Krängung
   (Starkwind + zu dichte Schoten) um. „🔄 Aufrichten“ bringt das Boot
   wieder hoch – im Rennen für 10 Strafsekunden.

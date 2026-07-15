@@ -43,6 +43,12 @@ export class Terrain {
     this.bgWeight = 0.15 + 0.5 * this.islandSize;
     this.wavelength = 500 + 700 * this.islandSize;
     this.lakeR = 220 + 1080 * this.lakeSize; // Seeradius in Metern
+    this.craters = []; // Kanonentreffer sprengen Land weg
+  }
+
+  addCrater(x, y, r) {
+    this.craters.push({ x, y, r, r2: r * r });
+    if (this.craters.length > 120) this.craters.shift();
   }
 
   // Wie stark der Regattakurs schrumpfen muss, damit er ins Gewässer passt
@@ -94,6 +100,15 @@ export class Terrain {
       h += Math.min(1.2, Math.max(0, (r - this.lakeR + (n - 0.5) * 260) / 180) * 0.5);
     }
     h -= 0.3 * Math.exp(-r2 / (2 * 130 * 130));
+    // Einschlagkrater senken das Gelände ab
+    for (const c of this.craters) {
+      const dx = x - c.x;
+      if (dx > c.r || dx < -c.r) continue;
+      const dy = y - c.y;
+      if (dy > c.r || dy < -c.r) continue;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < c.r2) h -= 0.55 * (1 - d2 / c.r2);
+    }
     return h;
   }
 
