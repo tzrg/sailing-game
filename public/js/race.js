@@ -5,7 +5,7 @@
 import { TAU, dirVec, rotCW, normAngle, lerp } from './util.js';
 
 const REC_DT = 0.15;   // Abtastintervall der Geisterboot-Aufzeichnung (s)
-const KEY_VER = '3';   // bei Kursänderungen erhöhen -> alte Bestzeiten verfallen
+const KEY_VER = '4';   // bei Kursänderungen erhöhen -> alte Bestzeiten verfallen
 
 function hashAngle(seed) {
   let h = Math.imul(seed ^ 0x5bd1e995, 0x27d4eb2d);
@@ -47,7 +47,11 @@ function segmentsCross(p, q, a, b) {
   return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
 }
 
-export const MARK_RADIUS = 20; // m: so nah muss man an eine Boje heran
+// Bojen müssen umrundet werden: innerhalb der Zone wird der überstrichene
+// Peilwinkel Boje->Boot aufsummiert. Geradeaus vorbeifahren schafft maximal
+// 180 Grad - erst ab SWEEP_NEED gilt die Boje als gerundet.
+export const ROUND_ZONE = 45;      // m: Radius der Rundungszone
+export const SWEEP_NEED = 3.6;     // rad (~206 Grad)
 
 export class Race {
   constructor() {
@@ -77,10 +81,11 @@ export class Race {
     // kompakter Dreieckskurs: Kreuz nach oben, Raumschots-Schenkel, zurück;
     // in kleinen Seen wird der Kurs zusätzlich geschrumpft
     const cs = terrain.courseScale ?? 1;
+    // Bojen brauchen freies Wasser rundherum, damit man sie runden kann
     this.marks = [
-      findWaterSpot(terrain, c.x + d.x * 230 * cs, c.y + d.y * 230 * cs),
-      findWaterSpot(terrain, c.x + (d.x * 125 + perp.x * 160) * cs, c.y + (d.y * 125 + perp.y * 160) * cs),
-      findWaterSpot(terrain, c.x + (d.x * 25 - perp.x * 150) * cs, c.y + (d.y * 25 - perp.y * 150) * cs),
+      findWaterSpot(terrain, c.x + d.x * 230 * cs, c.y + d.y * 230 * cs, 40),
+      findWaterSpot(terrain, c.x + (d.x * 125 + perp.x * 160) * cs, c.y + (d.y * 125 + perp.y * 160) * cs, 40),
+      findWaterSpot(terrain, c.x + (d.x * 25 - perp.x * 150) * cs, c.y + (d.y * 25 - perp.y * 150) * cs, 40),
     ];
   }
 
@@ -100,6 +105,8 @@ export class Race {
     this.state = 'armed';
     this.t = 0;
     this.nextIdx = 0;
+    this.sweep = 0;        // überstrichener Peilwinkel um die nächste Boje
+    this.lastBearing = null;
     this.isNewBest = false;
     this.penaltyFlash = 0;
     this.best = this.loadBest(boat);
@@ -194,8 +201,25 @@ export class Race {
         }
       }
       if (this.nextIdx < this.marks.length) {
+        // Rundung: Peilwinkel um die Boje aufsummieren, solange man in der
+        // Zone bleibt; Verlassen der Zone setzt den Fortschritt zurück
         const m = this.marks[this.nextIdx];
-        if (Math.hypot(boat.x - m.x, boat.y - m.y) < MARK_RADIUS) this.nextIdx++;
+        const dx = boat.x - m.x, dy = boat.y - m.y;
+        if (Math.hypot(dx, dy) < ROUND_ZONE) {
+          const bearing = Math.atan2(dy, dx);
+          if (this.lastBearing != null) {
+            this.sweep += normAngle(bearing - this.lastBearing);
+          }
+          this.lastBearing = bearing;
+          if (Math.abs(this.sweep) >= SWEEP_NEED) {
+            this.nextIdx++;
+            this.sweep = 0;
+            this.lastBearing = null;
+          }
+        } else {
+          this.sweep = 0;
+          this.lastBearing = null;
+        }
       } else if (segmentsCross(prevPos, boat, this.line.a, this.line.b)) {
         this.state = 'finished';
         const prevBest = this.loadBest(boat);

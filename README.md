@@ -37,7 +37,10 @@ keine Build-Tools) und wird als Docker-Container deployt.
   automatisch je nach Kurs aus bzw. ein (mit Hysterese); manuelles Trimmen
   schaltet Autotrim ab.
 - **Regattamodus** (🏁): über die Startlinie, drei nummerierte Bojen in
-  Reihenfolge anlaufen, zurück über die Ziellinie. Die Uhr startet beim
+  Reihenfolge **umrunden** (echte Rundung über den überstrichenen
+  Peilwinkel – geradeaus durch die Zone reicht nicht; ein goldener
+  Fortschrittsbogen zeigt, wie viel Umlauf noch fehlt), zurück über die
+  Ziellinie. Die Uhr startet beim
   Startlinien-Durchgang und stoppt im Ziel; **Bestzeiten** werden pro Karte
   und Bootstyp im Browser gespeichert. Der Kurs wird deterministisch aus dem
   Karten-Seed erzeugt (Bojen liegen immer im Wasser). Nummerierte **Pfeile am

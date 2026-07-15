@@ -2,7 +2,7 @@
 // Boot mit Segeln, Windpartikel, Windrose und HUD.
 
 import { clamp, normAngle, dirVec, angleOf, rotCW, MS_TO_KN, TAU } from './util.js';
-import { MARK_RADIUS, formatTime } from './race.js';
+import { ROUND_ZONE, SWEEP_NEED, formatTime } from './race.js';
 
 const SCALE = 8;        // Pixel pro Meter bei Zoom 1
 // Gelände-Chunks in zwei Auflösungen: fein für Nahsicht, grob für Übersicht
@@ -936,18 +936,39 @@ export class Renderer {
       this.drawBuoy(s, passed ? '#5fae62' : '#ff5c33', String(i + 1));
     });
 
-    // Ziele: Ring ums aktuelle, Randpfeile für alle ausstehenden
+    // Ziele: Rundungszone + Fortschrittsring ums aktuelle, Randpfeile für alle
     const targets = race.overlayTargets();
     for (const tgt of targets) {
       const s = this.toScreen(tgt, cam);
       if (tgt.primary) {
         const isLine = tgt.label === 'Start' || tgt.label === 'Ziel';
-        const rad = (isLine ? 26 : MARK_RADIUS) * SCALE * this.zoom * (1 + 0.05 * Math.sin(time * 3));
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, rad, 0, TAU);
-        ctx.strokeStyle = 'rgba(255,220,120,0.45)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
+        if (isLine) {
+          const rad = 26 * SCALE * this.zoom * (1 + 0.05 * Math.sin(time * 3));
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, rad, 0, TAU);
+          ctx.strokeStyle = 'rgba(255,220,120,0.45)';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        } else {
+          // Rundungszone
+          const zr = ROUND_ZONE * SCALE * this.zoom;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, zr, 0, TAU);
+          ctx.strokeStyle = 'rgba(255,220,120,0.30)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 8]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          // Rundungsfortschritt als goldener Bogen
+          const prog = Math.min(1, Math.abs(race.sweep || 0) / SWEEP_NEED);
+          if (prog > 0.01) {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, zr * 0.55, -Math.PI / 2, -Math.PI / 2 + prog * TAU);
+            ctx.strokeStyle = 'rgba(255,210,90,0.9)';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+          }
+        }
       }
       this.drawRaceArrow(tgt, s, boat);
     }
