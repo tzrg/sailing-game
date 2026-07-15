@@ -106,12 +106,14 @@ export const BOAT_TYPES = {
     turnLoss: 1.0,
     minSheet: 0.12,
     maxSheet: 1.48,
-    heelStiffness: 420,      // extrem kipplig ...
+    heelStiffness: 300,      // extrem kipplig ...
     capsizeHeel: 0.42,       // ... und kentert sehr früh
-    // Foils: ab ~3 kn hebt der Rumpf aus dem Wasser, Widerstand bricht ein.
-    // balanceLat: so viel Querkraft braucht die Balance beim Foilen -
-    // zu wenig (Schot zu lose/killend) -> Kenterung nach Luv!
-    foils: { liftKn: 3, fullKn: 5, dragFactor: 0.18, balanceLat: 400 },
+    // Foils: ab ~2 kn hebt der Rumpf aus dem Wasser, ab ~3,2 kn fliegt er
+    // ganz - der Widerstand bricht auf 15% ein (im Flug ~18 kn möglich).
+    // balanceLat: so viel Querkraft braucht die Balance beim Foilen.
+    // Überlebensfenster ~[50, 550] N: Schot lose/killend -> Kenterung nach
+    // Luv, überpowert -> nach Lee
+    foils: { liftKn: 2, fullKn: 3.2, dragFactor: 0.15, balanceLat: 300 },
     hullStyle: 'mono',
     hullColor: '#e8f4f8',
     deckColor: '#3a4d5c',

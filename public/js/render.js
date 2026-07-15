@@ -796,8 +796,12 @@ export class Renderer {
     ctx.font = 'bold 26px system-ui, sans-serif';
     ctx.fillText(boat.speedKn.toFixed(1) + ' kn', 26, this.H - 46);
     ctx.font = '12px system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillText(this.pointOfSail(wind, boat), 26, this.H - 26);
+    ctx.fillStyle = boat.foilLevel > 0.5 ? '#8fe3ff' : 'rgba(255,255,255,0.8)';
+    ctx.fillText(
+      this.pointOfSail(wind, boat) + (boat.foilLevel > 0.5 ? ' · ✈ foilt!' : ''),
+      26, this.H - 26,
+    );
+
 
     // Regler rechts: Spi, Schoten - beim Piratenschiff jedes Segel einzeln
     const bh = 130;
@@ -881,6 +885,47 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(rcx + boat.rudder * (rb.w / 2 - 14), rcy, 9, 0, TAU);
     ctx.fill();
+
+    // Balance-Anzeiger (kenterbare Boote): Krängung relativ zur Kentergrenze,
+    // tack-unabhängig Richtung Lee (rechts) bzw. Luv (links) aufgetragen
+    if (boat.type.capsizeHeel) {
+      // Platz zwischen Ruder-Schieber/Tacho (links) und Schoten-Panel nutzen
+      const availL = 196, availR = px0 - 12;
+      const gw = Math.min(200, availR - availL - 12), gh = 26;
+      if (gw >= 80) {
+        const gx = (availL + availR) / 2 - gw / 2, gy = this.H - 44;
+        const leeSign = -Math.sign(boat.boom || 1);
+        const bal = clamp((boat.heel * leeSign) / boat.type.capsizeHeel, -1.15, 1.15);
+        ctx.fillStyle = 'rgba(8,25,42,0.55)';
+        this.roundRect(gx - 8, gy - 18, gw + 16, gh + 24, 8);
+        ctx.fill();
+        // Zonen: rot | gelb | grün | gelb | rot
+        const zones = [
+          [-1.15, -0.8, 'rgba(220,70,60,0.85)'],
+          [-0.8, -0.5, 'rgba(230,190,60,0.8)'],
+          [-0.5, 0.5, 'rgba(70,190,110,0.8)'],
+          [0.5, 0.8, 'rgba(230,190,60,0.8)'],
+          [0.8, 1.15, 'rgba(220,70,60,0.85)'],
+        ];
+        const toX = (v) => gx + gw / 2 + (v / 1.15) * (gw / 2);
+        for (const [a, b, col] of zones) {
+          ctx.fillStyle = col;
+          ctx.fillRect(toX(a), gy + 6, toX(b) - toX(a), gh - 12);
+        }
+        // Nadel
+        const nx = toX(bal);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(nx - 2, gy, 4, gh);
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fillText('Luv', gx, gy - 5);
+        ctx.textAlign = 'right';
+        ctx.fillText('Lee', gx + gw, gy - 5);
+        ctx.textAlign = 'center';
+        ctx.fillText('Balance', gx + gw / 2, gy - 5);
+      }
+    }
     ctx.restore();
   }
 
