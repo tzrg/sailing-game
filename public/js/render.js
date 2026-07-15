@@ -2,6 +2,7 @@
 // Boot mit Segeln, Windpartikel, Windrose und HUD.
 
 import { clamp, normAngle, dirVec, angleOf, MS_TO_KN, TAU } from './util.js';
+import { MARK_RADIUS, formatTime } from './race.js';
 
 const SCALE = 8;        // Pixel pro Meter
 const CHUNK_M = 48;     // Kantenlänge eines Gelände-Chunks in Metern
@@ -28,6 +29,7 @@ export class Renderer {
     this.W = 0;
     this.H = 0;
     this.rose = { x: 0, y: 0, r: 56 };
+    this.trimBars = { jib: { x: 0, y: 0, w: 0, h: 0 }, main: { x: 0, y: 0, w: 0, h: 0 } };
     this.resize();
   }
 
@@ -53,6 +55,17 @@ export class Renderer {
   inRose(p) {
     const dx = p.x - this.rose.x, dy = p.y - this.rose.y;
     return dx * dx + dy * dy < (this.rose.r + 14) * (this.rose.r + 14);
+  }
+
+  // liegt der Punkt auf einem der Schot-Regler? -> 'main' | 'jib' | null
+  hitTrimBar(p) {
+    for (const key of ['main', 'jib']) {
+      const b = this.trimBars[key];
+      if (p.x >= b.x - 14 && p.x <= b.x + b.w + 14 && p.y >= b.y - 14 && p.y <= b.y + b.h + 14) {
+        return key;
+      }
+    }
+    return null;
   }
 
   // ---- Gelände ----------------------------------------------------------
@@ -209,15 +222,19 @@ export class Renderer {
   // ---- Boot -------------------------------------------------------------
   drawBoat(boat, time) {
     const { ctx } = this;
+    const type = boat.type;
+    // Zeichnung ist für ein 5,5-m-Boot modelliert; andere Typen skalieren
+    const k = type.lengthM / 5.5;
+    const beamFactor = type.beamM / (2.0 * k);
     ctx.save();
     ctx.translate(this.W / 2, this.H / 2);
-    ctx.scale(SCALE, SCALE);
+    ctx.scale(SCALE * k, SCALE * k);
     ctx.rotate(boat.heading);
     ctx.lineJoin = 'round';
 
     // Krängung: Rigg wandert optisch nach Lee, Rumpf wirkt schmaler
     const heelOff = Math.sin(boat.heel) * 0.7; // Meter nach Steuerbord
-    const bw = 1 - 0.16 * Math.abs(Math.sin(boat.heel));
+    const bw = (1 - 0.16 * Math.abs(Math.sin(boat.heel))) * beamFactor;
 
     // Rumpf
     ctx.save();
@@ -230,10 +247,10 @@ export class Renderer {
     ctx.quadraticCurveTo(-0.9, 1.9, -0.95, 0.6);
     ctx.quadraticCurveTo(-1.05, -1.4, 0, -2.9);
     ctx.closePath();
-    ctx.fillStyle = '#f3eddd';
+    ctx.fillStyle = type.hullColor;
     ctx.fill();
     ctx.lineWidth = 0.1;
-    ctx.strokeStyle = '#7a4a24';
+    ctx.strokeStyle = type.trimColor;
     ctx.stroke();
     // Deckslinie
     ctx.beginPath();
@@ -244,7 +261,7 @@ export class Renderer {
     ctx.quadraticCurveTo(-0.62, 1.7, -0.66, 0.6);
     ctx.quadraticCurveTo(-0.72, -1.2, 0, -2.4);
     ctx.closePath();
-    ctx.fillStyle = '#d8b878';
+    ctx.fillStyle = type.deckColor;
     ctx.fill();
     ctx.restore();
 
@@ -416,26 +433,47 @@ export class Renderer {
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillText(this.pointOfSail(wind, boat), 26, this.H - 26);
 
-    // Schot-Anzeige rechts
-    const bx = this.W - 46, by = this.H - 190, bh = 150, bwd = 16;
+    // Schoten rechts: zwei Regler (Fock und Groß), direkt anfassbar
+    const bh = 130, bwd = 18;
+    const panelW = 110;
+    const px0 = this.W - panelW - 12;
+    const by = this.H - 200;
     ctx.fillStyle = 'rgba(8,25,42,0.5)';
-    this.roundRect(bx - 10, by - 26, 56, bh + 52, 10);
+    this.roundRect(px0, by - 30, panelW, bh + 64, 10);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bx, by, bwd, bh);
-    ctx.fillStyle = '#6fd6ff';
-    const fh = bh * boat.trim;
-    ctx.fillRect(bx, by + bh - fh, bwd, fh);
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    const bars = [
+      { key: 'jib', x: px0 + 20, label: 'Fock', color: '#8fe3a1', trim: boat.trimJib },
+      { key: 'main', x: px0 + 68, label: 'Groß', color: '#6fd6ff', trim: boat.trimMain },
+    ];
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('dicht', bx + bwd / 2, by - 10);
-    ctx.fillText('Schot', bx + bwd / 2, by + bh + 16);
-    ctx.fillText('offen', bx + bwd / 2, by + bh + 30);
+    for (const b of bars) {
+      this.trimBars[b.key] = { x: b.x, y: by, w: bwd, h: bh };
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(b.x, by, bwd, bh);
+      ctx.fillStyle = b.color;
+      const fh = bh * b.trim;
+      ctx.fillRect(b.x, by + bh - fh, bwd, fh);
+      // Griff
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(b.x - 3, by + bh - fh - 2, bwd + 6, 4);
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillText(b.label, b.x + bwd / 2, by + bh + 16);
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillText('dicht', px0 + panelW / 2, by - 16);
+    ctx.fillText('offen', px0 + panelW / 2, by + bh + 30);
 
-    // Ruderanzeige unten Mitte
-    const rw = 150, rx = this.W / 2 - rw / 2, ry = this.H - 30;
+    // Ruderanzeige unten; auf schmalen Screens zwischen Tacho und Schot-Panel
+    let rw = 150, rcx = this.W / 2;
+    const panelLeft = px0 - 10;
+    if (rcx - rw / 2 - 10 < 152 || rcx + rw / 2 + 10 > panelLeft) {
+      const le = 152, re = panelLeft;
+      rw = Math.max(70, Math.min(150, re - le - 20));
+      rcx = (le + re) / 2;
+    }
+    const rx = rcx - rw / 2, ry = this.H - 30;
     ctx.fillStyle = 'rgba(8,25,42,0.5)';
     this.roundRect(rx - 10, ry - 12, rw + 20, 24, 8);
     ctx.fill();
@@ -445,13 +483,155 @@ export class Renderer {
     ctx.lineTo(rx + rw, ry);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(this.W / 2, ry - 8);
-    ctx.lineTo(this.W / 2, ry + 8);
+    ctx.moveTo(rcx, ry - 8);
+    ctx.lineTo(rcx, ry + 8);
     ctx.stroke();
     ctx.fillStyle = '#ffd166';
     ctx.beginPath();
-    ctx.arc(this.W / 2 + boat.rudder * rw / 2, ry, 6, 0, TAU);
+    ctx.arc(rcx + boat.rudder * rw / 2, ry, 6, 0, TAU);
     ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- Regatta ----------------------------------------------------------
+  toScreen(p, cam) {
+    return {
+      x: (p.x - cam.x) * SCALE + this.W / 2,
+      y: (p.y - cam.y) * SCALE + this.H / 2,
+    };
+  }
+
+  drawBuoy(s, color, label) {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 7, 0, TAU);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+    if (label) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, s.x, s.y);
+    }
+  }
+
+  drawRaceWorld(race, cam, boat, time) {
+    if (race.state === 'idle') return;
+    const { ctx } = this;
+    ctx.save();
+    // Start-/Ziellinie
+    const a = this.toScreen(race.line.a, cam);
+    const b = this.toScreen(race.line.b, cam);
+    ctx.setLineDash([9, 7]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    this.drawBuoy(a, '#ff8c42', null);
+    this.drawBuoy(b, '#ff8c42', null);
+
+    // Bahnmarken
+    race.marks.forEach((m, i) => {
+      const s = this.toScreen(m, cam);
+      const passed = race.state === 'running' && i < race.nextIdx;
+      this.drawBuoy(s, passed ? '#5fae62' : '#ff5c33', String(i + 1));
+    });
+
+    // aktuelles Ziel hervorheben (pulsierender Ring)
+    const tgt = race.target();
+    if (tgt) {
+      const s = this.toScreen(tgt, cam);
+      const isLine = tgt.label === 'Start' || tgt.label === 'Ziel';
+      const rad = (isLine ? 26 : MARK_RADIUS) * SCALE * (1 + 0.05 * Math.sin(time * 3));
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, rad, 0, TAU);
+      ctx.strokeStyle = 'rgba(255,220,120,0.45)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      this.drawRaceArrow(tgt, s, boat);
+    }
+    ctx.restore();
+  }
+
+  // Pfeil am Bildschirmrand, wenn das Ziel außerhalb liegt
+  drawRaceArrow(tgt, s, boat) {
+    const { ctx } = this;
+    const margin = 56;
+    const distM = Math.round(Math.hypot(tgt.x - boat.x, tgt.y - boat.y));
+    const inside = s.x > margin && s.x < this.W - margin && s.y > margin && s.y < this.H - margin;
+    if (inside) {
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(`${tgt.label}`, s.x, s.y - 22);
+      return;
+    }
+    const cx = this.W / 2, cy = this.H / 2;
+    let dx = s.x - cx, dy = s.y - cy;
+    const kx = dx !== 0 ? (this.W / 2 - margin) / Math.abs(dx) : Infinity;
+    const ky = dy !== 0 ? (this.H / 2 - margin) / Math.abs(dy) : Infinity;
+    const kk = Math.min(kx, ky);
+    const ax = cx + dx * kk, ay = cy + dy * kk;
+    const ang = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(ang);
+    ctx.fillStyle = 'rgba(255,220,120,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-6, -9);
+    ctx.lineTo(-6, 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    const tx = clamp(ax, 70, this.W - 70);
+    const ty = clamp(ay + (ay < cy ? 26 : -14), 20, this.H - 8);
+    ctx.fillText(`${tgt.label} · ${distM} m`, tx, ty);
+  }
+
+  drawRacePanel(race) {
+    if (race.state === 'idle') return;
+    const { ctx } = this;
+    const w = 240, h = 52;
+    // unter Toolbar bzw. auf sehr schmalen Screens unter die Windrose rutschen
+    const x = this.W / 2 - w / 2;
+    const y = this.W < 520 ? this.rose.y + this.rose.r + 26 : this.W < 1100 ? 62 : 10;
+    ctx.save();
+    ctx.fillStyle = 'rgba(8,25,42,0.6)';
+    this.roundRect(x, y, w, h, 10);
+    ctx.fill();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 20px system-ui, sans-serif';
+    let line1, line2;
+    if (race.state === 'armed') {
+      line1 = '0:00.0';
+      line2 = 'Über die Startlinie!';
+    } else if (race.state === 'running') {
+      line1 = formatTime(race.t);
+      line2 = race.nextIdx < race.marks.length
+        ? `Nächste: Boje ${race.nextIdx + 1} von ${race.marks.length}`
+        : 'Zurück zur Ziellinie!';
+    } else {
+      line1 = `🏁 ${formatTime(race.t)}`;
+      line2 = race.isNewBest ? 'Neue Bestzeit!' : `Bestzeit: ${formatTime(race.best)}`;
+    }
+    ctx.fillText(line1, this.W / 2, y + 24);
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillStyle = race.state === 'finished' && race.isNewBest ? '#ffd166' : 'rgba(255,255,255,0.85)';
+    ctx.fillText(line2, this.W / 2, y + 42);
     ctx.restore();
   }
 
@@ -467,16 +647,18 @@ export class Renderer {
   }
 
   // ---- Hauptzeichnung ---------------------------------------------------
-  draw(boat, wind, time, dt) {
+  draw(boat, wind, race, time, dt) {
     const cam = { x: boat.x, y: boat.y };
     this.drawWater(cam, time);
     this.drawTerrain(cam);
     this.updateWake(boat, dt);
     this.drawWake(cam);
+    this.drawRaceWorld(race, cam, boat, time);
     this.updateParticles(cam, wind, dt);
     this.drawBoat(boat, time);
     this.drawRose(wind, boat);
     this.drawHUD(boat, wind);
+    this.drawRacePanel(race);
   }
 }
 

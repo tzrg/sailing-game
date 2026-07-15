@@ -4,6 +4,7 @@ import { clamp, angleOf, normAngle, MS_TO_KN } from './util.js';
 import { Terrain } from './terrain.js';
 import { Boat, Wind, BOAT_TYPES } from './boat.js';
 import { Renderer } from './render.js';
+import { Race } from './race.js';
 
 const canvas = document.getElementById('game');
 let terrain = new Terrain(Math.floor(Math.random() * 1e9));
@@ -11,15 +12,24 @@ const wind = new Wind();
 const boat = new Boat(BOAT_TYPES.jolle);
 boat.reset(normAngle(wind.dirFrom + Math.PI / 2)); // Start auf Halbwindkurs
 const renderer = new Renderer(canvas, terrain);
+const race = new Race();
 
 window.addEventListener('resize', () => renderer.resize());
 
 // ---- Eingabe -------------------------------------------------------------
 // Linke Bildschirmhälfte: horizontal ziehen = Ruder.
-// Rechte Bildschirmhälfte: vertikal ziehen = Schot dichtholen/fieren.
+// Rechte Bildschirmhälfte: vertikal ziehen = beide Schoten zusammen.
+// Schot-Regler (rechts unten): einzeln Groß- bzw. Fockschot.
 // Windrose: ziehen = Windrichtung und -stärke setzen.
 const pointers = new Map();
 let steerPointer = null;
+
+function applyTrimBar(which, p) {
+  const r = renderer.trimBars[which];
+  const v = clamp((r.y + r.h - p.y) / r.h, 0, 1);
+  if (which === 'main') boat.trimMain = v;
+  else boat.trimJib = v;
+}
 
 function applyWindDrag(p) {
   const dx = p.x - renderer.rose.x;
@@ -35,14 +45,23 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   hideHelp();
   const p = { x: e.clientX, y: e.clientY };
+  const bar = renderer.hitTrimBar(p);
   if (renderer.inRose(p)) {
     pointers.set(e.pointerId, { role: 'wind' });
     applyWindDrag(p);
+  } else if (bar) {
+    pointers.set(e.pointerId, { role: 'bar', bar });
+    applyTrimBar(bar, p);
   } else if (p.x < renderer.W / 2) {
     pointers.set(e.pointerId, { role: 'steer', startX: p.x });
     steerPointer = e.pointerId;
   } else {
-    pointers.set(e.pointerId, { role: 'trim', startY: p.y, startTrim: boat.trim });
+    pointers.set(e.pointerId, {
+      role: 'trim',
+      startY: p.y,
+      startMain: boat.trimMain,
+      startJib: boat.trimJib,
+    });
   }
 });
 
@@ -52,10 +71,14 @@ canvas.addEventListener('pointermove', (e) => {
   const p = { x: e.clientX, y: e.clientY };
   if (st.role === 'wind') {
     applyWindDrag(p);
+  } else if (st.role === 'bar') {
+    applyTrimBar(st.bar, p);
   } else if (st.role === 'steer') {
     boat.rudder = clamp((p.x - st.startX) / 90, -1, 1);
   } else if (st.role === 'trim') {
-    boat.trim = clamp(st.startTrim + (st.startY - p.y) / 220, 0, 1);
+    const d = (st.startY - p.y) / 220;
+    boat.trimMain = clamp(st.startMain + d, 0, 1);
+    boat.trimJib = clamp(st.startJib + d, 0, 1);
   }
 });
 
@@ -93,8 +116,14 @@ function applyKeys(dt) {
       if (Math.abs(boat.rudder) < 0.02) boat.rudder = 0;
     }
   }
-  if (keys.has('ArrowUp')) boat.trim = clamp(boat.trim + dt * 0.6, 0, 1);
-  if (keys.has('ArrowDown')) boat.trim = clamp(boat.trim - dt * 0.6, 0, 1);
+  if (keys.has('ArrowUp')) {
+    boat.trimMain = clamp(boat.trimMain + dt * 0.6, 0, 1);
+    boat.trimJib = clamp(boat.trimJib + dt * 0.6, 0, 1);
+  }
+  if (keys.has('ArrowDown')) {
+    boat.trimMain = clamp(boat.trimMain - dt * 0.6, 0, 1);
+    boat.trimJib = clamp(boat.trimJib - dt * 0.6, 0, 1);
+  }
 }
 
 // ---- UI-Buttons ------------------------------------------------------------
@@ -110,7 +139,40 @@ document.getElementById('btn-map').addEventListener('click', () => {
   terrain = new Terrain(Math.floor(Math.random() * 1e9));
   renderer.setTerrain(terrain);
   boat.reset(normAngle(wind.dirFrom + Math.PI / 2));
+  race.cancel();
 });
+
+// Bootstyp durchschalten
+const btnBoat = document.getElementById('btn-boat');
+const typeKeys = Object.keys(BOAT_TYPES);
+let typeIdx = 0;
+function boatLabel() {
+  btnBoat.textContent = '⛵ ' + boat.type.name;
+}
+btnBoat.addEventListener('click', () => {
+  typeIdx = (typeIdx + 1) % typeKeys.length;
+  boat.setType(BOAT_TYPES[typeKeys[typeIdx]]);
+  boatLabel();
+});
+boatLabel();
+
+// Regatta starten/abbrechen/neu
+const btnRace = document.getElementById('btn-race');
+function raceLabel() {
+  btnRace.textContent =
+    race.state === 'idle' ? '🏁 Regatta' :
+    race.state === 'finished' ? '🏁 Nochmal' : '🏁 Abbrechen';
+}
+btnRace.addEventListener('click', () => {
+  hideHelp();
+  if (race.state === 'idle' || race.state === 'finished') {
+    race.arm(terrain, boat);
+  } else {
+    race.cancel();
+  }
+  raceLabel();
+});
+raceLabel();
 const btnWander = document.getElementById('btn-wander');
 function wanderLabel() {
   btnWander.textContent = wind.wander ? '🌬 Wind wandert: an' : '🌬 Wind wandert: aus';
@@ -172,7 +234,7 @@ let last = performance.now();
 let time = 0;
 
 // Debug-/Test-Zugriff in der Konsole
-window.__game = { boat, wind, get terrain() { return terrain; }, renderer };
+window.__game = { boat, wind, race, get terrain() { return terrain; }, renderer };
 
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -181,9 +243,13 @@ function frame(now) {
 
   applyKeys(dt);
   wind.update(dt);
+  const prevPos = { x: boat.x, y: boat.y };
   boat.update(dt, wind);
   resolveCollision();
-  renderer.draw(boat, wind, time, dt);
+  const prevState = race.state;
+  race.update(boat, prevPos, dt);
+  if (race.state !== prevState) raceLabel();
+  renderer.draw(boat, wind, race, time, dt);
 
   requestAnimationFrame(frame);
 }

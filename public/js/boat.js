@@ -9,9 +9,10 @@ import { clamp, lerp, normAngle, dirVec, angleOf, rotCW, MS_TO_KN } from './util
 
 const RHO_AIR = 1.225;
 
-// Ein Bootstyp; weitere Typen können hier später einfach ergänzt werden.
+// Bootstypen; weitere Typen können hier einfach ergänzt werden.
 export const BOAT_TYPES = {
   jolle: {
+    key: 'jolle',
     name: 'Jolle',
     lengthM: 5.5,
     beamM: 2.0,
@@ -27,6 +28,32 @@ export const BOAT_TYPES = {
     maxTurnRate: 1.15,       // rad/s bei Fahrt
     minSheet: 0.14,          // dichteste Schotstellung (~8°)
     maxSheet: 1.48,          // ganz gefiert (~85°)
+    heelStiffness: 1100,     // N pro voller Krängung (kleiner = kippliger)
+    hullColor: '#f3eddd',
+    deckColor: '#d8b878',
+    trimColor: '#7a4a24',
+  },
+  kielboot: {
+    key: 'kielboot',
+    name: 'Kielboot',
+    lengthM: 8.0,
+    beamM: 2.5,
+    mass: 1500,
+    sails: [
+      { kind: 'main', area: 15, cl: 1.5, cd0: 0.05, cdMax: 1.5 },
+      { kind: 'jib',  area: 9,  cl: 1.7, cd0: 0.045, cdMax: 1.3 },
+    ],
+    dragFwdLin: 18,
+    dragFwdQuad: 40,
+    dragLatLin: 300,         // richtiger Kiel: sehr wenig Abdrift
+    dragLatQuad: 1600,
+    maxTurnRate: 0.7,        // träger als die Jolle
+    minSheet: 0.10,          // läuft etwas höher am Wind
+    maxSheet: 1.48,
+    heelStiffness: 3800,     // Ballastkiel: deutlich steifer
+    hullColor: '#f4f6f8',
+    deckColor: '#9fb4c8',
+    trimColor: '#26425e',
   },
 };
 
@@ -78,9 +105,10 @@ export class Boat {
     this.vx = 0;
     this.vy = 0;
     this.angVel = 0;
-    this.rudder = 0;   // -1..1
-    this.trim = 0.45;  // 0 = ganz gefiert, 1 = dicht geholt
-    this.boom = 0;     // Baumwinkel Groß (Bootskoordinaten, + = Backbord)
+    this.rudder = 0;      // -1..1
+    this.trimMain = 0.45; // Großschot: 0 = ganz gefiert, 1 = dicht geholt
+    this.trimJib = 0.45;  // Fockschot
+    this.boom = 0;        // Baumwinkel Groß (Bootskoordinaten, + = Backbord)
     this.jibBoom = 0;
     this.aoaMain = 0;
     this.aoaJib = 0;
@@ -93,9 +121,14 @@ export class Boat {
     return Math.hypot(this.vx, this.vy) * MS_TO_KN;
   }
 
-  // aktuelle Schotgrenze (max. Baumwinkel) aus Trimm 0..1
-  sheetLimit() {
-    return lerp(this.type.maxSheet, this.type.minSheet, this.trim);
+  // Bootstyp wechseln, Fahrtzustand bleibt erhalten
+  setType(type) {
+    this.type = type;
+  }
+
+  // Schotgrenze (max. Baumwinkel) aus Trimm 0..1
+  sheetLimit(trim) {
+    return lerp(this.type.maxSheet, this.type.minSheet, trim);
   }
 
   update(dt, wind) {
@@ -112,7 +145,6 @@ export class Boat {
       const flowA = angleOf(av); // wohin die Luft strömt
       const fl = { x: av.x / aspd, y: av.y / aspd };
       const liftDir = rotCW(fl);
-      const limit = this.sheetLimit();
 
       for (let i = 0; i < t.sails.length; i++) {
         const s = t.sails[i];
@@ -123,7 +155,7 @@ export class Boat {
           const prev = i === 0 ? this.boom : this.jibBoom;
           if (prev !== 0) bFree = Math.sign(prev) * Math.abs(bFree);
         }
-        const lim = i === 0 ? limit : Math.min(limit + 0.06, t.maxSheet);
+        const lim = this.sheetLimit(i === 0 ? this.trimMain : this.trimJib);
         const b = clamp(bFree, -lim, lim);
         const aoa = normAngle(bFree - b); // Anstellwinkel (signiert); 0 = Segel killt
         if (i === 0) { this.boom = b; this.aoaMain = aoa; }
@@ -166,7 +198,7 @@ export class Boat {
 
     // Krängung (rein visuell) aus der Querkomponente der Segelkraft
     const latAero = FxA * lat.x + FyA * lat.y;
-    const heelTarget = clamp(latAero / 1100, -1, 1) * 0.5;
+    const heelTarget = clamp(latAero / t.heelStiffness, -1, 1) * 0.5;
     this.heel += (heelTarget - this.heel) * Math.min(1, dt * 2.5);
   }
 }

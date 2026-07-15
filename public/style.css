@@ -25,7 +25,9 @@ html, body {
   left: 0;
   padding: 10px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  max-width: 70vw;
   z-index: 10;
 }
 

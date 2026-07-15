@@ -12,16 +12,24 @@ keine Build-Tools) und wird als Docker-Container deployt.
 - Das Boot ist in der Bildschirmmitte, die Welt bewegt sich darunter.
 - Der See mit Ufer und Inseln wird **prozedural generiert** („Neue Karte“
   erzeugt eine neue Welt). Mit Land kann man kollidieren.
+- **Zwei Bootstypen** (umschaltbar): wendige, kipplige **Jolle** und ein
+  größeres, träges, aber schnelleres **Kielboot** mit wenig Abdrift.
+- **Regattamodus** (🏁): über die Startlinie, zwei Bojen in Reihenfolge
+  anlaufen, zurück über die Ziellinie. Die Uhr startet beim Startlinien-
+  Durchgang und stoppt im Ziel; **Bestzeiten** werden pro Karte und Bootstyp
+  im Browser gespeichert. Der Kurs wird deterministisch aus dem Karten-Seed
+  erzeugt (Bojen liegen immer im Wasser).
 
 ## Steuerung (Touch, zwei Finger gleichzeitig möglich)
 
 | Bereich | Geste | Wirkung |
 |---|---|---|
 | Linke Bildschirmhälfte | horizontal ziehen | Ruder (loslassen = mittschiffs) |
-| Rechte Bildschirmhälfte | vertikal ziehen | Schot: hoch = dichtholen, runter = fieren |
+| Rechte Bildschirmhälfte | vertikal ziehen | beide Schoten: hoch = dichtholen, runter = fieren |
+| Schot-Regler (unten rechts) | ziehen | Groß- und Fockschot einzeln trimmen |
 | Windrose (oben rechts) | ziehen | Windrichtung + Windstärke |
 
-Desktop: Pfeiltasten `←`/`→` Ruder, `↑`/`↓` Schot; Maus funktioniert wie ein Finger.
+Desktop: Pfeiltasten `←`/`→` Ruder, `↑`/`↓` beide Schoten; Maus funktioniert wie ein Finger.
 
 ## Physikmodell
 
@@ -80,6 +88,7 @@ public/            statisches Spiel
   js/
     main.js        Spielschleife, Eingabe, Kollision
     boat.js        Bootsphysik + Windmodell + Bootstypen
+    race.js        Regattakurs, Zeitnahme, Bestzeiten
     terrain.js     prozedurales Gelände (Value-Noise)
     render.js      Canvas-Rendering, Windrose, HUD
     util.js        Vektor-/Winkel-Helfer
@@ -90,7 +99,7 @@ railway.json
 
 ## Ideen für später
 
-- Weitere Bootstypen (`BOAT_TYPES` in `boat.js` ist dafür vorbereitet:
-  Masse, Segelfläche, Widerstände, Drehfreudigkeit pro Typ).
-- Getrennte Schoten für Groß und Fock, Wenden/Halsen-Feedback, Sound.
-- Bojen-Regatta / Kurs mit Zielen, Mehrspieler, Login & Bestenlisten.
+- Weitere Bootstypen (`BOAT_TYPES` in `boat.js`: Masse, Segelflächen,
+  Widerstände, Drehfreudigkeit, Steifigkeit pro Typ).
+- Echte Bojen-Rundung (Seite vorgeben), Strafen, Geisterboot der Bestzeit.
+- Wenden/Halsen-Feedback, Sound, Mehrspieler, Login & Bestenlisten.
