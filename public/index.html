@@ -23,7 +23,9 @@
       </div>
 
       <button class="menu-btn" id="btn-race">🏁 Regatta</button>
-      <button class="menu-btn" id="btn-boat">⛵ Jolle</button>
+      <label class="menu-select">⛵ Boot
+        <select id="sel-boat"></select>
+      </label>
       <button class="menu-btn" id="btn-autotrim">🪄 Autotrim: aus</button>
       <button class="menu-btn" id="btn-wander">🌬 Wind wandert: an</button>
       <button class="menu-btn" id="btn-vectors">📐 Vektoren: aus</button>
@@ -69,16 +71,19 @@
         <li><b>📐 Vektoren</b> – zeigt Wind, scheinbaren Wind, Fahrt, Vortrieb und Drift am Boot</li>
         <li><b>Windrose</b> (oben rechts) – ziehen: Windrichtung und -stärke einstellen</li>
         <li><b>☰ Menü</b> (oben links) – Boot, Regatta, Autotrim und die Karte: <b>See oder offenes Meer</b>, Seegröße, Inseldichte und Inselgröße</li>
-        <li><b>Aufgelaufen?</b> – der Knopf „⚓ Freikommen“ setzt dich ein paar Bootslängen vor der Küste wieder aus (im Rennen: +10 s Strafe)</li>
+        <li><b>Aufgelaufen oder gekentert?</b> – „⚓ Freikommen“ bzw. „🔄 Aufrichten“ bringt dich zurück ins Spiel (im Rennen: +10 s Strafe). Jolle, Katamaran und besonders die Moth <b>kentern</b>, wenn zu viel Krängung aufkommt – Schoten fieren hilft!</li>
         <li><b>🏁 Regatta</b> – über die Startlinie, Bojen 1–3 in Reihenfolge, zurück ins Ziel. Die Uhr läuft! Pfeile am Rand zeigen zur nächsten Boje; deine Bestzeit segelt als <b>Geisterboot</b> mit.</li>
         <li><b>＋/－</b> (links) – Zoom, um Kurs und Küste zu überblicken</li>
         <li>Desktop: Pfeiltasten ← → Ruder, ↑ ↓ Schoten, +/− Zoom</li>
       </ul>
       <p>Direkt gegen den Wind geht es nicht – kreuze mit ca. 45° Wendewinkel.
         Segel richtig trimmen: dichter am Wind, offener auf raumen Kursen.
-        Vier Boote: wendige <b>Jolle</b>, träges, schnelles <b>Kielboot</b>,
-        pfeilschneller <b>Katamaran</b> (wendet widerwillig) und ein <b>Floß</b>
-        mit katastrophalen Segeleigenschaften. Achtung vor Untiefen und Inseln!</p>
+        Sechs Boote im Menü: wendige <b>Jolle</b>, träges, schnelles <b>Kielboot</b>,
+        pfeilschneller <b>Katamaran</b> (wendet widerwillig), die foilende
+        <b>Moth</b> (fliegt ab 3 kn übers Wasser, kentert aber blitzschnell nach
+        Lee <i>und</i> Luv), ein <b>Piratenschiff</b> mit neun Rahsegeln (raume
+        Kurse top, am Wind chancenlos) und ein <b>Floß</b> mit katastrophalen
+        Segeleigenschaften. Achtung vor Untiefen und Inseln!</p>
       <button id="btn-start">Los geht's</button>
     </div>
   </div>

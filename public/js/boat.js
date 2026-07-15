@@ -18,8 +18,8 @@ export const BOAT_TYPES = {
     beamM: 2.0,
     mass: 260,               // kg inkl. Crew
     sails: [
-      { kind: 'main', area: 9.5, cl: 1.5, cd0: 0.06, cdMax: 1.5 },
-      { kind: 'jib',  area: 4.2, cl: 1.7, cd0: 0.05, cdMax: 1.3 },
+      { kind: 'main', ctl: 'main', area: 9.5, cl: 1.5, cd0: 0.06, cdMax: 1.5 },
+      { kind: 'jib',  ctl: 'jib',  area: 4.2, cl: 1.7, cd0: 0.05, cdMax: 1.3 },
     ],
     dragFwdLin: 10,          // Rumpfwiderstand längs (linear + quadratisch)
     dragFwdQuad: 26,
@@ -29,6 +29,7 @@ export const BOAT_TYPES = {
     minSheet: 0.14,          // dichteste Schotstellung (~8°)
     maxSheet: 1.48,          // ganz gefiert (~85°)
     heelStiffness: 1100,     // N pro voller Krängung (kleiner = kippliger)
+    capsizeHeel: 0.62,       // ab dieser Krängung (rad) kentert die Jolle
     turnLoss: 0.35,          // Fahrtverlust beim Drehen
     spi: { area: 13, cl: 1.1, cd0: 0.12, cdMax: 1.9 },
     hullStyle: 'mono',
@@ -43,8 +44,8 @@ export const BOAT_TYPES = {
     beamM: 2.5,
     mass: 1500,
     sails: [
-      { kind: 'main', area: 15, cl: 1.5, cd0: 0.05, cdMax: 1.5 },
-      { kind: 'jib',  area: 9,  cl: 1.7, cd0: 0.045, cdMax: 1.3 },
+      { kind: 'main', ctl: 'main', area: 15, cl: 1.5, cd0: 0.05, cdMax: 1.5 },
+      { kind: 'jib',  ctl: 'jib',  area: 9,  cl: 1.7, cd0: 0.045, cdMax: 1.3 },
     ],
     dragFwdLin: 18,
     dragFwdQuad: 40,
@@ -68,8 +69,8 @@ export const BOAT_TYPES = {
     beamM: 2.5,
     mass: 190,               // federleicht
     sails: [
-      { kind: 'main', area: 15, cl: 1.6, cd0: 0.05, cdMax: 1.5 },
-      { kind: 'jib',  area: 4,  cl: 1.7, cd0: 0.05, cdMax: 1.3 },
+      { kind: 'main', ctl: 'main', area: 15, cl: 1.6, cd0: 0.05, cdMax: 1.5 },
+      { kind: 'jib',  ctl: 'jib',  area: 4,  cl: 1.7, cd0: 0.05, cdMax: 1.3 },
     ],
     dragFwdLin: 6,           // kaum benetzte Fläche -> rennt
     dragFwdQuad: 12,
@@ -79,12 +80,73 @@ export const BOAT_TYPES = {
     turnLoss: 2.2,           // ... und verliert dabei massiv Fahrt
     minSheet: 0.12,
     maxSheet: 1.48,
-    heelStiffness: 2600,     // breite Basis, steif
+    heelStiffness: 1600,     // breite Basis, aber bei Überpower kippt er
+    capsizeHeel: 0.55,
     spi: { area: 17, cl: 1.1, cd0: 0.12, cdMax: 1.9 },
     hullStyle: 'cat',
     hullColor: '#fff8e8',
     deckColor: '#2f3d4a',
     trimColor: '#e2574c',
+  },
+  moth: {
+    key: 'moth',
+    name: 'Moth (Foiler)',
+    lengthM: 3.4,
+    beamM: 1.6,
+    mass: 75,                // Boot + Segler, federleicht
+    sails: [
+      // nur ein Großsegel, kein Vorsegel
+      { kind: 'main', ctl: 'main', area: 8, cl: 1.8, cd0: 0.04, cdMax: 1.4 },
+    ],
+    dragFwdLin: 14,
+    dragFwdQuad: 38,
+    dragLatLin: 70,
+    dragLatQuad: 380,
+    maxTurnRate: 1.5,
+    turnLoss: 1.0,
+    minSheet: 0.12,
+    maxSheet: 1.48,
+    heelStiffness: 420,      // extrem kipplig ...
+    capsizeHeel: 0.42,       // ... und kentert sehr früh
+    // Foils: ab ~3 kn hebt der Rumpf aus dem Wasser, Widerstand bricht ein.
+    // balanceLat: so viel Querkraft braucht die Balance beim Foilen -
+    // zu wenig (Schot zu lose/killend) -> Kenterung nach Luv!
+    foils: { liftKn: 3, fullKn: 5, dragFactor: 0.18, balanceLat: 400 },
+    hullStyle: 'mono',
+    hullColor: '#e8f4f8',
+    deckColor: '#3a4d5c',
+    trimColor: '#d4574e',
+  },
+  pirat: {
+    key: 'pirat',
+    name: 'Piratenschiff',
+    lengthM: 45,
+    beamM: 10,
+    mass: 120000,
+    // Rahsegel lassen sich nur begrenzt brassen (minB/maxB) - hoch am Wind
+    // geht fast nichts, raume Kurse sind das Revier des Dreimasters.
+    // Physik je Rah-Etage über alle drei Masten zusammengefasst.
+    sails: [
+      { kind: 'square', ctl: 'main', area: 285, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 210, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 135, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'jib',    ctl: 'jib',  area: 120, cl: 1.3, cd0: 0.06, cdMax: 1.4 },
+    ],
+    dragFwdLin: 400,
+    dragFwdQuad: 780,
+    dragLatLin: 4000,
+    dragLatQuad: 30000,
+    maxTurnRate: 0.28,       // dreht wie ein Möbelwagen
+    turnLoss: 0.4,
+    minSheet: 0.14,
+    maxSheet: 1.48,
+    heelStiffness: 50000,    // Ballast ohne Ende
+    mainLabel: 'Rahen',
+    jibLabel: 'Vor',
+    hullStyle: 'ship',
+    hullColor: '#6b4226',
+    deckColor: '#9c6b3f',
+    trimColor: '#3e2715',
   },
   floss: {
     key: 'floss',
@@ -94,7 +156,7 @@ export const BOAT_TYPES = {
     mass: 420,               // nasse Baumstämme
     sails: [
       // ein schlaffer Lappen am Ast: kaum Auftrieb, geht praktisch nicht an den Wind
-      { kind: 'main', area: 8, cl: 0.5, cd0: 0.18, cdMax: 1.6 },
+      { kind: 'main', ctl: 'main', area: 8, cl: 0.5, cd0: 0.18, cdMax: 1.6 },
     ],
     dragFwdLin: 60,          // schiebt eine Bugwelle wie ein Scheunentor
     dragFwdQuad: 200,
@@ -167,7 +229,11 @@ export class Boat {
     this.jibBoom = 0;
     this.aoaMain = 0;
     this.aoaJib = 0;
-    this.heel = 0;     // visuelle Krängung (rad)
+    this.heel = 0;     // Krängung (rad)
+    this.capsized = false;
+    this.capsizeT = 0;
+    this.capsizeSide = 1;
+    this.foilLevel = 0; // 0 = im Wasser, 1 = voll auf den Foils
     this.apparentSpd = 0;
     this.apparentFrom = 0;
     this.spiHoist = 0;     // Spinnaker 0 = geborgen .. 1 = voll gesetzt
@@ -199,6 +265,23 @@ export class Boat {
 
   update(dt, wind) {
     const t = this.type;
+
+    // gekentert: treiben, keine Segelkräfte, bis aufgerichtet wird
+    if (this.capsized) {
+      const damp = Math.max(0, 1 - dt * 1.5);
+      this.vx *= damp;
+      this.vy *= damp;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.angVel = 0;
+      const target = this.capsizeSide * 1.35;
+      this.heel += (target - this.heel) * Math.min(1, dt * 3);
+      this.spiHoist = 0;
+      this.spiTarget = 0;
+      this.spiEff = 0;
+      return;
+    }
+
     const wv = wind.vec();
     // scheinbarer Wind = wahrer Wind minus Fahrtwind
     const av = { x: wv.x - this.vx, y: wv.y - this.vy };
@@ -231,20 +314,27 @@ export class Boat {
         }
       }
 
+      let mainSet = false, jibSet = false;
       for (let i = 0; i < t.sails.length; i++) {
         const s = t.sails[i];
+        const isJib = s.ctl === 'jib';
         // Segel stellt sich frei in den Wind, die Schot begrenzt den Winkel
         let bFree = normAngle(flowA - this.heading - Math.PI);
         if (Math.PI - Math.abs(bFree) < 0.4) {
           // vor dem Wind: Baumseite beibehalten, kein Flackern beim Halsen
-          const prev = i === 0 ? this.boom : this.jibBoom;
+          const prev = isJib ? this.jibBoom : this.boom;
           if (prev !== 0) bFree = Math.sign(prev) * Math.abs(bFree);
         }
-        const lim = this.sheetLimit(i === 0 ? this.trimMain : this.trimJib);
-        const b = clamp(bFree, -lim, lim);
+        let lim = this.sheetLimit(isJib ? this.trimJib : this.trimMain);
+        if (s.maxB) lim = Math.min(lim, s.maxB); // Rahen lassen sich nur begrenzt brassen
+        let b = clamp(bFree, -lim, lim);
+        if (s.minB && Math.abs(b) < s.minB) {
+          // Rahsegel können nicht in die Mittschiffslinie gedreht werden
+          b = (b !== 0 ? Math.sign(b) : bFree >= 0 ? 1 : -1) * s.minB;
+        }
         const aoa = normAngle(bFree - b); // Anstellwinkel (signiert); 0 = Segel killt
-        if (i === 0) { this.boom = b; this.aoaMain = aoa; }
-        else { this.jibBoom = b; this.aoaJib = aoa; }
+        if (!isJib && !mainSet) { this.boom = b; this.aoaMain = aoa; mainSet = true; }
+        if (isJib && !jibSet) { this.jibBoom = b; this.aoaJib = aoa; jibSet = true; }
 
         const q = 0.5 * RHO_AIR * s.area * aspd * aspd;
         const CL = s.cl * Math.sin(2 * aoa);
@@ -286,7 +376,17 @@ export class Boat {
     const lat = rotCW(f); // Steuerbord
     const vF = this.vx * f.x + this.vy * f.y;
     const vL = this.vx * lat.x + this.vy * lat.y;
-    const dragF = -(t.dragFwdLin * vF + t.dragFwdQuad * vF * Math.abs(vF));
+    // Foils: über der Abhebe-Geschwindigkeit steigt der Rumpf aus dem
+    // Wasser, der Längswiderstand bricht ein
+    let dragScale = 1;
+    if (t.foils) {
+      const kn = Math.hypot(this.vx, this.vy) * MS_TO_KN;
+      this.foilLevel = clamp((kn - t.foils.liftKn) / (t.foils.fullKn - t.foils.liftKn), 0, 1);
+      dragScale = 1 - (1 - t.foils.dragFactor) * this.foilLevel;
+    } else {
+      this.foilLevel = 0;
+    }
+    const dragF = -(t.dragFwdLin * vF + t.dragFwdQuad * vF * Math.abs(vF)) * dragScale;
     const dragL = -(t.dragLatLin * vL + t.dragLatQuad * vL * Math.abs(vL));
 
     const Fx = FxA + dragF * f.x + dragL * lat.x;
@@ -309,9 +409,30 @@ export class Boat {
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
-    // Krängung (rein visuell) aus der Querkomponente der Segelkraft
+    // Krängung aus der Querkomponente der Segelkraft. Beim Foilen braucht
+    // die Balance eine Mindest-Querkraft: zu wenig Druck (Schot zu lose,
+    // Segel killt) kippt das Boot nach Luv!
     const latAero = FxA * lat.x + FyA * lat.y;
-    const heelTarget = clamp(latAero / t.heelStiffness, -1, 1) * 0.5;
-    this.heel += (heelTarget - this.heel) * Math.min(1, dt * 2.5);
+    let effLat = latAero;
+    if (t.foils && this.foilLevel > 0) {
+      const side = latAero !== 0 ? Math.sign(latAero) : -Math.sign(this.boom || 1);
+      effLat = latAero - t.foils.balanceLat * this.foilLevel * side;
+    }
+    const heelDes = clamp((effLat / t.heelStiffness) * 0.5, -1.2, 1.2);
+    this.heel += (heelDes - this.heel) * Math.min(1, dt * (t.foils ? 4 : 2.5));
+
+    // Kentern: zu lange zu stark gekrängt -> Boot liegt flach
+    if (t.capsizeHeel) {
+      if (Math.abs(this.heel) > t.capsizeHeel) {
+        this.capsizeT += dt;
+        if (this.capsizeT > 0.35) {
+          this.capsized = true;
+          this.capsizeSide = Math.sign(this.heel) || 1;
+          this.capsizeT = 0;
+        }
+      } else {
+        this.capsizeT = Math.max(0, this.capsizeT - dt * 2);
+      }
+    }
   }
 }

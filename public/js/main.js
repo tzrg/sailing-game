@@ -218,19 +218,18 @@ function placeBoatOnWater() {
 }
 placeBoatOnWater();
 
-// Bootstyp durchschalten
-const btnBoat = document.getElementById('btn-boat');
-const typeKeys = Object.keys(BOAT_TYPES);
-let typeIdx = 0;
-function boatLabel() {
-  btnBoat.textContent = '⛵ ' + boat.type.name;
+// Bootstyp per Dropdown wählen
+const selBoat = document.getElementById('sel-boat');
+for (const [key, type] of Object.entries(BOAT_TYPES)) {
+  const opt = document.createElement('option');
+  opt.value = key;
+  opt.textContent = type.name;
+  selBoat.appendChild(opt);
 }
-btnBoat.addEventListener('click', () => {
-  typeIdx = (typeIdx + 1) % typeKeys.length;
-  boat.setType(BOAT_TYPES[typeKeys[typeIdx]]);
-  boatLabel();
+selBoat.value = boat.type.key;
+selBoat.addEventListener('change', () => {
+  boat.setType(BOAT_TYPES[selBoat.value]);
 });
-boatLabel();
 
 // Regatta starten/abbrechen/neu
 const btnRace = document.getElementById('btn-race');
@@ -255,6 +254,17 @@ raceLabel();
 const btnFree = document.getElementById('btn-free');
 let groundedT = 0;
 btnFree.addEventListener('click', () => {
+  // gekentert? -> aufrichten an Ort und Stelle
+  if (boat.capsized) {
+    boat.capsized = false;
+    boat.heel = 0;
+    boat.capsizeT = 0;
+    boat.vx = 0;
+    boat.vy = 0;
+    boat.angVel = 0;
+    race.addPenalty(10);
+    return;
+  }
   // Richtung ins tiefe Wasser (bergab im Höhenfeld)
   const e = 3;
   const gx = terrain.height(boat.x + e, boat.y) - terrain.height(boat.x - e, boat.y);
@@ -289,15 +299,17 @@ btnFree.addEventListener('click', () => {
 });
 
 let btnFreeVisible = false;
+let btnFreeLabel = '';
 function updateFreeButton(dt) {
   groundedT = Math.max(0, groundedT - dt);
-  const show = groundedT > 0;
-  if (show !== btnFreeVisible) {
+  const show = groundedT > 0 || boat.capsized;
+  const penalty = race.state === 'running' ? ' (+10 s)' : '';
+  const label = boat.capsized ? `🔄 Aufrichten${penalty}` : `⚓ Freikommen${penalty}`;
+  if (show !== btnFreeVisible || label !== btnFreeLabel) {
     btnFreeVisible = show;
+    btnFreeLabel = label;
     btnFree.classList.toggle('hidden', !show);
-    btnFree.textContent = race.state === 'running'
-      ? '⚓ Freikommen (+10 s)'
-      : '⚓ Freikommen';
+    btnFree.textContent = label;
   }
 }
 // Zoomstufen (herausgezoomt sieht man Kurs und Küste)
@@ -354,9 +366,10 @@ const HULL_POINTS = [[0, -2.9], [0.9, 0.2], [-0.9, 0.2], [0, 2.5]];
 
 function hullHitsLand() {
   const cs = Math.cos(boat.heading), sn = Math.sin(boat.heading);
+  const k = boat.type.lengthM / 5.5; // Rumpfpunkte mit der Bootsgröße skalieren
   for (const [lx, ly] of HULL_POINTS) {
-    const wx = boat.x + lx * cs - ly * sn;
-    const wy = boat.y + lx * sn + ly * cs;
+    const wx = boat.x + (lx * cs - ly * sn) * k;
+    const wy = boat.y + (lx * sn + ly * cs) * k;
     if (terrain.isLand(wx, wy)) return true;
   }
   return false;

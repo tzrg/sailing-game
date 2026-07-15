@@ -95,6 +95,8 @@ export class Race {
     boat.vy = 0;
     boat.angVel = 0;
     boat.heading = this.dir;
+    boat.capsized = false;
+    boat.heel = 0;
     this.state = 'armed';
     this.t = 0;
     this.nextIdx = 0;

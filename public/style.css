@@ -95,6 +95,30 @@ html, body {
   background: rgba(255, 255, 255, 0.18);
 }
 
+.menu-select {
+  display: block;
+  font-size: 13px;
+  color: #cfe2f0;
+  margin: 10px 0;
+}
+
+.menu-select select {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.menu-select option {
+  background: #0a1e32;
+  color: #fff;
+}
+
 .menu-group {
   margin: 14px 0;
   padding: 12px 12px 8px;

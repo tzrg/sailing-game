@@ -254,6 +254,38 @@ export class Renderer {
     ctx.rotate(boat.heading);
     ctx.lineJoin = 'round';
 
+    // gekentert: Rumpf schmal, Rigg liegt flach im Wasser
+    if (boat.capsized) {
+      const side = boat.capsizeSide || 1;
+      ctx.save();
+      ctx.scale(0.45 * beamFactor, 1);
+      ctx.beginPath();
+      ctx.moveTo(0, -2.9);
+      ctx.quadraticCurveTo(1.05, -1.4, 0.95, 0.6);
+      ctx.quadraticCurveTo(0.9, 1.9, 0.62, 2.5);
+      ctx.lineTo(-0.62, 2.5);
+      ctx.quadraticCurveTo(-0.9, 1.9, -0.95, 0.6);
+      ctx.quadraticCurveTo(-1.05, -1.4, 0, -2.9);
+      ctx.closePath();
+      ctx.fillStyle = type.hullColor;
+      ctx.fill();
+      ctx.lineWidth = 0.12;
+      ctx.strokeStyle = type.trimColor;
+      ctx.stroke();
+      ctx.restore();
+      // Mast + Segel flach auf dem Wasser
+      const tipX = side * 3.4, tipY = 0.2;
+      ctx.strokeStyle = 'rgba(90,90,90,0.9)';
+      ctx.lineWidth = 0.12;
+      ctx.beginPath();
+      ctx.moveTo(0, -0.5);
+      ctx.lineTo(tipX, tipY);
+      ctx.stroke();
+      this.drawSail({ x: 0, y: -0.5 }, { x: tipX, y: tipY }, side * 0.5, 0, time, 1.0, 'rgba(255,255,255,0.55)');
+      ctx.restore();
+      return;
+    }
+
     // Krängung: Rigg wandert optisch nach Lee, Rumpf wirkt schmaler
     const heelOff = Math.sin(boat.heel) * 0.7; // Meter nach Steuerbord
     const bw = (1 - 0.16 * Math.abs(Math.sin(boat.heel))) * beamFactor;
@@ -263,6 +295,8 @@ export class Renderer {
       this.drawCatHull(type);
     } else if (type.hullStyle === 'raft') {
       this.drawRaftHull(type);
+    } else if (type.hullStyle === 'ship') {
+      this.drawShipHull(type);
     } else {
       ctx.save();
       ctx.scale(bw, 1);
@@ -302,6 +336,25 @@ export class Renderer {
     ctx.lineTo(Math.sin(ra) * 0.8, 2.45 + Math.cos(ra) * 0.8);
     ctx.stroke();
 
+    // Foiler: Gischt an den Foils, sobald der Rumpf fliegt
+    if (boat.foilLevel > 0.4) {
+      ctx.strokeStyle = `rgba(255,255,255,${(0.5 * boat.foilLevel).toFixed(2)})`;
+      ctx.lineWidth = 0.16;
+      for (const sx of [-0.55, 0.55]) {
+        ctx.beginPath();
+        ctx.moveTo(sx, 1.4);
+        ctx.lineTo(sx * 1.3, 3.2 + Math.sin(time * 17 + sx) * 0.3);
+        ctx.stroke();
+      }
+    }
+
+    // Dreimaster: eigenes Rigg, generische Segel überspringen
+    if (type.hullStyle === 'ship') {
+      this.drawShipRig(boat, time);
+      ctx.restore();
+      return;
+    }
+
     // Rigg-Geometrie je Bauart (Zeichnungseinheiten eines 5,5-m-Boots)
     const rig = type.hullStyle === 'raft'
       ? { mastY: -0.2, boom: 2.2, jibTackY: 0, jib: 0, spi: 0 }
@@ -328,7 +381,7 @@ export class Renderer {
     }
 
     // Vorsegel (Fock): Hals am Bug, Schothorn je nach Stellung
-    if (type.sails.length > 1) {
+    if (type.sails.some((s) => s.ctl === 'jib')) {
       const tack = { x: heelOff * 0.35, y: rig.jibTackY };
       const jl = rig.jib;
       const jEnd = {
@@ -364,6 +417,89 @@ export class Renderer {
     ctx.fill();
 
     ctx.restore();
+  }
+
+  // Dreimaster: langer Holzrumpf mit Heckkastell und Bugspriet
+  drawShipHull(type) {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.moveTo(0, -2.9);
+    ctx.quadraticCurveTo(0.85, -1.8, 0.88, 0.3);
+    ctx.quadraticCurveTo(0.88, 1.9, 0.6, 2.5);
+    ctx.lineTo(-0.6, 2.5);
+    ctx.quadraticCurveTo(-0.88, 1.9, -0.88, 0.3);
+    ctx.quadraticCurveTo(-0.85, -1.8, 0, -2.9);
+    ctx.closePath();
+    ctx.fillStyle = type.hullColor;
+    ctx.fill();
+    ctx.lineWidth = 0.1;
+    ctx.strokeStyle = type.trimColor;
+    ctx.stroke();
+    // Deck
+    ctx.beginPath();
+    ctx.moveTo(0, -2.5);
+    ctx.quadraticCurveTo(0.62, -1.6, 0.66, 0.3);
+    ctx.quadraticCurveTo(0.66, 1.7, 0.44, 2.25);
+    ctx.lineTo(-0.44, 2.25);
+    ctx.quadraticCurveTo(-0.66, 1.7, -0.66, 0.3);
+    ctx.quadraticCurveTo(-0.62, -1.6, 0, -2.5);
+    ctx.closePath();
+    ctx.fillStyle = type.deckColor;
+    ctx.fill();
+    // Heckkastell
+    ctx.fillStyle = type.trimColor;
+    ctx.fillRect(-0.5, 1.6, 1.0, 0.72);
+    // Bugspriet
+    ctx.strokeStyle = type.trimColor;
+    ctx.lineWidth = 0.12;
+    ctx.beginPath();
+    ctx.moveTo(0, -2.8);
+    ctx.lineTo(0, -3.9);
+    ctx.stroke();
+  }
+
+  // Rahsegel an drei Masten + Vorsegel am Bugspriet
+  drawShipRig(boat, time) {
+    const { ctx } = this;
+    const masts = [-1.6, -0.1, 1.35];
+    const b = boat.boom;      // Brasswinkel aller Rahen
+    const yaw = { x: -Math.cos(b), y: -Math.sin(b) };  // Richtung der Rah
+    const luff = Math.abs(boat.aoaMain) < 0.06 && boat.apparentSpd > 1.5;
+    for (const my of masts) {
+      // drei Rahsegel je Mast, nach oben schmaler
+      const widths = [1.45, 1.15, 0.85];
+      const offs = [0, 0.12, 0.24]; // leicht versetzt für Staffelung
+      for (let s = 0; s < 3; s++) {
+        const w = widths[s];
+        const ox = Math.sin(b) * offs[s];
+        const oy = -Math.cos(b) * offs[s];
+        const a1 = { x: yaw.x * w + ox, y: my + yaw.y * w + oy };
+        const a2 = { x: -yaw.x * w + ox, y: my - yaw.y * w + oy };
+        // Wölbung zeigt nach achtern-lee (konstant, tack-unabhängig)
+        this.drawSail(a1, a2, luff ? 0 : -0.55, boat.apparentSpd, time, 0.8, 'rgba(240,234,215,0.95)');
+        // Rah
+        ctx.strokeStyle = '#3e2715';
+        ctx.lineWidth = 0.1;
+        ctx.beginPath();
+        ctx.moveTo(a1.x, a1.y);
+        ctx.lineTo(a2.x, a2.y);
+        ctx.stroke();
+      }
+      // Mast
+      ctx.fillStyle = '#2d1c0e';
+      ctx.beginPath();
+      ctx.arc(0, my, 0.14, 0, TAU);
+      ctx.fill();
+    }
+    // Vorsegel vom Bugspriet zum Fockmast
+    for (const [tx, len] of [[-3.8, 2.1], [-3.3, 1.7]]) {
+      const tack = { x: 0, y: tx };
+      const clew = {
+        x: -Math.sin(boat.jibBoom) * len,
+        y: tx + Math.cos(boat.jibBoom) * len,
+      };
+      this.drawSail(tack, clew, boat.aoaJib, boat.apparentSpd, time, 0.5, 'rgba(240,234,215,0.9)');
+    }
   }
 
   // Katamaran: zwei schlanke Rümpfe mit Trampolin
@@ -604,13 +740,13 @@ export class Renderer {
     } else {
       this.trimBars.spi = offscreen;
     }
-    if (boat.type.sails.length > 1) {
-      bars.push({ key: 'jib', label: 'Fock', color: '#8fe3a1', trim: boat.trimJib });
+    if (boat.type.sails.some((s) => s.ctl === 'jib')) {
+      bars.push({ key: 'jib', label: boat.type.jibLabel || 'Fock', color: '#8fe3a1', trim: boat.trimJib });
     } else {
       this.trimBars.jib = offscreen;
     }
-    bars.push({ key: 'main', label: 'Groß', color: '#6fd6ff', trim: boat.trimMain });
-    const panelW = 16 + bars.length * 48;
+    bars.push({ key: 'main', label: boat.type.mainLabel || 'Groß', color: '#6fd6ff', trim: boat.trimMain });
+    const panelW = Math.max(96, 16 + bars.length * 48);
     const px0 = this.W - panelW - 12;
     const by = this.H - 200;
     ctx.fillStyle = 'rgba(8,25,42,0.5)';
@@ -618,8 +754,9 @@ export class Renderer {
     ctx.fill();
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
+    const bars0 = px0 + (panelW - bars.length * 48) / 2; // Regler zentrieren
     bars.forEach((b, i) => {
-      const bx = px0 + 24 + i * 48 - bwd / 2;
+      const bx = bars0 + 24 + i * 48 - bwd / 2;
       this.trimBars[b.key] = { x: bx, y: by, w: bwd, h: bh };
       ctx.strokeStyle = 'rgba(255,255,255,0.5)';
       ctx.lineWidth = 1;
@@ -868,7 +1005,7 @@ export class Renderer {
     } else if (race.state === 'running') {
       line1 = formatTime(race.t);
       line2 = race.penaltyFlash > 0
-        ? '+10 s Strafe (Grundberührung)'
+        ? '+10 s Strafe!'
         : race.nextIdx < race.marks.length
           ? `Nächste: Boje ${race.nextIdx + 1} von ${race.marks.length}`
           : 'Zurück zur Ziellinie!';

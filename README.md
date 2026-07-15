@@ -17,11 +17,18 @@ keine Build-Tools) und wird als Docker-Container deployt.
   über „⚓ Freikommen“ ein paar Bootslängen vor der Küste wieder frei
   (im Rennen kostet das 10 Strafsekunden, die auch das Geisterboot nach
   vorn springen lassen).
-- **Vier Bootstypen** (umschaltbar): wendige, kipplige **Jolle**, ein großes,
-  träges, schnelles **Kielboot** mit wenig Abdrift, ein pfeilschneller
-  **Katamaran**, der nur widerwillig und unter großem Fahrtverlust wendet,
-  und ein **Floß** mit absichtlich katastrophalen Segeleigenschaften
-  (driftet quer, geht kaum an den Wind, kein Spinnaker).
+- **Sechs Bootstypen** (Dropdown im ☰-Menü): wendige, kipplige **Jolle**,
+  ein großes, träges, schnelles **Kielboot** mit wenig Abdrift, ein
+  pfeilschneller **Katamaran**, der nur widerwillig wendet, die foilende
+  **Moth** (hebt ab ~3 kn aus dem Wasser, Widerstand bricht ein – kentert
+  aber blitzschnell nach Lee *und*, wenn beim Foilen der Segeldruck fehlt,
+  nach Luv), ein **Piratenschiff** (Dreimaster mit 3×3 Rahsegeln und
+  Vorsegeln; Rahen lassen sich nur begrenzt brassen – am Wind chancenlos,
+  auf raumen Kursen majestätisch) und ein **Floß** mit absichtlich
+  katastrophalen Segeleigenschaften.
+- **Kentern**: Jolle, Katamaran und Moth gehen bei zu viel Krängung
+  (Starkwind + zu dichte Schoten) um. „🔄 Aufrichten“ bringt das Boot
+  wieder hoch – im Rennen für 10 Strafsekunden.
 - **Spinnaker** (außer Floß): über den **Spi-Regler** neben den Schoten
   stufenlos setzen (hochziehen) und bergen (runterziehen); er steht nur bei
   achterlichem Wind. **Autotrim** stellt Schoten optimal und fährt den Spi
