@@ -8,7 +8,7 @@ import { Race, findWaterSpot } from './race.js';
 
 const canvas = document.getElementById('game');
 // Karten-Einstellungen (im Menü einstellbar, wirken bei "Neue Karte")
-const mapCfg = { mode: 'see', lakeSize: 0.5, islandDensity: 0.5, islandSize: 0.3 };
+const mapCfg = { mode: 'see', lakeSize: 0.5, islandDensity: 0.5, islandSize: 0.25 };
 let terrain = new Terrain(Math.floor(Math.random() * 1e9), mapCfg);
 const wind = new Wind();
 const boat = new Boat(BOAT_TYPES.jolle);

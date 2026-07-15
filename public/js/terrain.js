@@ -34,8 +34,9 @@ export class Terrain {
     this.islandSize = cfg.islandSize ?? 0.4;
     this.lakeSize = cfg.lakeSize ?? 0.5;
     // mehr Dichte -> niedrigere Landschwelle; mehr Größe -> längere Wellenlänge.
-    // Kalibriert auf ~2% Landanteil bei Dichte 0, ~12% bei 0,5, ~40% bei 1.
-    this.threshold = 0.70 - 0.17 * this.islandDensity;
+    // Kalibriert: bei Standarddichte liegt die nächste Insel im Median ~260 m
+    // vom Start (wenige Minuten Segelzeit), Landanteil ~28%; Dichte 1 ~ Archipel.
+    this.threshold = 0.66 - 0.20 * this.islandDensity;
     this.wavelength = 250 + 900 * this.islandSize;
     this.lakeR = 220 + 1080 * this.lakeSize; // Seeradius in Metern
   }
