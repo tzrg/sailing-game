@@ -1,14 +1,13 @@
 // Rendering: Wasser mit Wellen-Glitzern, gecachte Gelände-Chunks,
 // Boot mit Segeln, Windpartikel, Windrose und HUD.
 
-import { clamp, normAngle, dirVec, angleOf, MS_TO_KN, TAU } from './util.js';
+import { clamp, normAngle, dirVec, angleOf, rotCW, MS_TO_KN, TAU } from './util.js';
 import { MARK_RADIUS, formatTime } from './race.js';
 
-const SCALE = 8;        // Pixel pro Meter
+const SCALE = 8;        // Pixel pro Meter bei Zoom 1
 const CHUNK_M = 48;     // Kantenlänge eines Gelände-Chunks in Metern
-const CHUNK_PX = CHUNK_M * SCALE;
 const SAMPLE_M = 0.5;   // Abtastung innerhalb eines Chunks
-const SAMPLE_PX = SAMPLE_M * SCALE;
+const CHUNK_N = Math.round(CHUNK_M / SAMPLE_M); // Samples je Chunk-Kante
 
 function hashCell(x, y, seed) {
   let h = Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ seed;
@@ -30,6 +29,9 @@ export class Renderer {
     this.H = 0;
     this.rose = { x: 0, y: 0, r: 56 };
     this.trimBars = { jib: { x: 0, y: 0, w: 0, h: 0 }, main: { x: 0, y: 0, w: 0, h: 0 } };
+    this.zoom = 1; // 1 = Normalansicht, <1 = herausgezoomt
+    this.showVectors = false;
+    this.rudderBar = { x: 0, y: 0, w: 0, h: 0 };
     this.resize();
   }
 
@@ -57,6 +59,11 @@ export class Renderer {
     return dx * dx + dy * dy < (this.rose.r + 14) * (this.rose.r + 14);
   }
 
+  hitRudderBar(p) {
+    const b = this.rudderBar;
+    return p.x >= b.x - 12 && p.x <= b.x + b.w + 12 && p.y >= b.y - 12 && p.y <= b.y + b.h + 12;
+  }
+
   // liegt der Punkt auf einem der Schot-Regler? -> 'main' | 'jib' | null
   hitTrimBar(p) {
     for (const key of ['main', 'jib']) {
@@ -69,23 +76,22 @@ export class Renderer {
   }
 
   // ---- Gelände ----------------------------------------------------------
+  // Chunks werden mit 1 Pixel pro Sample gecacht und beim Zeichnen skaliert
   chunkCanvas(cx, cy) {
     const key = cx + ',' + cy;
     let c = this.chunks.get(key);
     if (c) return c;
     c = document.createElement('canvas');
-    c.width = CHUNK_PX;
-    c.height = CHUNK_PX;
+    c.width = CHUNK_N;
+    c.height = CHUNK_N;
     const g = c.getContext('2d');
     const thr = this.terrain.threshold;
-    const n = Math.round(CHUNK_M / SAMPLE_M);
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
+    for (let j = 0; j < CHUNK_N; j++) {
+      for (let i = 0; i < CHUNK_N; i++) {
         const wx = cx * CHUNK_M + (i + 0.5) * SAMPLE_M;
         const wy = cy * CHUNK_M + (j + 0.5) * SAMPLE_M;
         const h = this.terrain.height(wx, wy);
         let col = null;
-        let overlap = 0.5; // vermeidet Haarlinien zwischen deckenden Kacheln
         if (h > thr) {
           if (h < thr + 0.018) col = '#e8dcab';
           else if (h < thr + 0.07) col = '#8fbf6f';
@@ -93,19 +99,17 @@ export class Renderer {
           else col = '#47803e';
         } else if (h > thr - 0.035) {
           col = 'rgba(150,214,204,0.50)';
-          overlap = 0; // transparente Kacheln nicht überlappen (Gittermuster)
         } else if (h > thr - 0.085) {
           col = 'rgba(150,214,204,0.20)';
-          overlap = 0;
         }
         if (col) {
           g.fillStyle = col;
-          g.fillRect(i * SAMPLE_PX, j * SAMPLE_PX, SAMPLE_PX + overlap, SAMPLE_PX + overlap);
+          g.fillRect(i, j, 1, 1);
         }
       }
     }
     this.chunks.set(key, c);
-    if (this.chunks.size > 240) {
+    if (this.chunks.size > 420) {
       this.chunks.delete(this.chunks.keys().next().value);
     }
     return c;
@@ -113,31 +117,36 @@ export class Renderer {
 
   drawTerrain(cam) {
     const { ctx } = this;
-    const x0 = Math.floor((cam.x - this.W / 2 / SCALE) / CHUNK_M);
-    const x1 = Math.floor((cam.x + this.W / 2 / SCALE) / CHUNK_M);
-    const y0 = Math.floor((cam.y - this.H / 2 / SCALE) / CHUNK_M);
-    const y1 = Math.floor((cam.y + this.H / 2 / SCALE) / CHUNK_M);
+    const S = SCALE * this.zoom;
+    const sizePx = CHUNK_M * S;
+    const x0 = Math.floor((cam.x - this.W / 2 / S) / CHUNK_M);
+    const x1 = Math.floor((cam.x + this.W / 2 / S) / CHUNK_M);
+    const y0 = Math.floor((cam.y - this.H / 2 / S) / CHUNK_M);
+    const y1 = Math.floor((cam.y + this.H / 2 / S) / CHUNK_M);
+    ctx.imageSmoothingEnabled = false;
     for (let cy = y0; cy <= y1; cy++) {
       for (let cx = x0; cx <= x1; cx++) {
         const img = this.chunkCanvas(cx, cy);
-        const sx = Math.floor((cx * CHUNK_M - cam.x) * SCALE + this.W / 2);
-        const sy = Math.floor((cy * CHUNK_M - cam.y) * SCALE + this.H / 2);
-        ctx.drawImage(img, sx, sy);
+        const sx = (cx * CHUNK_M - cam.x) * S + this.W / 2;
+        const sy = (cy * CHUNK_M - cam.y) * S + this.H / 2;
+        ctx.drawImage(img, sx, sy, sizePx + 0.6, sizePx + 0.6);
       }
     }
+    ctx.imageSmoothingEnabled = true;
   }
 
   // ---- Wasser -----------------------------------------------------------
   drawWater(cam, time) {
     const { ctx } = this;
+    const S = SCALE * this.zoom;
     ctx.fillStyle = '#2e6fa3';
     ctx.fillRect(0, 0, this.W, this.H);
     // dezente Wellenringe auf einem Weltraster
     const cell = 14; // Meter
-    const gx0 = Math.floor((cam.x - this.W / 2 / SCALE) / cell);
-    const gx1 = Math.floor((cam.x + this.W / 2 / SCALE) / cell);
-    const gy0 = Math.floor((cam.y - this.H / 2 / SCALE) / cell);
-    const gy1 = Math.floor((cam.y + this.H / 2 / SCALE) / cell);
+    const gx0 = Math.floor((cam.x - this.W / 2 / S) / cell);
+    const gx1 = Math.floor((cam.x + this.W / 2 / S) / cell);
+    const gy0 = Math.floor((cam.y - this.H / 2 / S) / cell);
+    const gy1 = Math.floor((cam.y + this.H / 2 / S) / cell);
     ctx.strokeStyle = 'rgba(255,255,255,0.16)';
     ctx.lineWidth = 1;
     for (let gy = gy0; gy <= gy1; gy++) {
@@ -147,9 +156,9 @@ export class Renderer {
         const phase = (time * 0.25 + r * 40) % 1;
         const wx = (gx + 0.2 + r * 4) * cell;
         const wy = (gy + 0.3 + ((r * 977) % 1) * 0.5) * cell;
-        const sx = (wx - cam.x) * SCALE + this.W / 2;
-        const sy = (wy - cam.y) * SCALE + this.H / 2;
-        const rad = 2 + phase * 14;
+        const sx = (wx - cam.x) * S + this.W / 2;
+        const sy = (wy - cam.y) * S + this.H / 2;
+        const rad = (2 + phase * 14) * this.zoom;
         ctx.globalAlpha = 0.7 * (1 - phase);
         ctx.beginPath();
         ctx.arc(sx, sy, rad, Math.PI * 1.1, Math.PI * 1.75);
@@ -161,9 +170,11 @@ export class Renderer {
 
   // ---- Windpartikel -----------------------------------------------------
   updateParticles(cam, wind, dt) {
-    const halfW = this.W / 2 / SCALE + 20;
-    const halfH = this.H / 2 / SCALE + 20;
-    while (this.particles.length < 42) {
+    const S = SCALE * this.zoom;
+    const halfW = this.W / 2 / S + 20;
+    const halfH = this.H / 2 / S + 20;
+    const want = Math.min(130, Math.round(42 / this.zoom));
+    while (this.particles.length < want) {
       this.particles.push({
         x: cam.x + (Math.random() * 2 - 1) * halfW,
         y: cam.y + (Math.random() * 2 - 1) * halfH,
@@ -183,11 +194,11 @@ export class Renderer {
         p.y = cam.y + (Math.random() * 2 - 1) * halfH - uy * halfH * 0.9;
         continue;
       }
-      const sx = (p.x - cam.x) * SCALE + this.W / 2;
-      const sy = (p.y - cam.y) * SCALE + this.H / 2;
+      const sx = (p.x - cam.x) * S + this.W / 2;
+      const sy = (p.y - cam.y) * S + this.H / 2;
       ctx.beginPath();
       ctx.moveTo(sx, sy);
-      ctx.lineTo(sx - ux * 3 * SCALE * 0.6, sy - uy * 3 * SCALE * 0.6);
+      ctx.lineTo(sx - ux * 3 * S * 0.6, sy - uy * 3 * S * 0.6);
       ctx.stroke();
     }
   }
@@ -207,14 +218,15 @@ export class Renderer {
 
   drawWake(cam) {
     const { ctx } = this;
+    const S = SCALE * this.zoom;
     for (const w of this.wake) {
       const a = 0.14 * (1 - w.t / 3.5);
       if (a <= 0) continue;
-      const sx = (w.x - cam.x) * SCALE + this.W / 2;
-      const sy = (w.y - cam.y) * SCALE + this.H / 2;
+      const sx = (w.x - cam.x) * S + this.W / 2;
+      const sy = (w.y - cam.y) * S + this.H / 2;
       ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
       ctx.beginPath();
-      ctx.arc(sx, sy, 1.5 + w.t * 1.6, 0, TAU);
+      ctx.arc(sx, sy, (1.5 + w.t * 1.6) * this.zoom, 0, TAU);
       ctx.fill();
     }
   }
@@ -228,7 +240,7 @@ export class Renderer {
     const beamFactor = type.beamM / (2.0 * k);
     ctx.save();
     ctx.translate(this.W / 2, this.H / 2);
-    ctx.scale(SCALE * k, SCALE * k);
+    ctx.scale(SCALE * this.zoom * k, SCALE * this.zoom * k);
     ctx.rotate(boat.heading);
     ctx.lineJoin = 'round';
 
@@ -274,6 +286,24 @@ export class Renderer {
     ctx.lineTo(Math.sin(-ra) * 0.8, 2.45 + Math.cos(ra) * 0.8);
     ctx.stroke();
 
+    // Spinnaker: großer bunter Ballon vor dem Bug (nur wenn gesetzt)
+    if (boat.spi) {
+      const st = { x: heelOff * 0.3, y: -2.9 };
+      const sl = 3.4;
+      const sEnd = {
+        x: st.x - Math.sin(boat.spiBoom) * sl,
+        y: st.y + Math.cos(boat.spiBoom) * sl,
+      };
+      ctx.save();
+      if (boat.spiEff < 0.3) ctx.globalAlpha = 0.55; // eingefallen
+      this.drawSail(
+        st, sEnd,
+        boat.spiEff > 0.3 ? Math.sign(boat.spiBoom || 1) * 1.1 : 0,
+        boat.apparentSpd, time, 1.9, '#ff6b6b',
+      );
+      ctx.restore();
+    }
+
     // Vorsegel (Fock): Hals am Bug, Schothorn je nach Stellung
     const tack = { x: heelOff * 0.35, y: -2.8 };
     const jl = 2.3;
@@ -309,7 +339,7 @@ export class Renderer {
   }
 
   // Segeltuch als gewölbte Fläche zwischen zwei Punkten
-  drawSail(a, b, aoa, apparent, time, bulgeScale) {
+  drawSail(a, b, aoa, apparent, time, bulgeScale, fill = 'rgba(255,255,255,0.96)') {
     const { ctx } = this;
     const dx = b.x - a.x, dy = b.y - a.y;
     // Normale des Baums (nach Lee zeigt die Wölbung)
@@ -327,11 +357,62 @@ export class Renderer {
     ctx.quadraticCurveTo(cx, cy, b.x, b.y);
     ctx.quadraticCurveTo((a.x + b.x) / 2, (a.y + b.y) / 2, a.x, a.y);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    ctx.fillStyle = fill;
     ctx.fill();
     ctx.lineWidth = 0.09;
     ctx.strokeStyle = 'rgba(70,80,90,0.9)';
     ctx.stroke();
+  }
+
+  // Vektoranzeige am Boot: Wind, scheinbarer Wind, Fahrt, Vortrieb, Drift
+  screenArrow(dx, dy, color, label) {
+    const { ctx } = this;
+    const len = Math.hypot(dx, dy);
+    if (len < 8) return;
+    const cx = this.W / 2, cy = this.H / 2;
+    const ux = dx / len, uy = dy / len;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + dx, cy + dy);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + dx + ux * 9, cy + dy + uy * 9);
+    ctx.lineTo(cx + dx - uy * 5, cy + dy + ux * 5);
+    ctx.lineTo(cx + dx + uy * 5, cy + dy - ux * 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(label, cx + dx + ux * 22, cy + dy + uy * 22 + 4);
+  }
+
+  drawVectors(boat, wind) {
+    if (!this.showVectors) return;
+    const { ctx } = this;
+    ctx.save();
+    const cap = (x, m) => clamp(x, -m, m);
+    // wahrer Wind (Vektor, wohin er weht)
+    const wv = wind.vec();
+    this.screenArrow(wv.x * 8, wv.y * 8, '#ff7a5c', 'Wind');
+    // scheinbarer Wind
+    const af = dirVec(boat.apparentFrom + Math.PI);
+    this.screenArrow(af.x * boat.apparentSpd * 8, af.y * boat.apparentSpd * 8, '#6fd6ff', 'scheinb. Wind');
+    // Fahrt über Grund
+    this.screenArrow(boat.vx * 16, boat.vy * 16, '#7dff9a', 'Fahrt');
+    // Vortrieb (Segelkraft längsschiffs) und Drift (Querfahrt)
+    const f = dirVec(boat.heading);
+    const lat = rotCW(f);
+    const drive = boat.aeroFx * f.x + boat.aeroFy * f.y;
+    const dl = cap(drive * 0.12, 130);
+    this.screenArrow(f.x * dl, f.y * dl, '#ffd166', 'Vortrieb');
+    const vLat = boat.vx * lat.x + boat.vy * lat.y;
+    const ll = cap(vLat * 60, 120);
+    this.screenArrow(lat.x * ll, lat.y * ll, '#ff9ff3', 'Drift');
+    ctx.restore();
   }
 
   // ---- Windrose & HUD ---------------------------------------------------
@@ -465,39 +546,41 @@ export class Renderer {
     ctx.fillText('dicht', px0 + panelW / 2, by - 16);
     ctx.fillText('offen', px0 + panelW / 2, by + bh + 30);
 
-    // Ruderanzeige unten; auf schmalen Screens zwischen Tacho und Schot-Panel
-    let rw = 150, rcx = this.W / 2;
-    const panelLeft = px0 - 10;
-    if (rcx - rw / 2 - 10 < 152 || rcx + rw / 2 + 10 > panelLeft) {
-      const le = 152, re = panelLeft;
-      rw = Math.max(70, Math.min(150, re - le - 20));
-      rcx = (le + re) / 2;
-    }
-    const rx = rcx - rw / 2, ry = this.H - 30;
+    // Ruder-Schieber links über dem Tacho (anfassbar; loslassen = mittschiffs)
+    const rb = { x: 14, y: this.H - 122, w: 170, h: 28 };
+    this.rudderBar = rb;
+    const rcx = rb.x + rb.w / 2, rcy = rb.y + rb.h / 2;
     ctx.fillStyle = 'rgba(8,25,42,0.5)';
-    this.roundRect(rx - 10, ry - 12, rw + 20, 24, 8);
+    this.roundRect(rb.x, rb.y, rb.w, rb.h, 8);
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(rx, ry);
-    ctx.lineTo(rx + rw, ry);
+    ctx.moveTo(rb.x + 10, rcy);
+    ctx.lineTo(rb.x + rb.w - 10, rcy);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(rcx, ry - 8);
-    ctx.lineTo(rcx, ry + 8);
+    ctx.moveTo(rcx, rb.y + 5);
+    ctx.lineTo(rcx, rb.y + rb.h - 5);
     ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Ruder', rb.x + 5, rb.y - 7);
     ctx.fillStyle = '#ffd166';
     ctx.beginPath();
-    ctx.arc(rcx + boat.rudder * rw / 2, ry, 6, 0, TAU);
+    ctx.arc(rcx + boat.rudder * (rb.w / 2 - 14), rcy, 9, 0, TAU);
     ctx.fill();
     ctx.restore();
   }
 
   // ---- Regatta ----------------------------------------------------------
   toScreen(p, cam) {
+    const S = SCALE * this.zoom;
     return {
-      x: (p.x - cam.x) * SCALE + this.W / 2,
-      y: (p.y - cam.y) * SCALE + this.H / 2,
+      x: (p.x - cam.x) * S + this.W / 2,
+      y: (p.y - cam.y) * S + this.H / 2,
     };
   }
 
@@ -544,61 +627,132 @@ export class Renderer {
       this.drawBuoy(s, passed ? '#5fae62' : '#ff5c33', String(i + 1));
     });
 
-    // aktuelles Ziel hervorheben (pulsierender Ring)
-    const tgt = race.target();
-    if (tgt) {
+    // Ziele: Ring ums aktuelle, Randpfeile für alle ausstehenden
+    const targets = race.overlayTargets();
+    for (const tgt of targets) {
       const s = this.toScreen(tgt, cam);
-      const isLine = tgt.label === 'Start' || tgt.label === 'Ziel';
-      const rad = (isLine ? 26 : MARK_RADIUS) * SCALE * (1 + 0.05 * Math.sin(time * 3));
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, rad, 0, TAU);
-      ctx.strokeStyle = 'rgba(255,220,120,0.45)';
-      ctx.lineWidth = 3;
-      ctx.stroke();
+      if (tgt.primary) {
+        const isLine = tgt.label === 'Start' || tgt.label === 'Ziel';
+        const rad = (isLine ? 26 : MARK_RADIUS) * SCALE * this.zoom * (1 + 0.05 * Math.sin(time * 3));
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, rad, 0, TAU);
+        ctx.strokeStyle = 'rgba(255,220,120,0.45)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
       this.drawRaceArrow(tgt, s, boat);
     }
     ctx.restore();
   }
 
-  // Pfeil am Bildschirmrand, wenn das Ziel außerhalb liegt
-  drawRaceArrow(tgt, s, boat) {
-    const { ctx } = this;
-    const margin = 56;
-    const distM = Math.round(Math.hypot(tgt.x - boat.x, tgt.y - boat.y));
-    const inside = s.x > margin && s.x < this.W - margin && s.y > margin && s.y < this.H - margin;
-    if (inside) {
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.font = 'bold 13px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillText(`${tgt.label}`, s.x, s.y - 22);
-      return;
-    }
+  // Randposition für ein Ziel außerhalb des Sichtfelds
+  edgePoint(s, margin) {
     const cx = this.W / 2, cy = this.H / 2;
-    let dx = s.x - cx, dy = s.y - cy;
+    const dx = s.x - cx, dy = s.y - cy;
     const kx = dx !== 0 ? (this.W / 2 - margin) / Math.abs(dx) : Infinity;
     const ky = dy !== 0 ? (this.H / 2 - margin) / Math.abs(dy) : Infinity;
     const kk = Math.min(kx, ky);
-    const ax = cx + dx * kk, ay = cy + dy * kk;
-    const ang = Math.atan2(dy, dx);
+    return { x: cx + dx * kk, y: cy + dy * kk, ang: Math.atan2(dy, dx) };
+  }
+
+  // Hinweis am Bildschirmrand: großer Pfeil fürs nächste Ziel,
+  // nummerierte Punkte für die weiteren
+  drawRaceArrow(tgt, s, boat) {
+    const { ctx } = this;
+    const margin = 56;
+    const inside = s.x > margin && s.x < this.W - margin && s.y > margin && s.y < this.H - margin;
+    if (inside) {
+      if (tgt.primary) {
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.font = 'bold 13px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(tgt.label, s.x, s.y - 22);
+      }
+      return; // Boje selbst ist sichtbar (und nummeriert)
+    }
+    const e = this.edgePoint(s, margin);
+    if (tgt.primary) {
+      const distM = Math.round(Math.hypot(tgt.x - boat.x, tgt.y - boat.y));
+      ctx.save();
+      ctx.translate(e.x, e.y);
+      ctx.rotate(e.ang);
+      ctx.fillStyle = 'rgba(255,220,120,0.95)';
+      ctx.beginPath();
+      ctx.moveTo(14, 0);
+      ctx.lineTo(-6, -9);
+      ctx.lineTo(-6, 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      const tx = clamp(e.x, 70, this.W - 70);
+      const ty = clamp(e.y + (e.y < this.H / 2 ? 26 : -14), 20, this.H - 8);
+      ctx.fillText(`${tgt.label} · ${distM} m`, tx, ty);
+    } else {
+      // kleines nummeriertes Scheibchen für spätere Ziele
+      ctx.save();
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, 11, 0, TAU);
+      ctx.fillStyle = 'rgba(8,25,42,0.8)';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tgt.label === 'Ziel' ? '🏁' : tgt.label, e.x, e.y);
+      ctx.restore();
+    }
+  }
+
+  // halbtransparentes Geisterboot der Bestzeit
+  drawGhost(race, cam) {
+    if (race.state !== 'running') return;
+    const p = race.ghostAt(race.t);
+    if (!p) return;
+    const { ctx } = this;
+    const s = this.toScreen(p, cam);
+    const k = (p.len || 5.5) / 5.5;
     ctx.save();
-    ctx.translate(ax, ay);
-    ctx.rotate(ang);
-    ctx.fillStyle = 'rgba(255,220,120,0.95)';
+    ctx.translate(s.x, s.y);
+    ctx.scale(SCALE * this.zoom * k, SCALE * this.zoom * k);
+    ctx.rotate(p.h);
+    ctx.globalAlpha = p.finished ? 0.25 : 0.45;
+    ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(14, 0);
-    ctx.lineTo(-6, -9);
-    ctx.lineTo(-6, 9);
+    ctx.moveTo(0, -2.9);
+    ctx.quadraticCurveTo(1.05, -1.4, 0.95, 0.6);
+    ctx.quadraticCurveTo(0.9, 1.9, 0.62, 2.5);
+    ctx.lineTo(-0.62, 2.5);
+    ctx.quadraticCurveTo(-0.9, 1.9, -0.95, 0.6);
+    ctx.quadraticCurveTo(-1.05, -1.4, 0, -2.9);
     ctx.closePath();
+    ctx.fillStyle = '#bfe9ff';
     ctx.fill();
+    ctx.lineWidth = 0.12;
+    ctx.strokeStyle = '#eaf7ff';
+    ctx.stroke();
+    // Baum als Andeutung des Segels
+    ctx.beginPath();
+    ctx.moveTo(0, -0.6);
+    ctx.lineTo(-Math.sin(p.b) * 3, -0.6 + Math.cos(p.b) * 3);
+    ctx.lineWidth = 0.18;
+    ctx.strokeStyle = '#9fd8f5';
+    ctx.stroke();
     ctx.restore();
-    ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.font = 'bold 12px system-ui, sans-serif';
+    // Beschriftung
+    ctx.fillStyle = 'rgba(190,230,255,0.8)';
+    ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    const tx = clamp(ax, 70, this.W - 70);
-    const ty = clamp(ay + (ay < cy ? 26 : -14), 20, this.H - 8);
-    ctx.fillText(`${tgt.label} · ${distM} m`, tx, ty);
+    ctx.fillText('Geist', s.x, s.y - 3.4 * SCALE * this.zoom * k - 4);
   }
 
   drawRacePanel(race) {
@@ -655,7 +809,9 @@ export class Renderer {
     this.drawWake(cam);
     this.drawRaceWorld(race, cam, boat, time);
     this.updateParticles(cam, wind, dt);
+    this.drawGhost(race, cam);
     this.drawBoat(boat, time);
+    this.drawVectors(boat, wind);
     this.drawRose(wind, boat);
     this.drawHUD(boat, wind);
     this.drawRacePanel(race);

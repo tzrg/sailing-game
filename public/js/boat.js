@@ -29,6 +29,7 @@ export const BOAT_TYPES = {
     minSheet: 0.14,          // dichteste Schotstellung (~8°)
     maxSheet: 1.48,          // ganz gefiert (~85°)
     heelStiffness: 1100,     // N pro voller Krängung (kleiner = kippliger)
+    spi: { area: 13, cl: 1.1, cd0: 0.12, cdMax: 1.9 },
     hullColor: '#f3eddd',
     deckColor: '#d8b878',
     trimColor: '#7a4a24',
@@ -51,6 +52,7 @@ export const BOAT_TYPES = {
     minSheet: 0.10,          // läuft etwas höher am Wind
     maxSheet: 1.48,
     heelStiffness: 3800,     // Ballastkiel: deutlich steifer
+    spi: { area: 24, cl: 1.1, cd0: 0.12, cdMax: 1.9 },
     hullColor: '#f4f6f8',
     deckColor: '#9fb4c8',
     trimColor: '#26425e',
@@ -115,6 +117,12 @@ export class Boat {
     this.heel = 0;     // visuelle Krängung (rad)
     this.apparentSpd = 0;
     this.apparentFrom = 0;
+    this.spi = false;      // Spinnaker gesetzt?
+    this.spiBoom = 0;
+    this.spiEff = 0;       // 0 = eingefallen, 1 = voll stehend
+    this.autoTrim = false; // Schoten automatisch trimmen
+    this.aeroFx = 0;       // Segel-Gesamtkraft (für Vektoranzeige)
+    this.aeroFy = 0;
   }
 
   get speedKn() {
@@ -146,6 +154,18 @@ export class Boat {
       const fl = { x: av.x / aspd, y: av.y / aspd };
       const liftDir = rotCW(fl);
 
+      // Autotrim: Baumwinkel ~ halber scheinbarer Windwinkel ergibt einen
+      // Anstellwinkel nahe dem Optimum (~18-20°)
+      if (this.autoTrim) {
+        const bFreeAbs = Math.abs(normAngle(flowA - this.heading - Math.PI));
+        const toTrim = (bDes) =>
+          clamp((t.maxSheet - bDes) / (t.maxSheet - t.minSheet), 0, 1);
+        const desM = toTrim(Math.max(0, bFreeAbs - 0.32));
+        const desJ = toTrim(Math.max(0, bFreeAbs - 0.28));
+        this.trimMain += (desM - this.trimMain) * Math.min(1, dt * 2.5);
+        this.trimJib += (desJ - this.trimJib) * Math.min(1, dt * 2.5);
+      }
+
       for (let i = 0; i < t.sails.length; i++) {
         const s = t.sails[i];
         // Segel stellt sich frei in den Wind, die Schot begrenzt den Winkel
@@ -168,7 +188,32 @@ export class Boat {
         FxA += q * (CL * liftDir.x + CD * fl.x);
         FyA += q * (CL * liftDir.y + CD * fl.y);
       }
+
+      // Spinnaker: steht nur auf tiefen Kursen, trimmt sich selbst
+      this.spiEff = 0;
+      if (this.spi && t.spi) {
+        let bFree = normAngle(flowA - this.heading - Math.PI);
+        if (Math.PI - Math.abs(bFree) < 0.4 && this.spiBoom !== 0) {
+          bFree = Math.sign(this.spiBoom) * Math.abs(bFree);
+        }
+        const eff = clamp((Math.abs(bFree) - 1.15) / 0.45, 0, 1);
+        this.spiEff = eff;
+        const b = clamp(bFree, -1.5, 1.5);
+        this.spiBoom = b;
+        if (eff > 0) {
+          const s = t.spi;
+          const aoa = normAngle(bFree - b);
+          const q = 0.5 * RHO_AIR * s.area * aspd * aspd * eff;
+          const CL = s.cl * Math.sin(2 * aoa);
+          const sa = Math.sin(Math.abs(aoa));
+          const CD = s.cd0 + s.cdMax * sa * sa;
+          FxA += q * (CL * liftDir.x + CD * fl.x);
+          FyA += q * (CL * liftDir.y + CD * fl.y);
+        }
+      }
     }
+    this.aeroFx = FxA;
+    this.aeroFy = FyA;
 
     // Rumpfkräfte in Bootskoordinaten
     const f = dirVec(this.heading);
@@ -183,8 +228,10 @@ export class Boat {
     this.vx += (Fx / t.mass) * dt;
     this.vy += (Fy / t.mass) * dt;
 
-    // Drehen: Ruderwirkung wächst mit Fahrt durchs Wasser
-    const grip = clamp(Math.abs(vF) / 1.5, 0, 1) * (vF >= 0 ? 1 : -1);
+    // Drehen: Ruderwirkung wächst mit Fahrt durchs Wasser.
+    // Mindest-Grip, damit das Ruder auch bei Stillstand/Rückwärtsdrift
+    // in die erwartete Richtung anspricht (kein Umkehreffekt).
+    const grip = clamp(Math.abs(vF) / 1.5, 0.3, 1);
     const target = this.rudder * t.maxTurnRate * grip;
     this.angVel += (target - this.angVel) * Math.min(1, dt * 5);
     this.heading = normAngle(this.heading + this.angVel * dt);

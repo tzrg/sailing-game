@@ -46,6 +46,32 @@ html, body {
   background: rgba(8, 25, 42, 0.8);
 }
 
+#zoombar {
+  position: fixed;
+  left: 14px;
+  bottom: 148px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+}
+
+#zoombar button {
+  width: 42px;
+  height: 42px;
+  font-size: 20px;
+  line-height: 1;
+  background: rgba(8, 25, 42, 0.55);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#zoombar button:active {
+  background: rgba(8, 25, 42, 0.8);
+}
+
 #help {
   position: fixed;
   inset: 0;
@@ -68,6 +94,8 @@ html, body {
   border-radius: 14px;
   padding: 22px 26px;
   max-width: 460px;
+  max-height: 88vh;
+  overflow-y: auto;
   line-height: 1.5;
 }
 

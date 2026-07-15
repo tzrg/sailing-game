@@ -14,11 +14,16 @@ keine Build-Tools) und wird als Docker-Container deployt.
   erzeugt eine neue Welt). Mit Land kann man kollidieren.
 - **Zwei Bootstypen** (umschaltbar): wendige, kipplige **Jolle** und ein
   größeres, träges, aber schnelleres **Kielboot** mit wenig Abdrift.
-- **Regattamodus** (🏁): über die Startlinie, zwei Bojen in Reihenfolge
-  anlaufen, zurück über die Ziellinie. Die Uhr startet beim Startlinien-
-  Durchgang und stoppt im Ziel; **Bestzeiten** werden pro Karte und Bootstyp
-  im Browser gespeichert. Der Kurs wird deterministisch aus dem Karten-Seed
-  erzeugt (Bojen liegen immer im Wasser).
+- **Regattamodus** (🏁): über die Startlinie, drei nummerierte Bojen in
+  Reihenfolge anlaufen, zurück über die Ziellinie. Die Uhr startet beim
+  Startlinien-Durchgang und stoppt im Ziel; **Bestzeiten** werden pro Karte
+  und Bootstyp im Browser gespeichert. Der Kurs wird deterministisch aus dem
+  Karten-Seed erzeugt (Bojen liegen immer im Wasser). Nummerierte **Pfeile am
+  Bildschirmrand** zeigen zu allen ausstehenden Bojen; die Bestzeit-Fahrt
+  wird aufgezeichnet und segelt beim nächsten Versuch als halbtransparentes
+  **Geisterboot** mit.
+- **Zoom** (＋/－ links bzw. Tasten `+`/`-`): herauszoomen, um Kurs, Ufer
+  und Inseln zu überblicken.
 
 ## Steuerung (Touch, zwei Finger gleichzeitig möglich)
 

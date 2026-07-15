@@ -29,6 +29,12 @@ function applyTrimBar(which, p) {
   const v = clamp((r.y + r.h - p.y) / r.h, 0, 1);
   if (which === 'main') boat.trimMain = v;
   else boat.trimJib = v;
+  disableAutoTrim();
+}
+
+function applyRudderBar(p) {
+  const r = renderer.rudderBar;
+  boat.rudder = clamp((p.x - (r.x + r.w / 2)) / (r.w / 2 - 14), -1, 1);
 }
 
 function applyWindDrag(p) {
@@ -52,6 +58,9 @@ canvas.addEventListener('pointerdown', (e) => {
   } else if (bar) {
     pointers.set(e.pointerId, { role: 'bar', bar });
     applyTrimBar(bar, p);
+  } else if (renderer.hitRudderBar(p)) {
+    pointers.set(e.pointerId, { role: 'rudbar' });
+    applyRudderBar(p);
   } else if (p.x < renderer.W / 2) {
     pointers.set(e.pointerId, { role: 'steer', startX: p.x });
     steerPointer = e.pointerId;
@@ -73,19 +82,22 @@ canvas.addEventListener('pointermove', (e) => {
     applyWindDrag(p);
   } else if (st.role === 'bar') {
     applyTrimBar(st.bar, p);
+  } else if (st.role === 'rudbar') {
+    applyRudderBar(p);
   } else if (st.role === 'steer') {
     boat.rudder = clamp((p.x - st.startX) / 90, -1, 1);
   } else if (st.role === 'trim') {
     const d = (st.startY - p.y) / 220;
     boat.trimMain = clamp(st.startMain + d, 0, 1);
     boat.trimJib = clamp(st.startJib + d, 0, 1);
+    disableAutoTrim();
   }
 });
 
 function endPointer(e) {
   const st = pointers.get(e.pointerId);
-  if (st && st.role === 'steer') {
-    boat.rudder = 0;
+  if (st && (st.role === 'steer' || st.role === 'rudbar')) {
+    boat.rudder = 0; // Ruder geht mittschiffs
     steerPointer = null;
   }
   pointers.delete(e.pointerId);
@@ -101,6 +113,10 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     keys.add(e.key);
     hideHelp();
+  } else if (e.key === '+' || e.key === '=') {
+    setZoom(zoomIdx + 1);
+  } else if (e.key === '-') {
+    setZoom(zoomIdx - 1);
   }
 });
 window.addEventListener('keyup', (e) => keys.delete(e.key));
@@ -119,10 +135,12 @@ function applyKeys(dt) {
   if (keys.has('ArrowUp')) {
     boat.trimMain = clamp(boat.trimMain + dt * 0.6, 0, 1);
     boat.trimJib = clamp(boat.trimJib + dt * 0.6, 0, 1);
+    disableAutoTrim();
   }
   if (keys.has('ArrowDown')) {
     boat.trimMain = clamp(boat.trimMain - dt * 0.6, 0, 1);
     boat.trimJib = clamp(boat.trimJib - dt * 0.6, 0, 1);
+    disableAutoTrim();
   }
 }
 
@@ -173,6 +191,55 @@ btnRace.addEventListener('click', () => {
   raceLabel();
 });
 raceLabel();
+// Zoomstufen (herausgezoomt sieht man Kurs und Küste)
+const ZOOM_LEVELS = [0.35, 0.6, 1, 1.5];
+let zoomIdx = 2;
+function setZoom(i) {
+  zoomIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, i));
+  renderer.zoom = ZOOM_LEVELS[zoomIdx];
+}
+document.getElementById('btn-zoom-in').addEventListener('click', () => setZoom(zoomIdx + 1));
+document.getElementById('btn-zoom-out').addEventListener('click', () => setZoom(zoomIdx - 1));
+
+// Spinnaker setzen/bergen
+const btnSpi = document.getElementById('btn-spi');
+function spiLabel() {
+  btnSpi.textContent = boat.spi ? '🎈 Spi bergen' : '🎈 Spi setzen';
+}
+btnSpi.addEventListener('click', () => {
+  boat.spi = !boat.spi;
+  spiLabel();
+});
+spiLabel();
+
+// Autotrim: Segel stellen sich selbst optimal
+const btnAuto = document.getElementById('btn-autotrim');
+function autoLabel() {
+  btnAuto.textContent = boat.autoTrim ? '🪄 Autotrim: an' : '🪄 Autotrim: aus';
+}
+function disableAutoTrim() {
+  if (boat.autoTrim) {
+    boat.autoTrim = false;
+    autoLabel();
+  }
+}
+btnAuto.addEventListener('click', () => {
+  boat.autoTrim = !boat.autoTrim;
+  autoLabel();
+});
+autoLabel();
+
+// Vektoranzeige (Wind, Fahrt, Vortrieb, Drift)
+const btnVec = document.getElementById('btn-vectors');
+function vecLabel() {
+  btnVec.textContent = renderer.showVectors ? '📐 Vektoren: an' : '📐 Vektoren: aus';
+}
+btnVec.addEventListener('click', () => {
+  renderer.showVectors = !renderer.showVectors;
+  vecLabel();
+});
+vecLabel();
+
 const btnWander = document.getElementById('btn-wander');
 function wanderLabel() {
   btnWander.textContent = wind.wander ? '🌬 Wind wandert: an' : '🌬 Wind wandert: aus';
