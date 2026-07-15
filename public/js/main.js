@@ -171,6 +171,7 @@ btnBoat.addEventListener('click', () => {
   typeIdx = (typeIdx + 1) % typeKeys.length;
   boat.setType(BOAT_TYPES[typeKeys[typeIdx]]);
   boatLabel();
+  spiLabel();
 });
 boatLabel();
 
@@ -201,12 +202,15 @@ function setZoom(i) {
 document.getElementById('btn-zoom-in').addEventListener('click', () => setZoom(zoomIdx + 1));
 document.getElementById('btn-zoom-out').addEventListener('click', () => setZoom(zoomIdx - 1));
 
-// Spinnaker setzen/bergen
+// Spinnaker setzen/bergen (das Floß hat keinen)
 const btnSpi = document.getElementById('btn-spi');
 function spiLabel() {
-  btnSpi.textContent = boat.spi ? '🎈 Spi bergen' : '🎈 Spi setzen';
+  const has = !!boat.type.spi;
+  btnSpi.disabled = !has;
+  btnSpi.textContent = !has ? '🎈 kein Spi' : boat.spi ? '🎈 Spi bergen' : '🎈 Spi setzen';
 }
 btnSpi.addEventListener('click', () => {
+  if (!boat.type.spi) return;
   boat.spi = !boat.spi;
   spiLabel();
 });
@@ -299,6 +303,7 @@ function resolveCollision() {
 // ---- Schleife ---------------------------------------------------------------
 let last = performance.now();
 let time = 0;
+let lastSpi = boat.spi;
 
 // Debug-/Test-Zugriff in der Konsole
 window.__game = { boat, wind, race, get terrain() { return terrain; }, renderer };
@@ -316,6 +321,10 @@ function frame(now) {
   const prevState = race.state;
   race.update(boat, prevPos, dt);
   if (race.state !== prevState) raceLabel();
+  if (boat.spi !== lastSpi) { // Auto-Spi hat gesetzt/geborgen
+    lastSpi = boat.spi;
+    spiLabel();
+  }
   renderer.draw(boat, wind, race, time, dt);
 
   requestAnimationFrame(frame);

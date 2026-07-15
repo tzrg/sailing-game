@@ -12,8 +12,14 @@ keine Build-Tools) und wird als Docker-Container deployt.
 - Das Boot ist in der Bildschirmmitte, die Welt bewegt sich darunter.
 - Der See mit Ufer und Inseln wird **prozedural generiert** („Neue Karte“
   erzeugt eine neue Welt). Mit Land kann man kollidieren.
-- **Zwei Bootstypen** (umschaltbar): wendige, kipplige **Jolle** und ein
-  größeres, träges, aber schnelleres **Kielboot** mit wenig Abdrift.
+- **Vier Bootstypen** (umschaltbar): wendige, kipplige **Jolle**, ein großes,
+  träges, schnelles **Kielboot** mit wenig Abdrift, ein pfeilschneller
+  **Katamaran**, der nur widerwillig und unter großem Fahrtverlust wendet,
+  und ein **Floß** mit absichtlich katastrophalen Segeleigenschaften
+  (driftet quer, geht kaum an den Wind, kein Spinnaker).
+- **Spinnaker** (außer Floß): per Button setzen/bergen, steht nur bei
+  achterlichem Wind. **Autotrim** stellt Schoten optimal und setzt/birgt
+  den Spi automatisch je nach Kurs (mit Hysterese).
 - **Regattamodus** (🏁): über die Startlinie, drei nummerierte Bojen in
   Reihenfolge anlaufen, zurück über die Ziellinie. Die Uhr startet beim
   Startlinien-Durchgang und stoppt im Ziel; **Bestzeiten** werden pro Karte

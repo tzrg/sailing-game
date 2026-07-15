@@ -46,6 +46,11 @@ html, body {
   background: rgba(8, 25, 42, 0.8);
 }
 
+#toolbar button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 #zoombar {
   position: fixed;
   left: 14px;

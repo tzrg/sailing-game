@@ -248,34 +248,40 @@ export class Renderer {
     const heelOff = Math.sin(boat.heel) * 0.7; // Meter nach Steuerbord
     const bw = (1 - 0.16 * Math.abs(Math.sin(boat.heel))) * beamFactor;
 
-    // Rumpf
-    ctx.save();
-    ctx.scale(bw, 1);
-    ctx.beginPath();
-    ctx.moveTo(0, -2.9);
-    ctx.quadraticCurveTo(1.05, -1.4, 0.95, 0.6);
-    ctx.quadraticCurveTo(0.9, 1.9, 0.62, 2.5);
-    ctx.lineTo(-0.62, 2.5);
-    ctx.quadraticCurveTo(-0.9, 1.9, -0.95, 0.6);
-    ctx.quadraticCurveTo(-1.05, -1.4, 0, -2.9);
-    ctx.closePath();
-    ctx.fillStyle = type.hullColor;
-    ctx.fill();
-    ctx.lineWidth = 0.1;
-    ctx.strokeStyle = type.trimColor;
-    ctx.stroke();
-    // Deckslinie
-    ctx.beginPath();
-    ctx.moveTo(0, -2.4);
-    ctx.quadraticCurveTo(0.72, -1.2, 0.66, 0.6);
-    ctx.quadraticCurveTo(0.62, 1.7, 0.42, 2.2);
-    ctx.lineTo(-0.42, 2.2);
-    ctx.quadraticCurveTo(-0.62, 1.7, -0.66, 0.6);
-    ctx.quadraticCurveTo(-0.72, -1.2, 0, -2.4);
-    ctx.closePath();
-    ctx.fillStyle = type.deckColor;
-    ctx.fill();
-    ctx.restore();
+    // Rumpf je nach Bauart
+    if (type.hullStyle === 'cat') {
+      this.drawCatHull(type);
+    } else if (type.hullStyle === 'raft') {
+      this.drawRaftHull(type);
+    } else {
+      ctx.save();
+      ctx.scale(bw, 1);
+      ctx.beginPath();
+      ctx.moveTo(0, -2.9);
+      ctx.quadraticCurveTo(1.05, -1.4, 0.95, 0.6);
+      ctx.quadraticCurveTo(0.9, 1.9, 0.62, 2.5);
+      ctx.lineTo(-0.62, 2.5);
+      ctx.quadraticCurveTo(-0.9, 1.9, -0.95, 0.6);
+      ctx.quadraticCurveTo(-1.05, -1.4, 0, -2.9);
+      ctx.closePath();
+      ctx.fillStyle = type.hullColor;
+      ctx.fill();
+      ctx.lineWidth = 0.1;
+      ctx.strokeStyle = type.trimColor;
+      ctx.stroke();
+      // Deckslinie
+      ctx.beginPath();
+      ctx.moveTo(0, -2.4);
+      ctx.quadraticCurveTo(0.72, -1.2, 0.66, 0.6);
+      ctx.quadraticCurveTo(0.62, 1.7, 0.42, 2.2);
+      ctx.lineTo(-0.42, 2.2);
+      ctx.quadraticCurveTo(-0.62, 1.7, -0.66, 0.6);
+      ctx.quadraticCurveTo(-0.72, -1.2, 0, -2.4);
+      ctx.closePath();
+      ctx.fillStyle = type.deckColor;
+      ctx.fill();
+      ctx.restore();
+    }
 
     // Pinne
     const ra = boat.rudder * 0.6;
@@ -286,10 +292,17 @@ export class Renderer {
     ctx.lineTo(Math.sin(-ra) * 0.8, 2.45 + Math.cos(ra) * 0.8);
     ctx.stroke();
 
+    // Rigg-Geometrie je Bauart (Zeichnungseinheiten eines 5,5-m-Boots)
+    const rig = type.hullStyle === 'raft'
+      ? { mastY: -0.2, boom: 2.2, jibTackY: 0, jib: 0, spi: 0 }
+      : type.hullStyle === 'cat'
+        ? { mastY: -0.5, boom: 2.8, jibTackY: -2.6, jib: 2.0, spi: 3.2 }
+        : { mastY: -0.6, boom: 3.0, jibTackY: -2.8, jib: 2.3, spi: 3.4 };
+
     // Spinnaker: großer bunter Ballon vor dem Bug (nur wenn gesetzt)
-    if (boat.spi) {
-      const st = { x: heelOff * 0.3, y: -2.9 };
-      const sl = 3.4;
+    if (boat.spi && type.spi) {
+      const st = { x: heelOff * 0.3, y: rig.jibTackY - 0.1 };
+      const sl = rig.spi;
       const sEnd = {
         x: st.x - Math.sin(boat.spiBoom) * sl,
         y: st.y + Math.cos(boat.spiBoom) * sl,
@@ -305,17 +318,19 @@ export class Renderer {
     }
 
     // Vorsegel (Fock): Hals am Bug, Schothorn je nach Stellung
-    const tack = { x: heelOff * 0.35, y: -2.8 };
-    const jl = 2.3;
-    const jEnd = {
-      x: tack.x - Math.sin(boat.jibBoom) * jl,
-      y: tack.y + Math.cos(boat.jibBoom) * jl,
-    };
-    this.drawSail(tack, jEnd, boat.aoaJib, boat.apparentSpd, time, 0.65);
+    if (type.sails.length > 1) {
+      const tack = { x: heelOff * 0.35, y: rig.jibTackY };
+      const jl = rig.jib;
+      const jEnd = {
+        x: tack.x - Math.sin(boat.jibBoom) * jl,
+        y: tack.y + Math.cos(boat.jibBoom) * jl,
+      };
+      this.drawSail(tack, jEnd, boat.aoaJib, boat.apparentSpd, time, 0.65);
+    }
 
     // Großsegel am Mast
-    const mast = { x: heelOff * 0.6, y: -0.6 };
-    const bl = 3.0;
+    const mast = { x: heelOff * 0.6, y: rig.mastY };
+    const bl = rig.boom;
     const bEnd = {
       x: mast.x - Math.sin(boat.boom) * bl,
       y: mast.y + Math.cos(boat.boom) * bl,
@@ -327,7 +342,10 @@ export class Renderer {
     ctx.moveTo(mast.x, mast.y);
     ctx.lineTo(bEnd.x, bEnd.y);
     ctx.stroke();
-    this.drawSail(mast, bEnd, boat.aoaMain, boat.apparentSpd, time, 1.0);
+    this.drawSail(
+      mast, bEnd, boat.aoaMain, boat.apparentSpd, time, 1.0,
+      type.hullStyle === 'raft' ? 'rgba(214,198,160,0.96)' : undefined,
+    );
 
     // Mast
     ctx.fillStyle = '#3d3d3d';
@@ -336,6 +354,59 @@ export class Renderer {
     ctx.fill();
 
     ctx.restore();
+  }
+
+  // Katamaran: zwei schlanke Rümpfe mit Trampolin
+  drawCatHull(type) {
+    const { ctx } = this;
+    // Trampolin
+    ctx.fillStyle = 'rgba(30,42,54,0.85)';
+    ctx.fillRect(-1.0, -1.3, 2.0, 3.0);
+    // Querträger
+    ctx.fillStyle = type.deckColor;
+    ctx.fillRect(-1.15, -1.35, 2.3, 0.28);
+    ctx.fillRect(-1.15, 1.45, 2.3, 0.28);
+    for (const side of [-1, 1]) {
+      const hx = side * 1.05;
+      ctx.beginPath();
+      ctx.moveTo(hx, -2.75);
+      ctx.quadraticCurveTo(hx + 0.3, -1.6, hx + 0.26, 0.4);
+      ctx.quadraticCurveTo(hx + 0.24, 1.8, hx + 0.18, 2.4);
+      ctx.lineTo(hx - 0.18, 2.4);
+      ctx.quadraticCurveTo(hx - 0.24, 1.8, hx - 0.26, 0.4);
+      ctx.quadraticCurveTo(hx - 0.3, -1.6, hx, -2.75);
+      ctx.closePath();
+      ctx.fillStyle = type.hullColor;
+      ctx.fill();
+      ctx.lineWidth = 0.08;
+      ctx.strokeStyle = type.trimColor;
+      ctx.stroke();
+    }
+  }
+
+  // Floß: Baumstämme mit Tauwerk
+  drawRaftHull(type) {
+    const { ctx } = this;
+    for (let i = -2; i <= 2; i++) {
+      const x = i * 0.5;
+      ctx.fillStyle = i % 2 === 0 ? type.hullColor : type.deckColor;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x - 0.22, -1.8, 0.44, 3.6, 0.2);
+      else ctx.rect(x - 0.22, -1.8, 0.44, 3.6);
+      ctx.fill();
+      ctx.lineWidth = 0.05;
+      ctx.strokeStyle = type.trimColor;
+      ctx.stroke();
+    }
+    // Zurrgurte
+    ctx.strokeStyle = 'rgba(60,42,24,0.9)';
+    ctx.lineWidth = 0.12;
+    for (const y of [-1.2, 1.1]) {
+      ctx.beginPath();
+      ctx.moveTo(-1.25, y);
+      ctx.lineTo(1.25, y);
+      ctx.stroke();
+    }
   }
 
   // Segeltuch als gewölbte Fläche zwischen zwei Punkten
@@ -523,9 +594,13 @@ export class Renderer {
     this.roundRect(px0, by - 30, panelW, bh + 64, 10);
     ctx.fill();
     const bars = [
-      { key: 'jib', x: px0 + 20, label: 'Fock', color: '#8fe3a1', trim: boat.trimJib },
       { key: 'main', x: px0 + 68, label: 'Groß', color: '#6fd6ff', trim: boat.trimMain },
     ];
+    if (boat.type.sails.length > 1) {
+      bars.push({ key: 'jib', x: px0 + 20, label: 'Fock', color: '#8fe3a1', trim: boat.trimJib });
+    } else {
+      this.trimBars.jib = { x: -9999, y: -9999, w: 0, h: 0 };
+    }
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
     for (const b of bars) {

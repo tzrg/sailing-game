@@ -29,7 +29,9 @@ export const BOAT_TYPES = {
     minSheet: 0.14,          // dichteste Schotstellung (~8°)
     maxSheet: 1.48,          // ganz gefiert (~85°)
     heelStiffness: 1100,     // N pro voller Krängung (kleiner = kippliger)
+    turnLoss: 0.35,          // Fahrtverlust beim Drehen
     spi: { area: 13, cl: 1.1, cd0: 0.12, cdMax: 1.9 },
+    hullStyle: 'mono',
     hullColor: '#f3eddd',
     deckColor: '#d8b878',
     trimColor: '#7a4a24',
@@ -52,10 +54,61 @@ export const BOAT_TYPES = {
     minSheet: 0.10,          // läuft etwas höher am Wind
     maxSheet: 1.48,
     heelStiffness: 3800,     // Ballastkiel: deutlich steifer
+    turnLoss: 0.35,
     spi: { area: 24, cl: 1.1, cd0: 0.12, cdMax: 1.9 },
+    hullStyle: 'mono',
     hullColor: '#f4f6f8',
     deckColor: '#9fb4c8',
     trimColor: '#26425e',
+  },
+  katamaran: {
+    key: 'katamaran',
+    name: 'Katamaran',
+    lengthM: 6.1,
+    beamM: 2.5,
+    mass: 190,               // federleicht
+    sails: [
+      { kind: 'main', area: 15, cl: 1.6, cd0: 0.05, cdMax: 1.5 },
+      { kind: 'jib',  area: 4,  cl: 1.7, cd0: 0.05, cdMax: 1.3 },
+    ],
+    dragFwdLin: 6,           // kaum benetzte Fläche -> rennt
+    dragFwdQuad: 12,
+    dragLatLin: 110,
+    dragLatQuad: 520,
+    maxTurnRate: 0.55,       // wendet nur widerwillig ...
+    turnLoss: 2.2,           // ... und verliert dabei massiv Fahrt
+    minSheet: 0.12,
+    maxSheet: 1.48,
+    heelStiffness: 2600,     // breite Basis, steif
+    spi: { area: 17, cl: 1.1, cd0: 0.12, cdMax: 1.9 },
+    hullStyle: 'cat',
+    hullColor: '#fff8e8',
+    deckColor: '#2f3d4a',
+    trimColor: '#e2574c',
+  },
+  floss: {
+    key: 'floss',
+    name: 'Floß',
+    lengthM: 4.0,
+    beamM: 2.6,
+    mass: 420,               // nasse Baumstämme
+    sails: [
+      // ein schlaffer Lappen am Ast: kaum Auftrieb, geht praktisch nicht an den Wind
+      { kind: 'main', area: 8, cl: 0.5, cd0: 0.18, cdMax: 1.6 },
+    ],
+    dragFwdLin: 60,          // schiebt eine Bugwelle wie ein Scheunentor
+    dragFwdQuad: 200,
+    dragLatLin: 25,          // kein Kiel, kein Schwert -> driftet quer weg
+    dragLatQuad: 60,
+    maxTurnRate: 0.4,
+    turnLoss: 1.0,
+    minSheet: 0.35,          // die "Schot" ist ein alter Strick
+    maxSheet: 1.48,
+    heelStiffness: 99999,    // krängen kann es wenigstens nicht
+    hullStyle: 'raft',
+    hullColor: '#8a5a33',
+    deckColor: '#7a4e2b',
+    trimColor: '#5b3a1e',
   },
 };
 
@@ -120,6 +173,8 @@ export class Boat {
     this.spi = false;      // Spinnaker gesetzt?
     this.spiBoom = 0;
     this.spiEff = 0;       // 0 = eingefallen, 1 = voll stehend
+    this.spiHoistT = 0;    // Hysterese-Timer für Auto-Spi
+    this.spiDouseT = 0;
     this.autoTrim = false; // Schoten automatisch trimmen
     this.aeroFx = 0;       // Segel-Gesamtkraft (für Vektoranzeige)
     this.aeroFy = 0;
@@ -132,6 +187,7 @@ export class Boat {
   // Bootstyp wechseln, Fahrtzustand bleibt erhalten
   setType(type) {
     this.type = type;
+    if (!type.spi) this.spi = false; // z. B. das Floß hat keinen Spinnaker
   }
 
   // Schotgrenze (max. Baumwinkel) aus Trimm 0..1
@@ -164,6 +220,21 @@ export class Boat {
         const desJ = toTrim(Math.max(0, bFreeAbs - 0.28));
         this.trimMain += (desM - this.trimMain) * Math.min(1, dt * 2.5);
         this.trimJib += (desJ - this.trimJib) * Math.min(1, dt * 2.5);
+        // Auto-Spi: auf tiefen Kursen setzen, beim Anluven bergen (Hysterese)
+        if (t.spi) {
+          if (!this.spi && bFreeAbs > 1.45) {
+            this.spiHoistT += dt;
+            if (this.spiHoistT > 1.5) { this.spi = true; this.spiHoistT = 0; }
+          } else {
+            this.spiHoistT = 0;
+          }
+          if (this.spi && bFreeAbs < 1.1) {
+            this.spiDouseT += dt;
+            if (this.spiDouseT > 1.0) { this.spi = false; this.spiDouseT = 0; }
+          } else {
+            this.spiDouseT = 0;
+          }
+        }
       }
 
       for (let i = 0; i < t.sails.length; i++) {
@@ -235,8 +306,8 @@ export class Boat {
     const target = this.rudder * t.maxTurnRate * grip;
     this.angVel += (target - this.angVel) * Math.min(1, dt * 5);
     this.heading = normAngle(this.heading + this.angVel * dt);
-    // Drehen kostet etwas Fahrt
-    const scrub = 1 - clamp(Math.abs(this.angVel) * 0.35 * dt, 0, 0.08);
+    // Drehen kostet Fahrt (Katamaran besonders viel -> Wenden will geplant sein)
+    const scrub = 1 - clamp(Math.abs(this.angVel) * (t.turnLoss ?? 0.35) * dt, 0, 0.15);
     this.vx *= scrub;
     this.vy *= scrub;
 
