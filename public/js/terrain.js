@@ -31,13 +31,17 @@ export class Terrain {
     this.seed = seed | 0;
     this.mode = cfg.mode === 'meer' ? 'meer' : 'see';
     this.islandDensity = cfg.islandDensity ?? 0.5;
-    this.islandSize = cfg.islandSize ?? 0.4;
+    this.islandSize = cfg.islandSize ?? 0.25;
     this.lakeSize = cfg.lakeSize ?? 0.5;
-    // mehr Dichte -> niedrigere Landschwelle; mehr Größe -> längere Wellenlänge.
-    // Kalibriert: bei Standarddichte liegt die nächste Insel im Median ~260 m
-    // vom Start (wenige Minuten Segelzeit), Landanteil ~28%; Dichte 1 ~ Archipel.
-    this.threshold = 0.66 - 0.20 * this.islandDensity;
-    this.wavelength = 250 + 900 * this.islandSize;
+    this.threshold = 0.6;
+    // Inseln werden als Einzelfeatures auf einem gejitterten Raster gestreut:
+    // Dichte = Wahrscheinlichkeit pro Rasterzelle, Größe = Zellabstand/Radius.
+    // So entstehen viele getrennte kleine Inseln statt zusammenhängender Klumpen.
+    this.islandProb = 0.25 + 0.65 * this.islandDensity;
+    this.spacing = 130 + 220 * this.islandSize;
+    // schwaches Großrelief (größere Landmassen nur bei großer Inselgröße)
+    this.bgWeight = 0.15 + 0.5 * this.islandSize;
+    this.wavelength = 500 + 700 * this.islandSize;
     this.lakeR = 220 + 1080 * this.lakeSize; // Seeradius in Metern
   }
 
@@ -47,24 +51,47 @@ export class Terrain {
     return Math.min(1, Math.max(0.35, (this.lakeR * 0.75) / 380));
   }
 
+  // gestreute Einzelinseln: 0 = Wasser, bis ~1 im Inselzentrum
+  islandField(x, y, r) {
+    const cell = this.spacing;
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+    let v = 0;
+    for (let j = -1; j <= 1; j++) {
+      for (let i = -1; i <= 1; i++) {
+        const gx = cx + i, gy = cy + j;
+        if (hash2(gx, gy, this.seed ^ 0x9134) > this.islandProb) continue;
+        const px = (gx + 0.15 + 0.7 * hash2(gx, gy, this.seed + 11)) * cell;
+        const py = (gy + 0.15 + 0.7 * hash2(gx, gy, this.seed + 23)) * cell;
+        const rad = cell * (0.14 + 0.3 * hash2(gx, gy, this.seed + 37));
+        const d = Math.hypot(x - px, y - py);
+        if (d > rad * 1.6) continue;
+        // Küstenlinie mit Rauschen verwackeln
+        const wob = 0.75 + 0.5 * valueNoise(x / 45, y / 45, this.seed + 51);
+        v = Math.max(v, 1 - d / (rad * wob));
+      }
+    }
+    // Startbereich bleibt frei
+    return v * Math.min(1, r / 150);
+  }
+
   // "Höhe" 0..1 an Weltposition (Meter); um den Start herum wird Wasser garantiert
   height(x, y) {
-    let h = 0, amp = 0.5, freq = 1 / this.wavelength;
+    const r2 = x * x + y * y;
+    const r = Math.sqrt(r2);
+    let n = 0, amp = 0.5, freq = 1 / this.wavelength;
     for (let o = 0; o < 4; o++) {
-      h += amp * valueNoise(x * freq, y * freq, this.seed + o * 131);
+      n += amp * valueNoise(x * freq, y * freq, this.seed + o * 131);
       amp *= 0.5;
       freq *= 2.13;
     }
-    h /= 0.9375;
-    const r2 = x * x + y * y;
+    n /= 0.9375;
+    let h = 0.5 + (n - 0.5) * this.bgWeight;
+    h += this.islandField(x, y, r) * 0.35;
     if (this.mode === 'see') {
       // außerhalb des Seeradius steigt das Ufer an; das Rauschen
       // macht die Uferlinie unregelmäßig
-      const r = Math.sqrt(r2);
-      h += Math.min(1.2, Math.max(0, (r - this.lakeR) / 180) * 0.5);
+      h += Math.min(1.2, Math.max(0, (r - this.lakeR + (n - 0.5) * 260) / 180) * 0.5);
     }
-    // kleiner Freiraum am Startpunkt (nur so groß wie nötig, damit
-    // Inseln in Seen nicht weggebügelt werden)
     h -= 0.3 * Math.exp(-r2 / (2 * 130 * 130));
     return h;
   }

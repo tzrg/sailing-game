@@ -302,8 +302,8 @@ function updateFreeButton(dt) {
   }
 }
 // Zoomstufen (herausgezoomt sieht man Kurs und Küste)
-const ZOOM_LEVELS = [0.1, 0.2, 0.35, 0.6, 1, 1.5];
-let zoomIdx = 4;
+const ZOOM_LEVELS = [0.06, 0.1, 0.2, 0.35, 0.6, 1, 1.5];
+let zoomIdx = 5;
 function setZoom(i) {
   zoomIdx = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, i));
   renderer.zoom = ZOOM_LEVELS[zoomIdx];
