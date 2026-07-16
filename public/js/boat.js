@@ -125,25 +125,29 @@ export const BOAT_TYPES = {
     lengthM: 45,
     beamM: 10,
     mass: 120000,
-    // Rahsegel lassen sich nur begrenzt brassen (minB/maxB) - hoch am Wind
-    // geht fast nichts, raume Kurse sind das Revier des Dreimasters.
-    // JEDES Segel wird einzeln getrimmt (perSailTrim): 3 Masten x 3 Rahen
+    // Rahsegel: die Rah steht quer zum Schiff und wird über Brassen gedreht.
+    // Trim 0 (offen) = vierkant (Rah quer, Position vor dem Wind),
+    // Trim 1 (dicht) = scharf angebrasst (~55 Grad, für halben Wind).
+    // Physik: Flächen-Normalkraft (flat plate) - hoch am Wind geht fast
+    // nichts, raume Kurse sind das Revier des Dreimasters.
+    // JEDES Segel wird einzeln gebrasst (perSailTrim): 3 Masten x 3 Rahen
     // plus zwei Vorsegel - manuell herrlich nervig, Autotrim hilft.
     perSailTrim: true,
     sailLabels: ['F1', 'F2', 'F3', 'G1', 'G2', 'G3', 'B1', 'B2', 'B3', 'V1', 'V2'],
     sails: [
-      { kind: 'square', ctl: 'main', area: 95, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 70, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 45, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 95, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 70, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 45, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 95, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 70, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
-      { kind: 'square', ctl: 'main', area: 45, cl: 1.0, cd0: 0.10, cdMax: 1.7, minB: 0.35, maxB: 1.0 },
+      { kind: 'square', ctl: 'main', area: 95, cn: 1.3 },
+      { kind: 'square', ctl: 'main', area: 70, cn: 1.3 },
+      { kind: 'square', ctl: 'main', area: 45, cn: 1.3 },
+      { kind: 'square', ctl: 'main', area: 95, cn: 1.3 },
+      { kind: 'square', ctl: 'main', area: 70, cn: 1.3 },
+      { kind: 'square', ctl: 'main', area: 45, cn: 1.3 },
+      { kind: 'square', ctl: 'main', area: 95, cn: 1.3 },
+      { kind: 'square', ctl: 'main', area: 70, cn: 1.3 },
+      { kind: 'square', ctl: 'main', area: 45, cn: 1.3 },
       { kind: 'jib',    ctl: 'jib',  area: 60, cl: 1.3, cd0: 0.06, cdMax: 1.4 },
       { kind: 'jib',    ctl: 'jib',  area: 60, cl: 1.3, cd0: 0.06, cdMax: 1.4 },
     ],
+    braceMax: 0.96, // max. Brasswinkel (~55 Grad von vierkant)
     // Breitseite statt Spinnaker
     cannons: { perSide: 3, range: 170, speed: 55, cooldown: 4 },
     dragFwdLin: 400,
@@ -331,9 +335,13 @@ export class Boat {
         const desM = toTrim(Math.max(0, bFreeAbs - 0.32));
         const desJ = toTrim(Math.max(0, bFreeAbs - 0.28));
         if (this.sailTrims) {
-          // Einzeltrimm: die Crew trimmt jedes Segel für sich
+          // Einzeltrimm: die Crew trimmt jedes Segel für sich.
+          // Rahsegel: optimaler Brasswinkel = halber Anströmwinkel
+          const psiAbs = Math.abs(normAngle(flowA - this.heading));
+          const desSq = clamp((psiAbs / 2) / (t.braceMax ?? 0.96), 0, 1);
           for (let i = 0; i < t.sails.length; i++) {
-            const des = t.sails[i].ctl === 'jib' ? desJ : desM;
+            const s = t.sails[i];
+            const des = s.kind === 'square' ? desSq : s.ctl === 'jib' ? desJ : desM;
             this.sailTrims[i] += (des - this.sailTrims[i]) * Math.min(1, dt * 2.5);
           }
         }
@@ -352,6 +360,32 @@ export class Boat {
       for (let i = 0; i < t.sails.length; i++) {
         const s = t.sails[i];
         const isJib = s.ctl === 'jib';
+
+        if (s.kind === 'square') {
+          // Rahsegel: Rah quer zum Schiff, per Brassen um beta gedreht.
+          // Optimal ist beta ~ halber Winkel zwischen Anströmung und Kurs;
+          // die Kraft wirkt als Normalkraft auf die Segelfläche (flat plate),
+          // rückwärtige Anströmung legt das Segel back.
+          const braceMax = t.braceMax ?? 0.96;
+          const psi = normAngle(flowA - this.heading); // Anströmung relativ zum Bug
+          const trim = this.sailTrims ? this.sailTrims[i] : this.trimMain;
+          // Brass-Seite folgt der Anströmung; genau vor dem Wind Seite halten
+          const side = Math.abs(psi) > 0.05
+            ? Math.sign(psi)
+            : Math.sign(this.sailBooms[i]) || 1;
+          const beta = side * trim * braceMax;
+          const nAng = this.heading + Math.PI + beta; // Flächennormale (achterlich)
+          const nx = Math.sin(nAng), ny = -Math.cos(nAng);
+          const fn = fl.x * nx + fl.y * ny; // Anströmung senkrecht zur Fläche
+          this.sailBooms[i] = beta;
+          this.sailAoas[i] = fn; // Vorzeichen = Wölbungsseite, ~0 = killt
+          if (!mainSet) { this.boom = beta; this.aoaMain = fn; mainSet = true; }
+          const q = 0.5 * RHO_AIR * s.area * aspd * aspd;
+          FxA += q * s.cn * fn * nx;
+          FyA += q * s.cn * fn * ny;
+          continue;
+        }
+
         // Segel stellt sich frei in den Wind, die Schot begrenzt den Winkel
         let bFree = normAngle(flowA - this.heading - Math.PI);
         if (Math.PI - Math.abs(bFree) < 0.4) {

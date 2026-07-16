@@ -473,27 +473,30 @@ export class Renderer {
   }
 
   // Rahsegel an drei Masten + Vorsegel am Bugspriet; jedes Segel hat
-  // seinen eigenen Brasswinkel (Einzeltrimm)
+  // seinen eigenen Brasswinkel (Einzeltrimm). beta = 0 heißt vierkant
+  // (Rah quer), das Tuch wölbt sich auf die Lee-Seite der Fläche.
   drawShipRig(boat, time) {
     const { ctx } = this;
     const masts = [-1.6, -0.1, 1.35];
     const widths = [1.45, 1.15, 0.85];
-    const offs = [0, 0.12, 0.24]; // leicht versetzt für Staffelung
+    const offs = [0, 0.12, 0.24]; // leicht nach achtern gestaffelt
     for (let m = 0; m < masts.length; m++) {
       const my = masts[m];
       for (let s = 0; s < 3; s++) {
         const idx = m * 3 + s;
-        const b = boat.sailBooms[idx] ?? boat.boom;
-        const aoa = boat.sailAoas[idx] ?? 0;
-        const yaw = { x: -Math.cos(b), y: -Math.sin(b) }; // Richtung der Rah
-        const luff = Math.abs(aoa) < 0.06 && boat.apparentSpd > 1.5;
+        const beta = boat.sailBooms[idx] ?? 0;
+        const fn = boat.sailAoas[idx] ?? 0; // Anströmung auf die Fläche (signiert)
+        // Rah: quer zum Schiff, um beta gebrasst
+        const yaw = { x: Math.cos(beta), y: Math.sin(beta) };
+        const luff = Math.abs(fn) < 0.12 && boat.apparentSpd > 1.5;
         const w = widths[s];
-        const ox = Math.sin(b) * offs[s];
-        const oy = -Math.cos(b) * offs[s];
-        const a1 = { x: yaw.x * w + ox, y: my + yaw.y * w + oy };
-        const a2 = { x: -yaw.x * w + ox, y: my - yaw.y * w + oy };
-        // Wölbung zeigt nach achtern-lee (konstant, tack-unabhängig)
-        this.drawSail(a1, a2, luff ? 0 : -0.55, boat.apparentSpd, time, 0.8, 'rgba(240,234,215,0.95)');
+        const oy = offs[s];
+        const a1 = { x: yaw.x * w, y: my + yaw.y * w + oy };
+        const a2 = { x: -yaw.x * w, y: my - yaw.y * w + oy };
+        // Wölbung in Richtung der Flächennormalen (Vorzeichen von fn);
+        // drawSail wölbt entlang rotCW(a2-a1) = -Normale -> negatives Vorzeichen
+        const visAoa = luff ? 0 : -0.75 * Math.sign(fn || 1);
+        this.drawSail(a1, a2, visAoa, boat.apparentSpd, time, 0.8, 'rgba(240,234,215,0.95)');
         // Rah
         ctx.strokeStyle = '#3e2715';
         ctx.lineWidth = 0.1;
