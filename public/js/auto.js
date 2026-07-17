@@ -207,9 +207,13 @@ function update(dt, time) {
 }
 
 // ---- Rendering -------------------------------------------------------------
+let curS = 8.8; // sanft geglättete Zoomstufe
 function draw(time) {
   const speed = Math.hypot(st.vx, st.vy);
-  const S = 7.5 - clamp(speed / 32, 0, 1) * 2.8; // bei Tempo weiter rauszoomen
+  // je schneller, desto weiter raus (mehr Übersicht bei Tempo)
+  const targetS = 8.8 - clamp(speed / 26, 0, 1) * 4.4; // 8.8 -> ~4.4
+  curS += (targetS - curS) * 0.08;
+  const S = curS;
   const toS = (wx, wy) => ({ x: (wx - st.x) * S + W / 2, y: (wy - st.y) * S + H / 2 });
 
   ctx.fillStyle = track.floor;
@@ -219,24 +223,31 @@ function draw(time) {
   const y0 = st.y - H / 2 / S, y1 = st.y + H / 2 / S;
 
   if (track.key === 'city') {
-    // Fahrbahnmarkierung + Häuserblocks. Die Strichmuster werden über
-    // lineDashOffset an die Weltkoordinaten gekoppelt, sonst kriechen sie
-    // beim Fahren mit dem Auto mit.
-    ctx.strokeStyle = 'rgba(220,220,190,0.5)';
-    ctx.lineWidth = Math.max(1, 0.25 * S);
-    ctx.setLineDash([3 * S, 4 * S]);
-    ctx.lineDashOffset = H / 2 - st.y * S; // vertikale Linien: Phase an Welt-Y
+    // Fahrbahnmarkierung als weltfeste Strich-Rechtecke auf einem festen
+    // Weltraster (kein Bildschirm-Dash -> kriecht garantiert nicht mit).
+    const DASH = 3, GAP = 4, PER = DASH + GAP; // Meter
+    ctx.fillStyle = 'rgba(220,220,190,0.55)';
+    const dw = Math.max(1, 0.4 * S);
+    // vertikale Straßen: Striche laufen in Welt-Y
     for (let gx = Math.floor(x0 / P) * P; gx <= x1 + P; gx += P) {
-      const sx = toS(gx + SW / 2, 0).x;
-      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+      const cx = gx + SW / 2;
+      const sx = (cx - st.x) * S + W / 2;
+      if (sx < -5 || sx > W + 5) continue;
+      for (let wy = Math.floor(y0 / PER) * PER; wy < y1 + PER; wy += PER) {
+        const ya = (wy - st.y) * S + H / 2;
+        ctx.fillRect(sx - dw / 2, ya, dw, DASH * S);
+      }
     }
-    ctx.lineDashOffset = W / 2 - st.x * S; // horizontale Linien: Phase an Welt-X
+    // horizontale Straßen: Striche laufen in Welt-X
     for (let gy = Math.floor(y0 / P) * P; gy <= y1 + P; gy += P) {
-      const sy = toS(0, gy + SW / 2).y;
-      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+      const cy = gy + SW / 2;
+      const sy = (cy - st.y) * S + H / 2;
+      if (sy < -5 || sy > H + 5) continue;
+      for (let wx = Math.floor(x0 / PER) * PER; wx < x1 + PER; wx += PER) {
+        const xa = (wx - st.x) * S + W / 2;
+        ctx.fillRect(xa, sy - dw / 2, DASH * S, dw);
+      }
     }
-    ctx.setLineDash([]);
-    ctx.lineDashOffset = 0;
     for (let gx = Math.floor(x0 / P) * P; gx <= x1 + P; gx += P) {
       for (let gy = Math.floor(y0 / P) * P; gy <= y1 + P; gy += P) {
         const bx = gx + SW, by = gy + SW;
@@ -589,7 +600,7 @@ window.addEventListener('resize', resize);
 resize();
 resetRun();
 
-window.__auto = { st, get car() { return car; }, get track() { return track; }, CARS, TRACKS, resetRun };
+window.__auto = { st, get car() { return car; }, get track() { return track; }, get zoom() { return curS; }, CARS, TRACKS, resetRun };
 
 let last = performance.now();
 let time = 0;
