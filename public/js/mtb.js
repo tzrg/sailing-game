@@ -86,6 +86,30 @@ function distToPath(track, x, y) {
   return best;
 }
 
+// schneidet die Strecke p->q die Strecke a->b? (Checkpoint-Tore)
+function cross2(ax, ay, bx, by) { return ax * by - ay * bx; }
+function segCross(p, q, a, b) {
+  const d1 = cross2(b.x - a.x, b.y - a.y, p.x - a.x, p.y - a.y);
+  const d2 = cross2(b.x - a.x, b.y - a.y, q.x - a.x, q.y - a.y);
+  const d3 = cross2(q.x - p.x, q.y - p.y, a.x - p.x, a.y - p.y);
+  const d4 = cross2(q.x - p.x, q.y - p.y, b.x - p.x, b.y - p.y);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+
+// Tor eines Checkpoints: Linie quer zur Streckenrichtung, über die Bahnbreite
+function cpGate(track, idx, half) {
+  const p = track.path;
+  const cur = p[idx % p.length];
+  const prev = p[(idx - 1 + p.length) % p.length];
+  let dx = cur.x - prev.x, dy = cur.y - prev.y;
+  const l = Math.hypot(dx, dy) || 1;
+  const px = -dy / l, py = dx / l;
+  return {
+    a: { x: cur.x - px * half, y: cur.y - py * half },
+    b: { x: cur.x + px * half, y: cur.y + py * half },
+  };
+}
+
 // Fahrtrichtung (Heading) des nächsten Streckensegments an (x,y)
 function pathDirAt(track, x, y) {
   let best = 1e9, dir = 0;
@@ -184,7 +208,27 @@ function nearRamp() {
   return null;
 }
 
+function checkGates(prevPos) {
+  const gate = cpGate(track, st.nextCp, track.width * 1.15);
+  if (segCross(prevPos, st, gate.a, gate.b)) {
+    st.nextCp++;
+    if (st.nextCp % track.path.length === 1 && st.nextCp > 1) {
+      if (st.lapStart != null) {
+        st.lastLap = performance.now() / 1000 - st.lapStart;
+        if (st.best == null || st.lastLap < st.best) {
+          st.best = st.lastLap;
+          try { localStorage.setItem(bestKey(), String(st.best)); } catch { /* egal */ }
+        }
+      }
+      st.lapStart = performance.now() / 1000;
+    }
+  }
+  if (st.lapStart == null && Math.abs(st.speed) > 1) st.lapStart = performance.now() / 1000;
+  st.lapTime = st.lapStart != null ? performance.now() / 1000 - st.lapStart : 0;
+}
+
 function update(dt, time) {
+  const prevPos = { x: st.x, y: st.y };
   if (st.crashT > 0) {
     st.crashT -= dt;
     if (st.crashT <= 0) respawnCheckpoint();
@@ -214,6 +258,7 @@ function update(dt, time) {
     }
     trail.push({ x: st.x, y: st.y, t: time });
     if (trail.length > 60) trail.shift();
+    checkGates(prevPos); // durch ein Tor fliegen zählt auch
     return;
   }
 
@@ -269,23 +314,7 @@ function update(dt, time) {
     st.lastRampT = time;
   }
 
-  // Checkpoints / Runden
-  const cp = cpKey(st.nextCp);
-  if (Math.hypot(st.x - cp.x, st.y - cp.y) < 9) {
-    st.nextCp++;
-    if (st.nextCp % track.path.length === 1 && st.nextCp > 1) {
-      if (st.lapStart != null) {
-        st.lastLap = performance.now() / 1000 - st.lapStart;
-        if (st.best == null || st.lastLap < st.best) {
-          st.best = st.lastLap;
-          try { localStorage.setItem(bestKey(), String(st.best)); } catch { /* egal */ }
-        }
-      }
-      st.lapStart = performance.now() / 1000;
-    }
-  }
-  if (st.lapStart == null && Math.abs(st.speed) > 1) st.lapStart = performance.now() / 1000;
-  st.lapTime = st.lapStart != null ? performance.now() / 1000 - st.lapStart : 0;
+  checkGates(prevPos);
 }
 
 function landing(time) {
@@ -395,22 +424,24 @@ function draw(time) {
     ctx.restore();
   }
 
-  // Checkpoints
+  // Checkpoints als Tore quer über die Bahn
   for (let i = 0; i < track.path.length; i++) {
     const c = track.path[i];
     const q = toS(c.x, c.y);
     const isNext = i === st.nextCp % track.path.length;
+    const gate = cpGate(track, i, track.width * 1.15);
+    const ga = toS(gate.a.x, gate.a.y), gb = toS(gate.b.x, gate.b.y);
+    ctx.strokeStyle = isNext ? 'rgba(255,210,90,0.95)' : 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = isNext ? 5 : 3;
+    if (isNext) ctx.setLineDash([6, 5]);
     ctx.beginPath();
-    ctx.arc(q.x, q.y, 9 * S * 0.5 * (isNext ? 1 + 0.05 * Math.sin(time * 4) : 1), 0, TAU);
-    ctx.strokeStyle = isNext ? 'rgba(255,210,90,0.9)' : 'rgba(255,255,255,0.2)';
-    ctx.lineWidth = isNext ? 4 : 2;
+    ctx.moveTo(ga.x, ga.y); ctx.lineTo(gb.x, gb.y);
     ctx.stroke();
-    if (i === 0) {
-      ctx.fillStyle = isNext ? '#ffd25a' : 'rgba(255,255,255,0.5)';
-      ctx.font = `bold ${1.8 * S}px system-ui`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('🏁', q.x, q.y);
-    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = isNext ? '#ffd25a' : 'rgba(255,255,255,0.5)';
+    ctx.font = `bold ${1.6 * S}px system-ui`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(i === 0 ? '🏁' : String(i), q.x, q.y);
   }
 
   // Flugschatten-Trail

@@ -14,6 +14,29 @@ function hash2(x, y, seed) {
   return (h >>> 0) / 4294967296;
 }
 
+// schneidet die Strecke p->q die Strecke a->b? (Checkpoint-Tore)
+function cross2(ax, ay, bx, by) { return ax * by - ay * bx; }
+function segCross(p, q, a, b) {
+  const d1 = cross2(b.x - a.x, b.y - a.y, p.x - a.x, p.y - a.y);
+  const d2 = cross2(b.x - a.x, b.y - a.y, q.x - a.x, q.y - a.y);
+  const d3 = cross2(q.x - p.x, q.y - p.y, a.x - p.x, a.y - p.y);
+  const d4 = cross2(q.x - p.x, q.y - p.y, b.x - p.x, b.y - p.y);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+
+// Tor eines Checkpoints: Linie quer zur Anfahrtsrichtung, über die Strecke
+function cpGate(cps, idx, half) {
+  const cur = cps[idx];
+  const prev = cps[(idx - 1 + cps.length) % cps.length];
+  let dx = cur.x - prev.x, dy = cur.y - prev.y;
+  const l = Math.hypot(dx, dy) || 1;
+  const px = -dy / l, py = dx / l; // Querrichtung
+  return {
+    a: { x: cur.x - px * half, y: cur.y - py * half },
+    b: { x: cur.x + px * half, y: cur.y + py * half },
+  };
+}
+
 // ---- Autos -----------------------------------------------------------------
 const CARS = {
   sport: {
@@ -122,6 +145,7 @@ function hitsWall(x, y) {
 }
 
 function update(dt, time) {
+  const prevPos = { x: st.x, y: st.y };
   const f = dirVec(st.heading);
   const lat = { x: -f.y, y: f.x };
   let vF = st.vx * f.x + st.vy * f.y;
@@ -186,9 +210,9 @@ function update(dt, time) {
     if (smoke[i].t > 0.8) smoke.splice(i, 1);
   }
 
-  // Checkpoints / Runden
-  const cp = track.cps[st.nextCp % track.cps.length];
-  if (Math.hypot(st.x - cp.x, st.y - cp.y) < 11) {
+  // Checkpoints / Runden: Tor quer über die Straße überfahren
+  const gate = cpGate(track.cps, st.nextCp % track.cps.length, SW * 0.85);
+  if (segCross(prevPos, st, gate.a, gate.b)) {
     st.nextCp++;
     if (st.nextCp % track.cps.length === 1 && st.nextCp > 1) {
       // Start-Ziel überfahren -> Runde komplett
@@ -312,13 +336,19 @@ function draw(time) {
     const c = track.cps[i];
     const p = toS(c.x, c.y);
     const isNext = i === st.nextCp % track.cps.length;
+    // Tor-Linie quer über die Straße
+    const gate = cpGate(track.cps, i, SW * 0.85);
+    const ga = toS(gate.a.x, gate.a.y), gb = toS(gate.b.x, gate.b.y);
+    ctx.strokeStyle = isNext ? 'rgba(255,210,90,0.95)' : 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = isNext ? 5 : 3;
+    if (isNext) ctx.setLineDash([6, 5]);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 11 * S * (isNext ? 1 + 0.04 * Math.sin(time * 4) : 1) * 0.35, 0, TAU);
-    ctx.strokeStyle = isNext ? 'rgba(255,210,90,0.9)' : 'rgba(255,255,255,0.25)';
-    ctx.lineWidth = isNext ? 4 : 2;
+    ctx.moveTo(ga.x, ga.y); ctx.lineTo(gb.x, gb.y);
     ctx.stroke();
+    ctx.setLineDash([]);
+    // Nummer am Tor
     ctx.fillStyle = isNext ? '#ffd25a' : 'rgba(255,255,255,0.6)';
-    ctx.font = `bold ${Math.max(11, 1.6 * S)}px system-ui, sans-serif`;
+    ctx.font = `bold ${Math.max(12, 1.7 * S)}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(i === 0 ? '🏁' : i), p.x, p.y);
