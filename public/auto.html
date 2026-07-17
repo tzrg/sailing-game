@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Autorennen</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🏎%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>Autorennen</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link" href="index.html">⛵ Segeln</a>
+          <a class="game-link active" href="auto.html">🏎 Auto</a>
+          <a class="game-link" href="mtb.html">🚵 MTB</a>
+        </div>
+      </div>
+
+      <label class="menu-select">🚗 Auto
+        <select id="sel-car"></select>
+      </label>
+
+      <div class="menu-group">
+        <div class="group-title">Strecke</div>
+        <div class="seg">
+          <button id="mode-city" class="active">City</button>
+          <button id="mode-drift">Drift-Parcours</button>
+        </div>
+        <button class="menu-btn" id="btn-reset">🔄 Neustart</button>
+      </div>
+
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>🏎 Autorennen</h1>
+      <ul>
+        <li><b>Linke Bildschirmhälfte</b> – Finger horizontal ziehen: <b>lenken</b> (loslassen = geradeaus)</li>
+        <li><b>Rechte Bildschirmhälfte</b> – Finger vertikal ziehen: <b>Gas</b> (hoch) / <b>Bremse & Rückwärts</b> (runter)</li>
+        <li><b>Driften</b> – in der Kurve bremsen und einlenken reißt das Heck los; je länger der Drift, desto mehr <b>Drift-Punkte</b></li>
+        <li>Fahre die <b>Checkpoints</b> 1, 2, 3 … der Reihe nach ab und über die 🏁-Linie – die Rundenzeit läuft, die Bestzeit wird pro Strecke und Auto gespeichert</li>
+        <li>Desktop: Pfeiltasten ← → lenken, ↑ Gas, ↓ Bremse</li>
+      </ul>
+      <p>Drei Autos: wendiger <b>Sportwagen</b>, schweres <b>Muscle-Car</b>
+        (driftet lang) und flinker <b>Kleinwagen</b> (viel Grip).
+        Zwei Strecken: <b>City</b> durch die Häuserblocks und der offene
+        <b>Drift-Parcours</b> mit Hütchen.</p>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/auto.js"></script>
+</body>
+</html>

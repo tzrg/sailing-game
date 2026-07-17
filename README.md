@@ -1,8 +1,34 @@
-# ⛵ Segelspiel
+# 🎮 Spielesammlung (Segeln · Auto · MTB)
+
+Drei browserbasierte Top-Down-Spiele, umschaltbar über das ☰-Menü
+(Abschnitt „Spiel wechseln“). Alles läuft komplett im Browser
+(HTML5 Canvas, Vanilla JS, keine Build-Tools) und wird als
+Docker-Container deployt. Jedes Spiel ist eine eigene Seite:
+
+- **`index.html` – ⛵ Segelspiel** (siehe unten): physikalisch plausible
+  Segelphysik, sieben Boote, Regatta mit Bojen-Rundung.
+- **`auto.html` – 🏎 Autorennen**: GTA2-artige Top-Down-Sicht durch eine
+  Stadt, Driften über die Bremse, drei Autos (Sportwagen, Muscle-Car,
+  Kleinwagen), zwei Strecken (City-Rundkurs, Drift-Parcours),
+  Rundenzeiten + Drift-Punkte, Bestzeit je Strecke/Auto.
+- **`mtb.html` – 🚵 Mountainbike**: Top-Down-Parcours mit Rampen; über
+  Sprünge Saltos (vor/zurück lehnen) und Spins (lenken) – sauber landen
+  oder crashen. Drei Räder (Fully-MTB, BMX, Kinderrad), zwei Parcours
+  (Waldstrecke, Jumphalle), Trickscore + Bestzeit, optionaler
+  „Annoying-Mode“ (Gas durch Wackeln). Steuerung: linke Hälfte lenken +
+  lehnen, rechte Hälfte Gas/Bremse.
+
+Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
+`<spiel>.html`, teilt sich `style.css` und den ☰-Menü-Rahmen. Neue Spiele
+lassen sich analog ergänzen und in die „Spiel wechseln“-Navigation
+aufnehmen.
+
+---
+
+## ⛵ Segelspiel
 
 Ein browserbasiertes 2D-Segelspiel mit vereinfachter, aber physikalisch
-plausibler Segelphysik. Läuft komplett im Browser (HTML5 Canvas, Vanilla JS,
-keine Build-Tools) und wird als Docker-Container deployt.
+plausibler Segelphysik.
 
 ## Spielprinzip
 
@@ -114,16 +140,20 @@ docker run --rm -p 8080:8080 sailing-game
 ## Struktur
 
 ```
-public/            statisches Spiel
-  index.html
+public/            statische Spielesammlung
+  index.html       ⛵ Segeln
+  auto.html        🏎 Autorennen
+  mtb.html         🚵 Mountainbike
   style.css
   js/
-    main.js        Spielschleife, Eingabe, Kollision
-    boat.js        Bootsphysik + Windmodell + Bootstypen
-    race.js        Regattakurs, Zeitnahme, Bestzeiten
-    terrain.js     prozedurales Gelände (Value-Noise)
-    render.js      Canvas-Rendering, Windrose, HUD
-    util.js        Vektor-/Winkel-Helfer
+    main.js        Segeln: Spielschleife, Eingabe, Kollision
+    boat.js        Segeln: Bootsphysik + Windmodell + Bootstypen
+    race.js        Segeln: Regattakurs, Zeitnahme, Bestzeiten
+    terrain.js     Segeln: prozedurales Gelände (Value-Noise)
+    render.js      Segeln: Canvas-Rendering, Windrose, HUD
+    util.js        Segeln: Vektor-/Winkel-Helfer
+    auto.js        Autorennen (komplett in einer Datei)
+    mtb.js         Mountainbike (komplett in einer Datei)
 nginx/             nginx-Template (nutzt $PORT von Railway)
 Dockerfile
 railway.json

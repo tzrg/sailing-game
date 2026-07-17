@@ -95,6 +95,28 @@ html, body {
   background: rgba(255, 255, 255, 0.18);
 }
 
+.game-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.game-link {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
+  padding: 10px 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.game-link.active {
+  background: #2f6fae;
+  border-color: #2f6fae;
+}
+
 .menu-select {
   display: block;
   font-size: 13px;

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Mountainbike</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🚵%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>Mountainbike</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link" href="index.html">⛵ Segeln</a>
+          <a class="game-link" href="auto.html">🏎 Auto</a>
+          <a class="game-link active" href="mtb.html">🚵 MTB</a>
+        </div>
+      </div>
+
+      <label class="menu-select">🚲 Rad
+        <select id="sel-bike"></select>
+      </label>
+
+      <div class="menu-group">
+        <div class="group-title">Parcours</div>
+        <div class="seg">
+          <button id="mode-wald" class="active">Waldstrecke</button>
+          <button id="mode-halle">Jumphalle</button>
+        </div>
+        <button class="menu-btn" id="btn-reset">🔄 Neustart</button>
+      </div>
+
+      <button class="menu-btn" id="btn-annoy">😖 Annoying-Mode: aus</button>
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>🚵 Mountainbike</h1>
+      <ul>
+        <li><b>Linke Bildschirmhälfte</b> (2D) – horizontal ziehen: <b>lenken</b> (am Boden) / <b>Spin</b> (in der Luft); vertikal ziehen: <b>vor/zurück lehnen</b> = Saltos</li>
+        <li><b>Rechte Bildschirmhälfte</b> – vertikal ziehen: <b>schneller / langsamer</b></li>
+        <li><b>Rampen</b> – mit Tempo drüber = Absprung. In der Luft Saltos (lehnen) und Spins (lenken) machen – aber <b>sauber landen!</b> Der Ring am Rad wird grün, wenn die Landung passt.</li>
+        <li><b>Crash</b> bei verpatzter Landung (zu weit gedreht), Baum oder Wand → Respawn am letzten Checkpoint</li>
+        <li><b>Trickscore</b> für Saltos & Spins, saubere Landung gibt Bonus; Bestzeit & Best-Score werden gespeichert</li>
+        <li><b>😖 Annoying-Mode</b> – Gas nur durch schnelles Links-rechts-Wackeln auf der rechten Hälfte (Treten!)</li>
+        <li>Desktop: ← → lenken/spinnen, ↑ ↓ lehnen, W/S Gas/Bremse</li>
+      </ul>
+      <p>Drei Räder: ausgewogenes <b>Fully-MTB</b>, das trick-freudige <b>BMX</b>
+        (springt hoch, dreht leicht, gutmütige Landung) und das <b>Kinderrad</b>
+        (langsam, springt kaum, crasht schnell). Zwei Parcours:
+        <b>Waldstrecke</b> mit Rampen und Bäumen oder die <b>Jumphalle</b>.</p>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/mtb.js"></script>
+</body>
+</html>
