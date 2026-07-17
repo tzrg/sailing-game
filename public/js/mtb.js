@@ -472,16 +472,16 @@ function fmt(t) {
 }
 
 function drawHUD(time) {
-  // Tempo links
+  // Tempo oben links (unter dem Menü-Knopf)
   ctx.fillStyle = 'rgba(8,25,42,0.55)';
-  roundRect(14, H - 214, 128, 58, 10); ctx.fill();
+  roundRect(14, 64, 138, 52, 10); ctx.fill();
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.font = 'bold 24px system-ui';
-  ctx.fillText(Math.round(Math.abs(st.speed) * 3.6) + ' km/h', 26, H - 180);
+  ctx.font = 'bold 22px system-ui';
+  ctx.fillText(Math.round(Math.abs(st.speed) * 3.6) + ' km/h', 26, 94);
   ctx.font = '12px system-ui';
   ctx.fillStyle = st.airborne ? '#8fd6ff' : 'rgba(255,255,255,0.7)';
-  ctx.fillText(st.airborne ? '✈ in der Luft!' : bike.name, 26, H - 164);
+  ctx.fillText(st.airborne ? '✈ in der Luft!' : bike.name, 26, 110);
 
   // Zeit + Score oben Mitte
   ctx.fillStyle = 'rgba(8,25,42,0.6)';
@@ -506,11 +506,85 @@ function drawHUD(time) {
     st.comboT -= 1 / 60;
   }
 
+  drawControls();
+}
+
+// Sichtbare Bedien-Elemente: links ein 2D-Pad (lenken/spinnen + lehnen),
+// rechts Gas/Bremse. Die ganze jeweilige Bildschirmhälfte ist berührbar.
+function drawControls() {
+  // Linkes 2D-Pad
+  const pad = { x: 20, y: H - 168, s: 132 };
+  ctx.fillStyle = 'rgba(8,25,42,0.5)';
+  roundRect(pad.x - 6, pad.y - 20, pad.s + 12, pad.s + 30, 10);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(pad.x, pad.y, pad.s, pad.s);
+  ctx.beginPath();
+  ctx.moveTo(pad.x + pad.s / 2, pad.y); ctx.lineTo(pad.x + pad.s / 2, pad.y + pad.s);
+  ctx.moveTo(pad.x, pad.y + pad.s / 2); ctx.lineTo(pad.x + pad.s, pad.y + pad.s / 2);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText('◀ lenken / spinnen ▶', pad.x + pad.s / 2, pad.y - 6);
+  ctx.textBaseline = 'middle';
+  ctx.save();
+  ctx.translate(pad.x - 2, pad.y + pad.s / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillText('vor ⟂ zurück', 0, 0);
+  ctx.restore();
+  ctx.textBaseline = 'alphabetic';
+  // Knopf: x = steer, y = -lean (hoch = vorlehnen)
+  ctx.fillStyle = st.airborne ? '#8fd6ff' : '#ffd166';
+  ctx.beginPath();
+  ctx.arc(pad.x + pad.s / 2 + st.steer * (pad.s / 2 - 12),
+          pad.y + pad.s / 2 - st.lean * (pad.s / 2 - 12), 12, 0, TAU);
+  ctx.fill();
+
+  // Rechts: Gas/Bremse bzw. Wackel-Hinweis
+  const tb = { x: W - 62, y: H - 200, w: 38, h: 140 };
+  ctx.fillStyle = 'rgba(8,25,42,0.5)';
+  roundRect(tb.x - 8, tb.y - 20, tb.w + 16, tb.h + 42, 10);
+  ctx.fill();
+  ctx.textAlign = 'center';
   if (annoying) {
-    ctx.fillStyle = 'rgba(230,80,60,0.85)';
-    ctx.font = 'bold 12px system-ui';
-    ctx.textAlign = 'right';
-    ctx.fillText('ANNOYING: rechts wackeln zum Treten!', W - 16, H - 232);
+    ctx.fillStyle = '#ff9060';
+    ctx.font = 'bold 11px system-ui';
+    ctx.fillText('WACKELN', tb.x + tb.w / 2, tb.y - 6);
+    ctx.save();
+    ctx.translate(tb.x + tb.w / 2, tb.y + tb.h / 2);
+    const wob = Math.sin(performance.now() / 90) * 10;
+    ctx.fillStyle = '#ffb050';
+    ctx.beginPath(); ctx.arc(wob, 0, 12, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = '10px system-ui';
+    ctx.fillText('◀ ▶ treten', tb.x + tb.w / 2, tb.y + tb.h + 16);
+    // Boost-Füllung
+    ctx.fillStyle = 'rgba(90,210,120,0.6)';
+    const bh = tb.h * clamp(wiggle.boost, 0, 1);
+    ctx.fillRect(tb.x + 4, tb.y + tb.h - bh, tb.w - 8, bh);
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tb.x, tb.y, tb.w, tb.h);
+  } else {
+    ctx.fillStyle = 'rgba(120,220,140,0.85)';
+    ctx.font = '11px system-ui';
+    ctx.fillText('schnell', tb.x + tb.w / 2, tb.y - 6);
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tb.x, tb.y, tb.w, tb.h);
+    ctx.beginPath();
+    ctx.moveTo(tb.x, tb.y + tb.h / 2); ctx.lineTo(tb.x + tb.w, tb.y + tb.h / 2);
+    ctx.stroke();
+    const cy = tb.y + tb.h / 2;
+    const fill = st.throttle * (tb.h / 2 - 4);
+    ctx.fillStyle = st.throttle >= 0 ? 'rgba(90,210,120,0.7)' : 'rgba(230,90,70,0.7)';
+    ctx.fillRect(tb.x + 4, cy - Math.max(0, fill), tb.w - 8, Math.abs(fill));
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(tb.x - 3, cy - fill - 2, tb.w + 6, 4);
+    ctx.fillStyle = 'rgba(230,120,110,0.9)';
+    ctx.fillText('langsam', tb.x + tb.w / 2, tb.y + tb.h + 16);
   }
 }
 

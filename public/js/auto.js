@@ -219,19 +219,24 @@ function draw(time) {
   const y0 = st.y - H / 2 / S, y1 = st.y + H / 2 / S;
 
   if (track.key === 'city') {
-    // Fahrbahnmarkierung + Häuserblocks
+    // Fahrbahnmarkierung + Häuserblocks. Die Strichmuster werden über
+    // lineDashOffset an die Weltkoordinaten gekoppelt, sonst kriechen sie
+    // beim Fahren mit dem Auto mit.
     ctx.strokeStyle = 'rgba(220,220,190,0.5)';
     ctx.lineWidth = Math.max(1, 0.25 * S);
     ctx.setLineDash([3 * S, 4 * S]);
+    ctx.lineDashOffset = H / 2 - st.y * S; // vertikale Linien: Phase an Welt-Y
     for (let gx = Math.floor(x0 / P) * P; gx <= x1 + P; gx += P) {
       const sx = toS(gx + SW / 2, 0).x;
       ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
     }
+    ctx.lineDashOffset = W / 2 - st.x * S; // horizontale Linien: Phase an Welt-X
     for (let gy = Math.floor(y0 / P) * P; gy <= y1 + P; gy += P) {
       const sy = toS(0, gy + SW / 2).y;
       ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
     }
     ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
     for (let gx = Math.floor(x0 / P) * P; gx <= x1 + P; gx += P) {
       for (let gy = Math.floor(y0 / P) * P; gy <= y1 + P; gy += P) {
         const bx = gx + SW, by = gy + SW;
@@ -385,18 +390,18 @@ function fmt(t) {
 }
 
 function drawHUD() {
-  // Tempo links (über dem Lenk-Bereich-Rand)
+  // Tempo oben links (unter dem Menü-Knopf)
   ctx.fillStyle = 'rgba(8,25,42,0.55)';
-  roundRect(14, H - 214, 128, 58, 10);
+  roundRect(14, 64, 132, 52, 10);
   ctx.fill();
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
-  ctx.font = 'bold 26px system-ui, sans-serif';
-  ctx.fillText(Math.round(Math.hypot(st.vx, st.vy) * 3.6) + ' km/h', 26, HUDy(-178));
+  ctx.font = 'bold 24px system-ui, sans-serif';
+  ctx.fillText(Math.round(Math.hypot(st.vx, st.vy) * 3.6) + ' km/h', 26, 96);
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillStyle = st.drifting ? '#ffb050' : 'rgba(255,255,255,0.7)';
-  ctx.fillText(st.drifting ? 'DRIFT!' : car.name, 26, HUDy(-162));
+  ctx.fillText(st.drifting ? 'DRIFT!' : car.name, 26, 110);
 
   // Zeiten oben Mitte
   ctx.fillStyle = 'rgba(8,25,42,0.6)';
@@ -410,20 +415,76 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(255,255,255,0.85)';
   ctx.fillText(`Letzte: ${fmt(st.lastLap)}   ·   Best: ${fmt(st.best)}`, W / 2, 52);
 
-  // Driftpunkte rechts
+  // Driftpunkte oben rechts
   ctx.fillStyle = 'rgba(8,25,42,0.55)';
-  roundRect(W - 142, H - 214, 128, 58, 10);
+  roundRect(W - 146, 64, 132, 52, 10);
   ctx.fill();
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ffb050';
   ctx.font = 'bold 22px system-ui, sans-serif';
-  ctx.fillText(String(Math.round(st.driftScore)), W - 128, HUDy(-178));
+  ctx.fillText(String(Math.round(st.driftScore)), W - 132, 96);
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
-  ctx.fillText('Drift-Punkte', W - 128, HUDy(-162));
+  ctx.fillText('Drift-Punkte', W - 132, 110);
+
+  drawControls();
 }
 
-function HUDy(off) { return H + off; }
+// Sichtbare Bedien-Elemente: Lenkung (unten links), Gas/Bremse (unten rechts).
+// Die ganze linke bzw. rechte Bildschirmhälfte ist berührbar - die Regler
+// zeigen nur, was gerade anliegt.
+function drawControls() {
+  // Lenk-Bar unten links (horizontal)
+  const sb = { x: 20, y: H - 120, w: 190, h: 40 };
+  ctx.fillStyle = 'rgba(8,25,42,0.5)';
+  roundRect(sb.x - 6, sb.y - 20, sb.w + 12, sb.h + 30, 10);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('◀  Lenken  ▶', sb.x + sb.w / 2, sb.y - 6);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sb.x + 10, sb.y + sb.h / 2);
+  ctx.lineTo(sb.x + sb.w - 10, sb.y + sb.h / 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(sb.x + sb.w / 2, sb.y + 6);
+  ctx.lineTo(sb.x + sb.w / 2, sb.y + sb.h - 6);
+  ctx.stroke();
+  ctx.fillStyle = '#ffd166';
+  ctx.beginPath();
+  ctx.arc(sb.x + sb.w / 2 + st.steer * (sb.w / 2 - 14), sb.y + sb.h / 2, 12, 0, TAU);
+  ctx.fill();
+
+  // Gas/Bremse-Bar unten rechts (vertikal)
+  const tb = { x: W - 66, y: H - 210, w: 40, h: 150 };
+  ctx.fillStyle = 'rgba(8,25,42,0.5)';
+  roundRect(tb.x - 8, tb.y - 20, tb.w + 16, tb.h + 42, 10);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(120,220,140,0.85)';
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Gas', tb.x + tb.w / 2, tb.y - 6);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(tb.x, tb.y, tb.w, tb.h);
+  // Mittellinie (neutral)
+  ctx.beginPath();
+  ctx.moveTo(tb.x, tb.y + tb.h / 2);
+  ctx.lineTo(tb.x + tb.w, tb.y + tb.h / 2);
+  ctx.stroke();
+  // Füllung: grün nach oben (Gas), rot nach unten (Bremse)
+  const cy = tb.y + tb.h / 2;
+  const fill = st.throttle * (tb.h / 2 - 4);
+  ctx.fillStyle = st.throttle >= 0 ? 'rgba(90,210,120,0.7)' : 'rgba(230,90,70,0.7)';
+  ctx.fillRect(tb.x + 4, cy - Math.max(0, fill), tb.w - 8, Math.abs(fill));
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(tb.x - 3, cy - fill - 2, tb.w + 6, 4);
+  ctx.fillStyle = 'rgba(230,120,110,0.9)';
+  ctx.fillText('Bremse', tb.x + tb.w / 2, tb.y + tb.h + 16);
+}
 
 function roundRect(x, y, w, h, r) {
   ctx.beginPath();
