@@ -86,6 +86,27 @@ function distToPath(track, x, y) {
   return best;
 }
 
+// Fahrtrichtung (Heading) des nächsten Streckensegments an (x,y)
+function pathDirAt(track, x, y) {
+  let best = 1e9, dir = 0;
+  const p = track.path;
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy || 1;
+    const t = clamp(((x - a.x) * dx + (y - a.y) * dy) / l2, 0, 1);
+    const px = a.x + dx * t, py = a.y + dy * t;
+    const d = Math.hypot(x - px, y - py);
+    if (d < best) { best = d; dir = Math.atan2(dx, -dy); }
+  }
+  return dir;
+}
+
+// Rampen an die Streckenrichtung ausrichten (in Fahrtrichtung)
+function orientRamps(track) {
+  for (const r of track.ramps) r.dir = pathDirAt(track, r.x, r.y);
+}
+
 // deterministische Bäume neben der Strecke
 function treeAt(track, gx, gy) {
   let h = Math.imul(gx, 0x27d4eb2d) ^ Math.imul(gy, 0x165667b1);
@@ -128,6 +149,7 @@ function loadNum(k) {
 }
 
 function resetRun() {
+  orientRamps(track);
   const p0 = track.path[0], p1 = track.path[1];
   st.x = p0.x; st.y = p0.y;
   st.heading = Math.atan2(p1.x - p0.x, -(p1.y - p0.y));
@@ -507,6 +529,56 @@ function drawHUD(time) {
   }
 
   drawControls();
+  if (st.airborne) drawAttitude();
+}
+
+// Lage-Anzeige in der Luft (wie der Moth-Balance-Anzeiger beim Segeln):
+// zwei Nadeln für Salto (pitch) und Spin (yaw) relativ zur nächsten vollen
+// Umdrehung. Nadel in der grünen Mitte = landbar; rot = Crash.
+function drawAttitude() {
+  const gw = Math.min(230, W - 360), gh = 20;
+  if (gw < 120) return;
+  const gx = W / 2 - gw / 2;
+  const y0 = H - 150;
+  const tolFrac = clamp(bike.landTol / Math.PI, 0, 1);
+  const rows = [
+    { label: 'Salto', val: norm(st.pitch), y: y0 },
+    { label: 'Spin', val: norm(st.spin), y: y0 + 40 },
+  ];
+  ctx.fillStyle = 'rgba(8,25,42,0.6)';
+  roundRect(gx - 12, y0 - 22, gw + 24, 78, 10);
+  ctx.fill();
+  const bothOk = Math.abs(norm(st.pitch)) < bike.landTol && Math.abs(norm(st.spin)) < bike.landTol;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = bothOk ? '#7dff9a' : 'rgba(255,255,255,0.9)';
+  ctx.font = 'bold 12px system-ui';
+  ctx.fillText(bothOk ? '✓ LANDEN!' : 'gerade ausrichten', W / 2, y0 - 8);
+  for (const r of rows) {
+    const toX = (frac) => gx + gw / 2 + frac * (gw / 2); // frac in [-1,1]
+    // Zonen: rot | gelb | grün | gelb | rot (grün = ±tol um die volle Umdrehung)
+    const zones = [
+      [-1, -tolFrac * 2.2, 'rgba(220,70,60,0.85)'],
+      [-tolFrac * 2.2, -tolFrac, 'rgba(230,190,60,0.8)'],
+      [-tolFrac, tolFrac, 'rgba(70,190,110,0.85)'],
+      [tolFrac, tolFrac * 2.2, 'rgba(230,190,60,0.8)'],
+      [tolFrac * 2.2, 1, 'rgba(220,70,60,0.85)'],
+    ];
+    for (const [a, b, col] of zones) {
+      ctx.fillStyle = col;
+      ctx.fillRect(toX(a), r.y, toX(b) - toX(a), gh);
+    }
+    // Nadel
+    const nx = toX(clamp(r.val / Math.PI, -1, 1));
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(nx - 2, r.y - 4, 4, gh + 8);
+    // Label + Rotationszähler
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = '11px system-ui';
+    const full = Math.round((r.label === 'Salto' ? st.pitch : st.spin) / TAU);
+    ctx.fillText(`${r.label}${full ? ' ' + Math.abs(full) + '×' : ''}`, gx - 4, r.y + gh - 5);
+    ctx.textAlign = 'center';
+  }
 }
 
 // Sichtbare Bedien-Elemente: links ein 2D-Pad (lenken/spinnen + lehnen),
