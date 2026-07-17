@@ -62,6 +62,33 @@ export const BOAT_TYPES = {
     deckColor: '#9fb4c8',
     trimColor: '#26425e',
   },
+  ketsch: {
+    key: 'ketsch',
+    name: 'Ketsch (Cruiser)',
+    lengthM: 11,
+    beamM: 3.6,
+    mass: 5500,              // gemütliches Fahrtenschiff mit Kajüte
+    sails: [
+      { kind: 'main',   ctl: 'main', area: 24, cl: 1.4, cd0: 0.06, cdMax: 1.5 },
+      // Besan am achteren Mast, läuft mit auf der Großschot
+      { kind: 'mizzen', ctl: 'main', area: 12, cl: 1.3, cd0: 0.06, cdMax: 1.4 },
+      { kind: 'jib',    ctl: 'jib',  area: 16, cl: 1.6, cd0: 0.05, cdMax: 1.3 },
+    ],
+    dragFwdLin: 50,
+    dragFwdQuad: 100,
+    dragLatLin: 800,         // langer Kiel: kaum Abdrift ...
+    dragLatQuad: 6000,
+    maxTurnRate: 0.5,        // ... aber auch kein Drehwunder
+    turnLoss: 0.4,
+    minSheet: 0.12,
+    maxSheet: 1.48,
+    heelStiffness: 12000,    // gutmütig steif, kentert nicht
+    spi: { area: 35, cl: 1.1, cd0: 0.12, cdMax: 1.9 },
+    hullStyle: 'ketch',
+    hullColor: '#f6f1e4',
+    deckColor: '#c9a978',
+    trimColor: '#4a5d6b',
+  },
   katamaran: {
     key: 'katamaran',
     name: 'Katamaran',

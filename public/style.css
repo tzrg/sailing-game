@@ -242,7 +242,7 @@ html, body {
 #zoombar {
   position: fixed;
   left: 14px;
-  bottom: 148px;
+  bottom: 226px;
   display: flex;
   flex-direction: column;
   gap: 6px;

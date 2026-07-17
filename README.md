@@ -17,8 +17,10 @@ keine Build-Tools) und wird als Docker-Container deployt.
   über „⚓ Freikommen“ ein paar Bootslängen vor der Küste wieder frei
   (im Rennen kostet das 10 Strafsekunden, die auch das Geisterboot nach
   vorn springen lassen).
-- **Sechs Bootstypen** (Dropdown im ☰-Menü): wendige, kipplige **Jolle**,
-  ein großes, träges, schnelles **Kielboot** mit wenig Abdrift, ein
+- **Sieben Bootstypen** (Dropdown im ☰-Menü): wendige, kipplige **Jolle**,
+  ein großes, träges, schnelles **Kielboot** mit wenig Abdrift, eine
+  gemütliche **Ketsch** (Zweimaster-Cruiser mit Kajüte; Besan läuft auf
+  der Großschot, gutmütig steif und kentersicher), ein
   pfeilschneller **Katamaran**, der nur widerwillig wendet, die foilende
   **Moth** (hebt ab ~3 kn aus dem Wasser, Widerstand bricht ein – kentert
   aber blitzschnell nach Lee *und*, wenn beim Foilen der Segeldruck fehlt,

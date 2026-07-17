@@ -311,6 +311,8 @@ export class Renderer {
       this.drawRaftHull(type);
     } else if (type.hullStyle === 'ship') {
       this.drawShipHull(type);
+    } else if (type.hullStyle === 'ketch') {
+      this.drawKetchHull(type, bw);
     } else {
       ctx.save();
       ctx.scale(bw, 1);
@@ -374,7 +376,9 @@ export class Renderer {
       ? { mastY: -0.2, boom: 2.2, jibTackY: 0, jib: 0, spi: 0 }
       : type.hullStyle === 'cat'
         ? { mastY: -0.5, boom: 2.8, jibTackY: -2.6, jib: 2.0, spi: 3.2 }
-        : { mastY: -0.6, boom: 3.0, jibTackY: -2.8, jib: 2.3, spi: 3.4 };
+        : type.hullStyle === 'ketch'
+          ? { mastY: -1.0, boom: 2.3, jibTackY: -2.8, jib: 1.9, spi: 3.2 }
+          : { mastY: -0.6, boom: 3.0, jibTackY: -2.8, jib: 2.3, spi: 3.4 };
 
     // Spinnaker: großer bunter Ballon vor dem Bug, wächst mit dem Setzgrad
     if (type.spi && boat.spiHoist > 0.08) {
@@ -429,6 +433,29 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(mast.x, mast.y, 0.14, 0, TAU);
     ctx.fill();
+
+    // Ketsch: Besansegel am achteren Mast (Segel-Index 1, läuft auf Großschot)
+    if (type.hullStyle === 'ketch') {
+      const mizzenMast = { x: heelOff * 0.5, y: 1.55 };
+      const mb = boat.sailBooms[1] ?? boat.boom;
+      const ma = boat.sailAoas[1] ?? boat.aoaMain;
+      const ml = 1.5;
+      const mEnd = {
+        x: mizzenMast.x - Math.sin(mb) * ml,
+        y: mizzenMast.y + Math.cos(mb) * ml,
+      };
+      ctx.strokeStyle = '#6b4a2b';
+      ctx.lineWidth = 0.12;
+      ctx.beginPath();
+      ctx.moveTo(mizzenMast.x, mizzenMast.y);
+      ctx.lineTo(mEnd.x, mEnd.y);
+      ctx.stroke();
+      this.drawSail(mizzenMast, mEnd, ma, boat.apparentSpd, time, 0.7);
+      ctx.fillStyle = '#3d3d3d';
+      ctx.beginPath();
+      ctx.arc(mizzenMast.x, mizzenMast.y, 0.12, 0, TAU);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -571,6 +598,58 @@ export class Renderer {
         ctx.globalAlpha = 1;
       }
     }
+  }
+
+  // Ketsch: klassischer Fahrtenrumpf mit Kajütaufbau
+  drawKetchHull(type, bw) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.scale(bw, 1);
+    ctx.beginPath();
+    ctx.moveTo(0, -2.9);
+    ctx.quadraticCurveTo(1.0, -1.5, 0.95, 0.5);
+    ctx.quadraticCurveTo(0.92, 1.9, 0.6, 2.5);
+    ctx.lineTo(-0.6, 2.5);
+    ctx.quadraticCurveTo(-0.92, 1.9, -0.95, 0.5);
+    ctx.quadraticCurveTo(-1.0, -1.5, 0, -2.9);
+    ctx.closePath();
+    ctx.fillStyle = type.hullColor;
+    ctx.fill();
+    ctx.lineWidth = 0.1;
+    ctx.strokeStyle = type.trimColor;
+    ctx.stroke();
+    // Teakdeck
+    ctx.beginPath();
+    ctx.moveTo(0, -2.45);
+    ctx.quadraticCurveTo(0.7, -1.3, 0.68, 0.5);
+    ctx.quadraticCurveTo(0.65, 1.7, 0.42, 2.2);
+    ctx.lineTo(-0.42, 2.2);
+    ctx.quadraticCurveTo(-0.65, 1.7, -0.68, 0.5);
+    ctx.quadraticCurveTo(-0.7, -1.3, 0, -2.45);
+    ctx.closePath();
+    ctx.fillStyle = type.deckColor;
+    ctx.fill();
+    // Kajütaufbau mit Fenstern
+    ctx.fillStyle = '#f2ead6';
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(-0.48, -0.65, 0.96, 1.5, 0.18);
+      ctx.fill();
+    } else {
+      ctx.fillRect(-0.48, -0.65, 0.96, 1.5);
+    }
+    ctx.lineWidth = 0.06;
+    ctx.strokeStyle = type.trimColor;
+    ctx.stroke();
+    ctx.fillStyle = '#5a7d94';
+    for (const wy of [-0.35, 0.1, 0.55]) {
+      ctx.fillRect(-0.36, wy, 0.24, 0.22);
+      ctx.fillRect(0.12, wy, 0.24, 0.22);
+    }
+    // Cockpit achtern
+    ctx.fillStyle = 'rgba(60,50,40,0.35)';
+    ctx.fillRect(-0.3, 1.05, 0.6, 0.75);
+    ctx.restore();
   }
 
   // Katamaran: zwei schlanke Rümpfe mit Trampolin
@@ -789,20 +868,21 @@ export class Renderer {
   drawHUD(boat, wind) {
     const { ctx } = this;
     ctx.save();
-    // Geschwindigkeit
+    // Geschwindigkeit: oben in der linken Spalte, damit der Daumen auf dem
+    // Ruder-Schieber sie nicht verdeckt
     ctx.fillStyle = 'rgba(8,25,42,0.5)';
-    this.roundRect(14, this.H - 78, 128, 64, 10);
+    this.roundRect(14, this.H - 214, 128, 64, 10);
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.font = 'bold 26px system-ui, sans-serif';
-    ctx.fillText(boat.speedKn.toFixed(1) + ' kn', 26, this.H - 46);
+    ctx.fillText(boat.speedKn.toFixed(1) + ' kn', 26, this.H - 182);
     ctx.font = '12px system-ui, sans-serif';
     ctx.fillStyle = boat.foilLevel > 0.5 ? '#8fe3ff' : 'rgba(255,255,255,0.8)';
     ctx.fillText(
       this.pointOfSail(wind, boat) + (boat.foilLevel > 0.5 ? ' · ✈ foilt!' : ''),
-      26, this.H - 26,
+      26, this.H - 162,
     );
 
 
@@ -862,8 +942,8 @@ export class Renderer {
     ctx.fillText('dicht · oben', px0 + panelW / 2, by - 16);
     ctx.fillText('offen · unten', px0 + panelW / 2, by + bh + 30);
 
-    // Ruder-Schieber links über dem Tacho (anfassbar; loslassen = mittschiffs)
-    const rb = { x: 14, y: this.H - 122, w: 170, h: 28 };
+    // Ruder-Schieber links, mit Abstand zum unteren Rand (Smartphone-Gesten!)
+    const rb = { x: 14, y: this.H - 134, w: 170, h: 36 };
     this.rudderBar = rb;
     const rcx = rb.x + rb.w / 2, rcy = rb.y + rb.h / 2;
     ctx.fillStyle = 'rgba(8,25,42,0.5)';
