@@ -40,19 +40,39 @@ function cpGate(cps, idx, half) {
 // ---- Autos -----------------------------------------------------------------
 const CARS = {
   sport: {
-    key: 'sport', name: 'Sportwagen', color: '#e0342e', roof: '#b02420',
+    key: 'sport', name: 'Sportwagen', style: 'car', color: '#e0342e', roof: '#b02420',
     accel: 15, brake: 26, revAccel: 6, drag: 0.4, dragQ: 0.016,
     grip: 9, driftGrip: 2.2, turn: 2.7, len: 4.4, wid: 1.9,
   },
+  lambo: {
+    key: 'lambo', name: 'Lamborghini', style: 'lambo', color: '#f5c518', roof: '#20242a',
+    accel: 19, brake: 30, revAccel: 6, drag: 0.36, dragQ: 0.013,
+    grip: 9.5, driftGrip: 1.9, turn: 2.8, len: 4.5, wid: 2.05, // sehr schnell, heckhappig
+  },
+  motorrad: {
+    key: 'motorrad', name: 'Motorrad', style: 'bike', color: '#1f1f24', roof: '#e0342e',
+    accel: 18, brake: 22, revAccel: 5, drag: 0.42, dragQ: 0.02,
+    grip: 11, driftGrip: 3.4, turn: 3.7, len: 2.4, wid: 0.9, // flink, legt sich in Kurven
+  },
   muscle: {
-    key: 'muscle', name: 'Muscle-Car', color: '#5a3bb5', roof: '#41298a',
+    key: 'muscle', name: 'Muscle-Car', style: 'car', color: '#5a3bb5', roof: '#41298a',
     accel: 13, brake: 20, revAccel: 5, drag: 0.35, dragQ: 0.016,
     grip: 6.2, driftGrip: 1.3, turn: 2.3, len: 5.0, wid: 2.0,
   },
   klein: {
-    key: 'klein', name: 'Kleinwagen', color: '#2e9ac4', roof: '#1e7aa0',
+    key: 'klein', name: 'Kleinwagen', style: 'car', color: '#2e9ac4', roof: '#1e7aa0',
     accel: 8, brake: 16, revAccel: 5, drag: 0.5, dragQ: 0.03,
     grip: 10.5, driftGrip: 2.8, turn: 3.3, len: 3.4, wid: 1.6,
+  },
+  krankenwagen: {
+    key: 'krankenwagen', name: 'Krankenwagen', style: 'ambulance', color: '#f4f6f8', roof: '#d8dde2',
+    accel: 10, brake: 19, revAccel: 5, drag: 0.42, dragQ: 0.02,
+    grip: 7.5, driftGrip: 1.5, turn: 2.1, len: 5.6, wid: 2.25, siren: '#3a7bff',
+  },
+  feuerwehr: {
+    key: 'feuerwehr', name: 'Feuerwehr', style: 'firetruck', color: '#c8261d', roof: '#8f1a14',
+    accel: 8, brake: 16, revAccel: 4, drag: 0.4, dragQ: 0.02,
+    grip: 6, driftGrip: 1.1, turn: 1.7, len: 7.2, wid: 2.5, siren: '#ff3020', // lang & träge
   },
 };
 
@@ -384,44 +404,179 @@ function draw(time) {
   }
   ctx.globalAlpha = 1;
 
-  // Auto
+  // Fahrzeug
   ctx.save();
   ctx.translate(W / 2, H / 2);
   ctx.scale(S, S);
   ctx.rotate(st.heading);
+  drawVehicle(time);
+  ctx.restore();
+
+  drawHUD();
+}
+
+// zeichnet das aktuelle Fahrzeug (im gedrehten, skalierten Kontext,
+// Fahrtrichtung = -y). Verzweigt nach car.style.
+function drawVehicle(time) {
   const L = car.len, Wd = car.wid;
-  // Räder
-  ctx.fillStyle = '#111';
-  for (const [wx, wy] of [[-Wd / 2, -L * 0.32], [Wd / 2, -L * 0.32], [-Wd / 2, L * 0.32], [Wd / 2, L * 0.32]]) {
+  const body = () => {
+    ctx.beginPath();
+    ctx.moveTo(0, -L / 2);
+    ctx.quadraticCurveTo(Wd / 2, -L / 2 + 0.3, Wd / 2, -L * 0.2);
+    ctx.lineTo(Wd / 2, L * 0.38);
+    ctx.quadraticCurveTo(Wd / 2, L / 2, 0, L / 2);
+    ctx.quadraticCurveTo(-Wd / 2, L / 2, -Wd / 2, L * 0.38);
+    ctx.lineTo(-Wd / 2, -L * 0.2);
+    ctx.quadraticCurveTo(-Wd / 2, -L / 2 + 0.3, 0, -L / 2);
+    ctx.closePath();
+  };
+  const wheels = () => {
+    ctx.fillStyle = '#111';
+    for (const [wx, wy] of [[-Wd / 2, -L * 0.32], [Wd / 2, -L * 0.32], [-Wd / 2, L * 0.32], [Wd / 2, L * 0.32]]) {
+      ctx.save();
+      ctx.translate(wx, wy);
+      if (wy < 0) ctx.rotate(st.steer * 0.4);
+      ctx.fillRect(-0.14, -0.4, 0.28, 0.8);
+      ctx.restore();
+    }
+  };
+  // Blaulicht/Rotlicht der Einsatzfahrzeuge (blinkend)
+  const siren = (yFront) => {
+    const on = Math.floor(time * 6) % 2 === 0;
+    for (const [sx, col] of [[-Wd * 0.28, on ? car.siren : '#333'], [Wd * 0.28, on ? '#333' : car.siren]]) {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(sx, yFront, 0.22, 0, TAU);
+      ctx.fill();
+    }
+    if (on || Math.floor(time * 6) % 2 === 1) {
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = car.siren;
+      ctx.beginPath();
+      ctx.arc(0, yFront, 1.4, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  };
+
+  if (car.style === 'bike') {
+    // Motorrad: legt sich in die Kurve (Roll über steer)
+    const lean = st.steer * 0.5;
     ctx.save();
-    ctx.translate(wx, wy);
-    if (wy < 0) ctx.rotate(st.steer * 0.4);
-    ctx.fillRect(-0.14, -0.4, 0.28, 0.8);
+    ctx.transform(1, 0, lean * 0.35, 1, 0, 0); // leichtes Kippen zur Seite
+    // Schatten
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath(); ctx.ellipse(0, 0, Wd * 0.7, L * 0.5, 0, 0, TAU); ctx.fill();
+    // Reifen
+    ctx.fillStyle = '#111';
+    ctx.fillRect(-0.12, -L * 0.5, 0.24, 0.7);
+    ctx.fillRect(-0.12, L * 0.5 - 0.7, 0.24, 0.7);
+    // Rahmen/Tank
+    ctx.fillStyle = car.roof;
+    ctx.beginPath();
+    ctx.moveTo(0, -L * 0.42);
+    ctx.quadraticCurveTo(Wd * 0.5, -L * 0.1, Wd * 0.32, L * 0.28);
+    ctx.lineTo(-Wd * 0.32, L * 0.28);
+    ctx.quadraticCurveTo(-Wd * 0.5, -L * 0.1, 0, -L * 0.42);
+    ctx.closePath();
+    ctx.fill();
+    // Lenker
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 0.12;
+    ctx.beginPath(); ctx.moveTo(-Wd * 0.55, -L * 0.28); ctx.lineTo(Wd * 0.55, -L * 0.28); ctx.stroke();
+    // Fahrer
+    ctx.fillStyle = car.color;
+    ctx.beginPath(); ctx.ellipse(0, -0.1, Wd * 0.28, L * 0.22, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e8e8e8';
+    ctx.beginPath(); ctx.arc(0, -L * 0.15, 0.26, 0, TAU); ctx.fill(); // Helm
     ctx.restore();
+    return;
   }
-  // Karosserie
-  ctx.beginPath();
-  ctx.moveTo(0, -L / 2);
-  ctx.quadraticCurveTo(Wd / 2, -L / 2 + 0.3, Wd / 2, -L * 0.2);
-  ctx.lineTo(Wd / 2, L * 0.38);
-  ctx.quadraticCurveTo(Wd / 2, L / 2, 0, L / 2);
-  ctx.quadraticCurveTo(-Wd / 2, L / 2, -Wd / 2, L * 0.38);
-  ctx.lineTo(-Wd / 2, -L * 0.2);
-  ctx.quadraticCurveTo(-Wd / 2, -L / 2 + 0.3, 0, -L / 2);
-  ctx.closePath();
+
+  if (car.style === 'lambo') {
+    // flacher, keilförmiger Supersportwagen
+    wheels();
+    ctx.beginPath();
+    ctx.moveTo(0, -L / 2);                          // spitze Nase
+    ctx.lineTo(Wd / 2, -L * 0.1);
+    ctx.lineTo(Wd * 0.46, L * 0.42);
+    ctx.lineTo(Wd * 0.34, L / 2);
+    ctx.lineTo(-Wd * 0.34, L / 2);
+    ctx.lineTo(-Wd * 0.46, L * 0.42);
+    ctx.lineTo(-Wd / 2, -L * 0.1);
+    ctx.closePath();
+    ctx.fillStyle = car.color;
+    ctx.fill();
+    ctx.lineWidth = 0.08; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.stroke();
+    // Cockpit
+    ctx.fillStyle = car.roof;
+    ctx.beginPath();
+    ctx.moveTo(0, -L * 0.02);
+    ctx.lineTo(Wd * 0.32, L * 0.14);
+    ctx.lineTo(Wd * 0.26, L * 0.36);
+    ctx.lineTo(-Wd * 0.26, L * 0.36);
+    ctx.lineTo(-Wd * 0.32, L * 0.14);
+    ctx.closePath();
+    ctx.fill();
+    // Heckflügel
+    ctx.fillStyle = '#20242a';
+    ctx.fillRect(-Wd * 0.42, L * 0.44, Wd * 0.84, 0.18);
+    return;
+  }
+
+  if (car.style === 'ambulance' || car.style === 'firetruck') {
+    // Kastenaufbau (Van / LKW)
+    wheels();
+    ctx.beginPath();
+    ctx.moveTo(-Wd / 2, -L / 2 + 0.4);
+    ctx.quadraticCurveTo(-Wd / 2, -L / 2, 0, -L / 2);
+    ctx.quadraticCurveTo(Wd / 2, -L / 2, Wd / 2, -L / 2 + 0.4);
+    ctx.lineTo(Wd / 2, L / 2);
+    ctx.lineTo(-Wd / 2, L / 2);
+    ctx.closePath();
+    ctx.fillStyle = car.color;
+    ctx.fill();
+    ctx.lineWidth = 0.08; ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.stroke();
+    // Fahrerkabine
+    ctx.fillStyle = '#26333f';
+    ctx.fillRect(-Wd * 0.4, -L * 0.42, Wd * 0.8, L * 0.16);
+    if (car.style === 'ambulance') {
+      // rotes Kreuz auf dem Dach
+      ctx.fillStyle = '#d9291c';
+      ctx.fillRect(-0.12, -L * 0.06, 0.24, L * 0.28);
+      ctx.fillRect(-Wd * 0.22, L * 0.02, Wd * 0.44, 0.24);
+      // Streifen
+      ctx.fillStyle = '#e5b100';
+      ctx.fillRect(-Wd / 2, L * 0.3, Wd, 0.18);
+    } else {
+      // Feuerwehr: Leiter + weiße Streifen
+      ctx.strokeStyle = '#d8d8d8';
+      ctx.lineWidth = 0.12;
+      for (let i = 0; i < 6; i++) {
+        const yy = -L * 0.2 + i * L * 0.08;
+        ctx.beginPath(); ctx.moveTo(-Wd * 0.22, yy); ctx.lineTo(Wd * 0.22, yy); ctx.stroke();
+      }
+      ctx.beginPath(); ctx.moveTo(-Wd * 0.22, -L * 0.2); ctx.lineTo(-Wd * 0.22, L * 0.28); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(Wd * 0.22, -L * 0.2); ctx.lineTo(Wd * 0.22, L * 0.28); ctx.stroke();
+      ctx.fillStyle = '#f2f2f2';
+      ctx.fillRect(-Wd / 2, L * 0.34, Wd, 0.2);
+    }
+    siren(-L * 0.34);
+    return;
+  }
+
+  // Standard-Auto
+  wheels();
+  body();
   ctx.fillStyle = car.color;
   ctx.fill();
   ctx.lineWidth = 0.08;
   ctx.strokeStyle = 'rgba(0,0,0,0.5)';
   ctx.stroke();
-  // Dach + Scheiben
   ctx.fillStyle = '#1d2733';
   ctx.fillRect(-Wd * 0.36, -L * 0.16, Wd * 0.72, L * 0.14);
   ctx.fillStyle = car.roof;
   ctx.fillRect(-Wd * 0.38, -L * 0.02, Wd * 0.76, L * 0.34);
-  ctx.restore();
-
-  drawHUD();
 }
 
 function fmt(t) {
