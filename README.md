@@ -221,6 +221,12 @@ Der Node-Dienst bietet:
   live, eröffnen selbst welche (mit oder ohne **Passwort**) und treten per
   Klick oder Code bei. Ein kleiner **Ingame-Chat** (WebSocket-Relay) läuft in
   Lobby und Match; eingehende Nachrichten erscheinen als kurze Toasts.
+- **Robuste Verbindung**: Ein App-Ping alle 20 s hält die WebSocket-Verbindung
+  frisch (Proxys kappen sie sonst bei Inaktivität, z. B. während ein Mitspieler
+  überlegt). Räume **überleben kurze Abbrüche** – wer rausfliegt (auch der Host)
+  verbindet sich automatisch neu und bekommt Platz und Host-Rolle zurück; eine
+  verwaiste Runde wird erst nach 30 min entsorgt. So kann eine Partie über
+  Stunden laufen.
 
 Der Ablauf: Auf der Landing-Page **Online-Lobby öffnen** (nur für angemeldete
 Spieler) oder direkt mit **Code beitreten** → die Lobby läuft in `wurm.html`

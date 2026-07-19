@@ -1,15 +1,23 @@
 // Kleiner WebSocket-Client für die Caterpillar-Online-Sessions.
-// Verbindet sich mit demselben Ursprung (…/ws) und ruft registrierte Handler
-// je Nachrichtentyp auf.
+// Verbindet sich mit demselben Ursprung (…/ws), ruft registrierte Handler je
+// Nachrichtentyp auf und hält die Verbindung mit einem App-Ping (alle 20 s)
+// frisch, damit Proxys sie bei Inaktivität nicht kappen (z. B. während ein
+// Mitspieler am Zug ist).
 export function makeNet() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
   const handlers = {};
+  let keepalive = 0;
   ws.onmessage = (e) => {
     let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (m.t === 'pong') return;
     const fn = handlers[m.t];
     if (fn) fn(m);
   };
+  ws.addEventListener('open', () => {
+    keepalive = setInterval(() => { if (ws.readyState === 1) ws.send('{"t":"ping"}'); }, 20000);
+  });
+  ws.addEventListener('close', () => clearInterval(keepalive));
   return {
     ws,
     on(t, fn) { handlers[t] = fn; return this; },

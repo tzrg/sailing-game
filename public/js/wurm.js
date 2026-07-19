@@ -249,14 +249,16 @@ function uzi(w) {
 
 function blowtorch(w) {
   const dir = w.facing;
-  game.actionBusy = true; // hält die Runde, bis der Tunnel gegraben ist
+  const sx = w.x, sy = w.y;   // fester Startpunkt: sonst wandert der Bohrpunkt mit und beschleunigt
+  game.actionBusy = true;     // hält die Runde, bis der Tunnel gegraben ist
   let step = 0;
   const iv = setInterval(() => {
     if (step >= 22) { clearInterval(iv); game.actionBusy = false; return; }
-    const px = w.x + dir * (10 + step * 3), py = w.y - 6;
+    const px = sx + dir * (16 + step * 6), py = sy - 6;   // Bohrpunkt gleichmäßig vom Start weg
     carveCircle(px | 0, py | 0, 12);
     for (const wm of allWorms()) if (wm.alive && wm !== w && Math.hypot(px - wm.x, py - wm.y) < 16) damage(wm, 6, dir * 60, -40);
-    w.x = clamp(px - dir * 8, 4, WORLD_W - 4);
+    w.x = clamp(sx + dir * (step * 6), 4, WORLD_W - 4);   // Wurm folgt konstant, keine Beschleunigung
+    w.vx = 0; w.vy = 0;
     step++;
   }, 45);
 }
@@ -1011,6 +1013,7 @@ function renderOpenGames(list) {
 function joinGame(code, locked) {
   let password = '';
   if (locked) { password = prompt('Passwort für diese Runde:') || ''; if (!password) return; }
+  net.pw = password;   // für automatischen Reconnect merken
   net.client.send({ t: 'join', code, password });
 }
 
@@ -1020,7 +1023,9 @@ function renderRoster(room) {
   ul.innerHTML = '';
   room.players.forEach((p) => {
     const li = document.createElement('li');
-    li.textContent = (p.host ? '👑 ' : '👤 ') + p.name;
+    const off = p.connected === false;
+    li.textContent = (p.host ? '👑 ' : '👤 ') + p.name + (off ? '  (offline …)' : '');
+    if (off) li.style.opacity = '0.5';
     ul.appendChild(li);
   });
 }
@@ -1047,55 +1052,103 @@ function onRoom(room, isHost) {
 }
 
 function startOnline(mode, params) {
+  net.name = (localStorage.getItem('tgl_session') || 'Gast').slice(0, 24) || 'Gast';
+  net.token = localStorage.getItem('tgl_token') || '';
+  net.mode = mode; net.params = params;
+  net.code = null; net.pw = ''; net.intentional = false; net.backoff = 1000;
   showLobby();
-  const name = (localStorage.getItem('tgl_session') || 'Gast').slice(0, 24) || 'Gast';
-  const token = localStorage.getItem('tgl_token') || '';
   lobbyStatus('Verbinde mit dem Server …');
+  wireLobbyButtons();
+  connect();
+}
+
+// Baut (oder erneuert) die Verbindung und verkabelt alle Handler. Bricht die
+// Verbindung während einer Runde ab, wird automatisch neu verbunden und die
+// Runde per Code wieder betreten (Platz/Host-Rolle kommen zurück).
+function connect() {
   const client = makeNet();
   net.client = client;
-  client.onError(() => lobbyStatus('Server nicht erreichbar. Läuft der Online-Dienst schon? Über die Library kannst du lokal im Hotseat spielen.', true));
-  client.onClose(() => { if (!net.on) lobbyStatus('Verbindung getrennt.', true); });
-  client.open(() => client.send({ t: 'hello', name, token }));
+  client.onError(() => { if (!net.code && !net.on) lobbyStatus('Server nicht erreichbar. Läuft der Online-Dienst schon? Über die Library kannst du lokal im Hotseat spielen.', true); });
+  client.onClose(() => {
+    if (net.intentional) return;
+    if (net.code) {                                   // in einer Runde -> neu verbinden
+      chatToast('Verbindung verloren – verbinde neu …');
+      setTimeout(connect, net.backoff);
+      net.backoff = Math.min(net.backoff * 2, 15000);
+    } else if (!net.on) lobbyStatus('Verbindung getrennt.', true);
+  });
+  client.open(() => { net.backoff = 1000; client.send({ t: 'hello', name: net.name, token: net.token }); });
 
   client.on('welcome', (m) => {
     net.authed = !!m.authed;
-    if (mode === 'host') { client.send({ t: 'create', teams: +params.get('teams') || 2, worms: +params.get('worms') || 3, password: params.get('pw') || '' }); return; }
-    if (mode === 'join') { const code = (params.get('code') || '').toUpperCase(); if (code) return joinGame(code, false); }
-    // Lobby-Browser
-    showSection('browse');
-    if (!net.authed) {
-      lobbyStatus('Bitte melde dich in der Library an, um online zu spielen.', true);
-      $('lb-create')?.setAttribute('disabled', 'disabled');
-    } else {
-      lobbyStatus(`Angemeldet als ${m.name}. Eröffne ein Spiel oder tritt einem offenen bei.`);
-    }
-    client.send({ t: 'list' });
+    if (net.code) { client.send({ t: 'join', code: net.code, password: net.pw || '' }); return; }  // Reconnect -> Platz zurückholen
+    dispatchInitial(m);
   });
   client.on('rooms', (m) => renderOpenGames(m.list || []));
-  client.on('created', (m) => onRoom(m.room, true));
-  client.on('joined', (m) => onRoom(m.room, false));
+  client.on('created', (m) => { net.code = m.room.code; net.pw = net._createPw || ''; onRoom(m.room, true); });
+  client.on('joined', (m) => { net.code = m.room.code; onRoom(m.room, false); });
   client.on('room', (m) => onRoom(m.room, net.host));
-  client.on('error', (m) => lobbyStatus(m.msg || 'Fehler', true));
-  client.on('closed', (m) => {
-    const why = m.reason === 'host-left' ? 'Der Host hat die Runde beendet.' : 'Session geschlossen.';
-    net.on = false; net.ready = false;
-    showLobby(); showSection('browse'); showChatButton(false); hideChat();
-    lobbyStatus(why, true);
-    client.send({ t: 'list' });
-  });
+  client.on('resume', (m) => onResume(m));
+  client.on('error', (m) => onNetError(m));
+  client.on('closed', (m) => onRoomClosed(m));
   client.on('start', (m) => { beginMatch(m); showChatButton(true); });
   client.on('act', (m) => onRemoteAct(m));
   client.on('snap', (m) => applySnap(m.s));
   client.on('chat', (m) => chatReceive(m.from, m.text));
+}
 
-  $('lobby-start')?.addEventListener('click', () => client.send({ t: 'start', seed: (Math.random() * 1e9) | 0 }));
-  $('lobby-join-btn')?.addEventListener('click', () => {
-    const v = ($('lobby-code-in')?.value || '').toUpperCase(); if (v) net.client.send({ t: 'join', code: v, password: '' });
+function dispatchInitial(m) {
+  if (net.mode === 'host') { net._createPw = net.params.get('pw') || ''; net.client.send({ t: 'create', teams: +net.params.get('teams') || 2, worms: +net.params.get('worms') || 3, password: net._createPw }); return; }
+  if (net.mode === 'join') { const code = (net.params.get('code') || '').toUpperCase(); if (code) return joinGame(code, false); }
+  showSection('browse');
+  if (!net.authed) { lobbyStatus('Bitte melde dich in der Library an, um online zu spielen.', true); $('lb-create')?.setAttribute('disabled', 'disabled'); }
+  else lobbyStatus(`Angemeldet als ${m.name}. Eröffne ein Spiel oder tritt einem offenen bei.`);
+  net.client.send({ t: 'list' });
+}
+
+// Nach Reconnect in eine bereits laufende Partie.
+function onResume(m) {
+  net.on = true; net.you = m.you; net.host = !!m.host;
+  cfg.wormCount = m.worms || cfg.wormCount;
+  hideLobby(); hideHelp(); showChatButton(true);
+  if (!net.host && (!teams.length || !terrainCanvas)) {
+    // Seite war neu geladen -> Gelände aus Seed neu aufbauen, auf Snapshots warten
+    if (m.seed != null) generateTerrain(m.seed | 0);
+    teams = []; net.ready = false; game.state = 'aim'; game.turnTeam = 0; game.active = null;
+  }
+  chatToast('Wieder verbunden.');
+}
+
+function onNetError(m) {
+  if (m.code === 'no-room') {
+    net.code = null; net.on = false; net.ready = false;
+    showLobby(); showSection('browse'); lobbyStatus('Diese Runde ist nicht mehr verfügbar.', true);
+    net.client.send({ t: 'list' });
+    return;
+  }
+  lobbyStatus(m.msg || 'Fehler', true);
+}
+
+function onRoomClosed(m) {
+  const why = m.reason === 'host-left' ? 'Der Host hat die Runde beendet.' : 'Session geschlossen.';
+  net.code = null; net.on = false; net.ready = false;
+  showLobby(); showSection('browse'); showChatButton(false); hideChat();
+  lobbyStatus(why, true);
+  net.client.send({ t: 'list' });
+}
+
+let lobbyWired = false;
+function wireLobbyButtons() {
+  if (lobbyWired) return; lobbyWired = true;   // Buttons nur einmal verkabeln (Reconnect erneuert Client)
+  $('lobby-start')?.addEventListener('click', () => net.client.send({ t: 'start', seed: (Math.random() * 1e9) | 0 }));
+  $('lobby-join-btn')?.addEventListener('click', () => { const v = ($('lobby-code-in')?.value || '').toUpperCase(); if (v) { net.pw = ''; net.client.send({ t: 'join', code: v, password: '' }); } });
+  $('lb-create')?.addEventListener('click', () => { net._createPw = $('lb-pass').value || ''; net.client.send({ t: 'create', teams: +$('lb-teams').value || 2, worms: +$('lb-worms').value || 3, password: net._createPw }); });
+  $('lobby-leave')?.addEventListener('click', () => {
+    net.code = null; net.on = false; net.ready = false;
+    net.client.send({ t: 'leave' });
+    showSection('browse'); showChatButton(false); hideChat();
+    net.client.send({ t: 'list' });
   });
-  $('lb-create')?.addEventListener('click', () => {
-    client.send({ t: 'create', teams: +$('lb-teams').value || 2, worms: +$('lb-worms').value || 3, password: $('lb-pass').value || '' });
-  });
-  $('lobby-leave')?.addEventListener('click', () => { client.send({ t: 'leave' }); net.on = false; net.ready = false; showSection('browse'); showChatButton(false); hideChat(); client.send({ t: 'list' }); });
 }
 
 /* ---- Ingame-Chat ---- */

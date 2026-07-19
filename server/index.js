@@ -144,6 +144,7 @@ wss.on('connection', (ws) => {
   handleOpen(ws);
   ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', async (data) => {
+    ws.isAlive = true;   // jede Nachricht (auch App-Ping) hält die Verbindung frisch
     let msg; try { msg = JSON.parse(data.toString()); } catch { return; }
     // hello wird hier behandelt: optionales Token verifizieren (nur eingeloggte
     // Spieler dürfen Spiele eröffnen und erscheinen mit ihrem echten Namen).
