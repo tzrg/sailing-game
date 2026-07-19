@@ -146,6 +146,7 @@ const game = {
   winner: null,
   fireDone: false,
   settleT: 0,
+  busyT: 0,
   actionBusy: false,
 };
 
@@ -272,43 +273,51 @@ function damage(wm, amt, kx, ky) {
 function allWorms() { return teams.flatMap((t) => t.worms); }
 
 // ---- Physik ----------------------------------------------------------------
+// wm.y ist der Fußpunkt; der Körper reicht ~9 px nach oben.
+function bodyClear(x, fy) {
+  for (let d = 1; d <= 9; d++) if (solidAt(x, fy - d)) return false;
+  return true;
+}
+
 function stepWorm(wm, dt) {
   if (!wm.alive) return;
   wm.vy += GRAV * dt;
+
   // horizontale Bewegung mit Stufen-Klettern
-  let nx = wm.x + wm.vx * dt;
   if (Math.abs(wm.vx) > 1) {
-    if (!freeSpot(nx, wm.y)) {
+    const nx = clamp(wm.x + wm.vx * dt, 2, WORLD_W - 2);
+    if (bodyClear(nx, wm.y)) {
+      wm.x = nx;
+    } else {
       let climbed = false;
-      for (let up = 1; up <= 8; up++) { if (freeSpot(nx, wm.y - up)) { wm.y -= up; climbed = true; break; } }
-      if (!climbed) { nx = wm.x; wm.vx = 0; }
+      for (let up = 1; up <= 9; up++) { if (bodyClear(nx, wm.y - up)) { wm.x = nx; wm.y -= up; climbed = true; break; } }
+      if (!climbed) wm.vx = 0; // Wand
     }
-    wm.x = clamp(nx, 2, WORLD_W - 2);
   }
+
   // vertikal
   wm.y += wm.vy * dt;
-  wm.grounded = false;
-  if (solidAt(wm.x, wm.y + 6)) {
-    // in den Boden -> hochschieben
-    let push = 0;
-    while (solidAt(wm.x, wm.y + 6) && push < 40) { wm.y -= 1; push++; }
-    if (wm.vy > 260) { // Fallschaden
-      damage(wm, Math.round((wm.vy - 260) / 22), 0, 0);
-    }
-    wm.vy = 0; wm.grounded = true;
+  // eingesunken -> bis knapp über den Grund hochschieben
+  let sink = 0;
+  while (solidAt(wm.x, wm.y) && sink < 60) { wm.y -= 1; sink++; }
+  // Bodenkontakt: fester Grund innerhalb weniger Pixel unter den Füßen
+  let support = false;
+  for (let d = 1; d <= 4; d++) if (solidAt(wm.x, wm.y + d)) { support = true; break; }
+  if (support) {
+    if (wm.vy > 260) damage(wm, Math.round((wm.vy - 260) / 22), 0, 0);
+    if (wm.vy > 0) wm.vy = 0;
+    wm.grounded = true;
     wm.vx *= 0.6;
-    if (Math.abs(wm.vx) < 6) wm.vx = 0;
+    if (Math.abs(wm.vx) < 8) wm.vx = 0;
+  } else {
+    wm.grounded = false;
   }
+
   // Kriech-Phase (Wellenbewegung der Raupe)
   if (wm.grounded && Math.abs(wm.vx) > 5) wm.crawl += Math.min(0.5, Math.abs(wm.vx) * dt * 0.5);
   else wm.crawl += dt * 1.6; // ruhiges „Atmen"
   // Wasser
   if (wm.y > WATERLINE + 4) { wm.alive = false; wm.hp = 0; particles.push({ kind: 'splash', x: wm.x, y: WATERLINE, t: 0, ttl: 0.6 }); }
-}
-
-function freeSpot(x, y) {
-  // Wurmkörper (schmale Kapsel) frei?
-  return !solidAt(x, y) && !solidAt(x, y - 5) && !solidAt(x, y + 5);
 }
 
 function stepProjectile(pr, dt) {
@@ -403,16 +412,20 @@ function fireWeapon() {
   if (w.ammo !== Infinity) ammoUsed[w.key] = (ammoUsed[w.key] || 0) + 1;
   game.state = 'busy';
   game.settleT = 0;
+  game.busyT = 0;
 }
 
 function endTurnAfterSettle(dt) {
+  game.busyT += dt;
+  if (game.busyT > 8) { startTurn(); return; } // Sicherheits-Zeitgrenze
   if (game.actionBusy) { game.settleT = 0; return; } // Uzi/Brenner noch aktiv
-  // warten bis Projektile weg und Würmer ruhig sind
+  // warten bis Projektile weg und Würmer wirklich ruhig sind (nur echte
+  // Geschwindigkeit prüfen – nicht das grounded-Flag, das sonst hängen bleibt)
   const moving = projectiles.length > 0 ||
-    allWorms().some((w) => w.alive && (Math.abs(w.vx) > 8 || Math.abs(w.vy) > 8 || !w.grounded && w.y < WATERLINE));
+    allWorms().some((w) => w.alive && (Math.abs(w.vx) > 6 || Math.abs(w.vy) > 6));
   if (moving) { game.settleT = 0; return; }
   game.settleT += dt;
-  if (game.settleT > 0.8) startTurn();
+  if (game.settleT > 0.7) startTurn();
 }
 
 // ---- Kamera ----------------------------------------------------------------
@@ -586,11 +599,11 @@ function drawAim(wm) {
 // ---- HUD -------------------------------------------------------------------
 function drawHUD(time) {
   // Team-Gesundheitsbalken oben
-  const bw = 150;
+  const bw = Math.min(150, (W - 28 - (teams.length - 1) * 10) / teams.length);
   teams.forEach((t, i) => {
     const total = t.worms.reduce((s, w) => s + Math.max(0, w.hp), 0);
     const max = t.worms.length * 100;
-    const x = 14 + i * (bw + 10), y = 12;
+    const x = 14 + i * (bw + 10), y = 54; // unter der Toolbar
     ctx.fillStyle = 'rgba(8,25,42,0.55)'; roundRect(x, y, bw, 30, 8); ctx.fill();
     ctx.fillStyle = t.color; roundRect(x + 4, y + 18, (bw - 8) * total / max, 8, 3); ctx.fill();
     ctx.fillStyle = i === game.turnTeam ? '#fff' : 'rgba(255,255,255,0.7)';
@@ -614,15 +627,15 @@ function drawHUD(time) {
     ctx.fillText(Math.ceil(game.timer) + 's', W - 16, 34);
   }
 
-  // Waffe + Power unten
+  // Waffe + Power (über der unteren Button-Reihe)
   const w = curWeapon();
-  ctx.fillStyle = 'rgba(8,25,42,0.6)'; roundRect(W / 2 - 90, H - 58, 180, 44, 10); ctx.fill();
-  ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '20px system-ui';
+  ctx.fillStyle = 'rgba(8,25,42,0.6)'; roundRect(W / 2 - 92, H - 128, 184, 46, 10); ctx.fill();
+  ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '17px system-ui';
   const am = weaponAmmo(game.weaponIdx);
-  ctx.fillText(w.icon + ' ' + w.name + (am === Infinity ? '' : ' (' + am + ')'), W / 2, H - 40);
+  ctx.fillText(w.icon + ' ' + w.name + (am === Infinity ? '' : ' (' + am + ')'), W / 2, H - 108);
   // Power-Balken
-  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(W / 2 - 80, H - 28, 160, 8);
-  ctx.fillStyle = game.power > 0.8 ? '#ff6a5a' : '#ffd166'; ctx.fillRect(W / 2 - 80, H - 28, 160 * game.power, 8);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(W / 2 - 82, H - 96, 164, 9);
+  ctx.fillStyle = game.power > 0.8 ? '#ff6a5a' : '#ffd166'; ctx.fillRect(W / 2 - 82, H - 96, 164 * game.power, 9);
 
   // Banner
   if (game.bannerT > 0) {
@@ -753,15 +766,22 @@ function newGame() {
 }
 
 // ---- Schleife --------------------------------------------------------------
+const stage = document.getElementById('stage');
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
+  const rot = stage.classList.contains('rot');
+  W = rot ? window.innerHeight : window.innerWidth;
+  H = rot ? window.innerWidth : window.innerHeight;
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   cam.scale = clamp(H / (WORLD_H * 0.62), 0.5, 1.1);
 }
 window.addEventListener('resize', resize);
+document.getElementById('btn-rotate').addEventListener('click', () => {
+  stage.classList.toggle('rot');
+  resize();
+});
 resize();
 
 window.__wurm = { game, teams: () => teams, projectiles, WEAPONS, fireWeapon, weaponAmmo,
@@ -779,7 +799,7 @@ function frame(now) {
   if (game.state === 'aim') {
     readInput(dt);
     game.timer -= dt;
-    if (game.timer <= 0 && !game.fireDone) { game.state = 'busy'; game.settleT = 0; }
+    if (game.timer <= 0 && !game.fireDone) { game.state = 'busy'; game.settleT = 0; game.busyT = 0; }
   }
 
   // Physik immer (Würmer fallen, auch nach Explosionen)

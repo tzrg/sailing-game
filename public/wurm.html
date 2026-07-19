@@ -9,10 +9,13 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🐛%3C/text%3E%3C/svg%3E">
 </head>
 <body>
+ <div id="stage">
   <canvas id="game"></canvas>
 
   <div id="toolbar">
     <button id="btn-menu">☰</button>
+    <button id="btn-rotate" title="Querformat">⟳</button>
+    <button id="b-weapon">🔫</button>
   </div>
 
   <!-- Bewegungs- & Kampf-Buttons -->
@@ -26,7 +29,6 @@
     <button id="b-fire">FEUER</button>
     <button id="b-aimdn">▼</button>
   </div>
-  <button id="b-weapon">🔫 Waffe</button>
 
   <div id="wmenu" class="hidden"></div>
 
@@ -76,6 +78,7 @@
       <button id="btn-start">Los geht's</button>
     </div>
   </div>
+ </div>
 
   <script type="module" src="js/wurm.js"></script>
 </body>

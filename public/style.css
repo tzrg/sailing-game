@@ -241,36 +241,69 @@ html, body {
   display: none;
 }
 
-/* Wurmkrieg-Steuerung */
+/* Raupen: Bühne + Querformat-Drehung.
+   Wenn #stage rotiert ist, werden alle position:fixed-Kinder relativ zur
+   Bühne positioniert (Transform erzeugt einen Containing-Block). */
+#stage { position: fixed; inset: 0; }
+#stage.rot {
+  inset: auto;
+  top: 0;
+  left: 100vw;
+  width: 100vh;
+  height: 100vw;
+  transform-origin: 0 0;
+  transform: rotate(90deg);
+}
+
+#btn-rotate {
+  background: rgba(8, 25, 42, 0.55);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  width: 46px; height: 46px;
+  font-size: 20px;
+  cursor: pointer;
+}
+#toolbar #b-weapon {
+  background: rgba(8, 25, 42, 0.55);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  width: 46px; height: 46px;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+/* Raupen-Steuerung unten */
 #wctrl-left, #wctrl-right {
   position: fixed;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0));
   display: flex;
-  gap: 8px;
+  gap: 7px;
   z-index: 12;
   align-items: flex-end;
 }
 
-#wctrl-left { left: 14px; }
-#wctrl-right { right: 14px; }
+#wctrl-left { left: 12px; }
+#wctrl-right { right: 12px; }
 
 #wctrl-left button, #wctrl-right button {
   background: rgba(8, 25, 42, 0.6);
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 12px;
-  width: 58px;
-  height: 58px;
-  font-size: 22px;
+  width: 54px;
+  height: 54px;
+  font-size: 20px;
   cursor: pointer;
   touch-action: none;
   user-select: none;
 }
 
 #wctrl-right #b-fire {
-  width: 74px;
-  height: 74px;
-  font-size: 15px;
+  width: 66px;
+  height: 66px;
+  font-size: 13px;
   font-weight: 700;
   background: #c0392b;
   border-color: #fff;
@@ -279,19 +312,11 @@ html, body {
 #wctrl-left button:active, #wctrl-right button:active { background: rgba(8, 25, 42, 0.9); }
 #wctrl-right #b-fire:active { background: #e0453e; }
 
-#b-weapon {
-  position: fixed;
-  bottom: calc(88px + env(safe-area-inset-bottom, 0));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 12;
-  background: rgba(8, 25, 42, 0.6);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 10px;
-  padding: 10px 16px;
-  font-size: 15px;
-  cursor: pointer;
+/* kleine Handys im Hochformat: kompakter, damit nichts überlappt */
+@media (max-width: 560px) {
+  #wctrl-left button, #wctrl-right button { width: 46px; height: 46px; font-size: 17px; }
+  #wctrl-right #b-fire { width: 56px; height: 56px; font-size: 12px; }
+  #wctrl-left, #wctrl-right { gap: 5px; bottom: calc(10px + env(safe-area-inset-bottom, 0)); }
 }
 
 #wmenu {
