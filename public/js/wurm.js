@@ -107,6 +107,9 @@ function carveCircle(cx, cy, rad, rebuild = true) {
 // ---- Teams & Würmer --------------------------------------------------------
 const TEAM_COLORS = ['#e0453e', '#3d8ee0', '#3fb14e', '#e0a92e'];
 const TEAM_NAMES = ['Rot', 'Blau', 'Grün', 'Gelb'];
+const WORM_NAMES = ['Kalle', 'Rudi', 'Emma', 'Fritz', 'Berta', 'Otto', 'Lotti', 'Egon',
+  'Hilde', 'Kurt', 'Wanda', 'Bruno', 'Gundi', 'Manni', 'Resi', 'Ferdi', 'Olga', 'Heinz',
+  'Trudi', 'Sepp', 'Mia', 'Balu', 'Nala', 'Pepe'];
 let teams = [];
 let cfg = { teamCount: 2, wormCount: 3 };
 
@@ -125,13 +128,16 @@ function spawnTeams() {
     while (tries < 40 && spots.some((s) => Math.abs(s - x) < 70));
     spots.push(x);
   }
+  const namePool = WORM_NAMES.slice().sort(() => Math.random() - 0.5);
+  let np = 0;
   let s = 0;
   for (let t = 0; t < cfg.teamCount; t++) {
     const worms = [];
     for (let w = 0; w < cfg.wormCount; w++) {
       const x = spots[s++];
       const y = surfaceY(x | 0) - 8;
-      worms.push({ x, y, vx: 0, vy: 0, hp: 100, alive: true, facing: 1, team: t, grounded: false, fall: 0, crawl: Math.random() * TAU });
+      const name = namePool[np++ % namePool.length];
+      worms.push({ x, y, vx: 0, vy: 0, hp: 100, alive: true, facing: 1, team: t, grounded: false, fall: 0, crawl: Math.random() * TAU, name });
     }
     teams.push({ color: TEAM_COLORS[t], name: TEAM_NAMES[t], worms, cur: 0, ammoUsed: {} });
   }
@@ -176,7 +182,7 @@ const WEAPONS = [
   { key: 'cluster', name: 'Streubombe', icon: '🍒', ammo: 2, aimed: true,
     fire: (w) => launch(w, 'cluster', 640, { r: 24, dmg: 26, fuse: 3, bounce: 0.5, wind: 1, cluster: 6 }) },
   { key: 'allmacht', name: 'Allmachtsgranate', icon: '✨', ammo: 1, aimed: true,
-    fire: (w) => launch(w, 'grenade', 600, { r: 64, dmg: 82, fuse: 3.5, bounce: 0.5, wind: 0.5, holy: 1 }) },
+    fire: (w) => launch(w, 'grenade', 600, { r: 100, dmg: 115, fuse: 3.5, bounce: 0.45, wind: 0.5, holy: 1 }) },
   { key: 'brenner', name: 'Schweißbrenner', icon: '🔥', ammo: 2, aimed: false, endsTurn: true,
     fire: (w) => blowtorch(w) },
 ];
@@ -202,7 +208,12 @@ function hitscanRay(x, y, dirx, diry, maxDist) {
     if (px < 0 || px > WORLD_W || py > WATERLINE) return { x: px, y: py, hit: 'edge', d };
     if (solidAt(px, py)) return { x: px, y: py, hit: 'ground', d };
     for (const wm of allWorms()) {
-      if (wm.alive && wm !== game.active && Math.hypot(px - wm.x, py - wm.y) < 9) return { x: px, y: py, hit: wm, d };
+      // Treffer gegen die Körpermitte (wm.y ist der Fußpunkt, Körper ~11 px hoch),
+      // großzügiger Radius, damit horizontale Schüsse nicht drüberfliegen.
+      if (wm.alive && wm !== game.active) {
+        const dx = px - wm.x, dy = py - (wm.y - 6);
+        if (dx * dx + dy * dy < 144) return { x: px, y: py, hit: wm, d };
+      }
     }
   }
   return { x: x + dirx * maxDist, y: y + diry * maxDist, hit: null, d: maxDist };
@@ -211,9 +222,11 @@ function hitscanRay(x, y, dirx, diry, maxDist) {
 function shotgun(w) {
   const a = game.aim, dir = w.facing;
   const dirx = dir * Math.cos(a), diry = -Math.sin(a);
-  const res = hitscanRay(w.x + dir * 12, w.y - 10, dirx, diry, 900);
-  spawnTracer(w.x + dir * 12, w.y - 10, res.x, res.y);
-  explode(res.x, res.y, 16, 26, false);
+  const res = hitscanRay(w.x + dir * 12, w.y - 8, dirx, diry, 900);
+  spawnTracer(w.x + dir * 12, w.y - 8, res.x, res.y);
+  // trifft ein Wurm -> Volltreffer; sonst Krater ins Gelände
+  const onWorm = res.hit && res.hit !== 'edge' && res.hit !== 'ground';
+  explode(res.x, res.y, onWorm ? 22 : 18, onWorm ? 40 : 26, res.hit === 'ground');
   game.shotgunShots = (game.shotgunShots || 0) + 1;
   if (game.shotgunShots < 2) { game.fireDone = false; return 'more'; }
   game.shotgunShots = 0;
@@ -262,18 +275,30 @@ function explode(x, y, r, dmg, dig = true) {
       damage(wm, Math.round(dmg * f), Math.cos(ang) * 260 * f, Math.sin(ang) * 260 * f - 80 * f);
     }
   }
-  for (let i = 0; i < 18; i++) {
-    const a = Math.random() * TAU, sp = 60 + Math.random() * 160;
+  const nSpark = Math.round(clamp(r * 0.5, 12, 44));   // größere Explosion = mehr Funken
+  for (let i = 0; i < nSpark; i++) {
+    const a = Math.random() * TAU, sp = 60 + Math.random() * 160 + r;
     particles.push({ kind: 'spark', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, t: 0, ttl: 0.6 });
   }
   particles.push({ kind: 'blast', x, y, r, t: 0, ttl: 0.35 });
 }
 
+// Sterbe-Effekt: farbige Funken + aufsteigender Grabstein/Totenkopf.
+function killWorm(wm) {
+  const color = (teams[wm.team] && teams[wm.team].color) || '#fff';
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * TAU, sp = 40 + Math.random() * 150;
+    particles.push({ kind: 'deadspark', x: wm.x, y: wm.y - 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 70, t: 0, ttl: 0.6 + Math.random() * 0.5, color });
+  }
+  particles.push({ kind: 'death', x: wm.x, y: wm.y - 8, name: wm.name || '', t: 0, ttl: 1.4 });
+}
+
 function damage(wm, amt, kx, ky) {
+  const wasAlive = wm.alive;
   wm.hp -= amt;
   wm.vx += kx; wm.vy += ky;
   wm.grounded = false;
-  if (wm.hp <= 0) { wm.hp = 0; wm.alive = false; }
+  if (wm.hp <= 0) { wm.hp = 0; wm.alive = false; if (wasAlive) killWorm(wm); }
 }
 
 function allWorms() { return teams.flatMap((t) => t.worms); }
@@ -323,7 +348,12 @@ function stepWorm(wm, dt) {
   if (wm.grounded && Math.abs(wm.vx) > 5) wm.crawl += Math.min(0.5, Math.abs(wm.vx) * dt * 0.5);
   else wm.crawl += dt * 1.6; // ruhiges „Atmen"
   // Wasser
-  if (wm.y > WATERLINE + 4) { wm.alive = false; wm.hp = 0; particles.push({ kind: 'splash', x: wm.x, y: WATERLINE, t: 0, ttl: 0.6 }); }
+  if (wm.y > WATERLINE + 4) {
+    const wasAlive = wm.alive;
+    wm.alive = false; wm.hp = 0;
+    particles.push({ kind: 'splash', x: wm.x, y: WATERLINE, t: 0, ttl: 0.6 });
+    if (wasAlive) particles.push({ kind: 'death', x: wm.x, y: WATERLINE - 12, name: wm.name || '', t: 0, ttl: 1.4 });
+  }
 }
 
 function stepProjectile(pr, dt) {
@@ -334,9 +364,9 @@ function stepProjectile(pr, dt) {
 
   // Wasser
   if (ny > WATERLINE) { particles.push({ kind: 'splash', x: nx, y: WATERLINE, t: 0, ttl: 0.5 }); return true; }
-  // Wurm getroffen (Raketen/Cluster explodieren bei Kontakt)
+  // Wurm getroffen (Raketen/Cluster explodieren bei Kontakt) – Körpermitte
   if (pr.type === 'rocket' || pr.type === 'cluster') {
-    for (const wm of allWorms()) if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - wm.y) < 9) { detonate(pr, nx, ny); return true; }
+    for (const wm of allWorms()) if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - (wm.y - 6)) < 11) { detonate(pr, nx, ny); return true; }
   }
   // Gelände
   if (solidAt(nx, ny)) {
@@ -536,20 +566,27 @@ function drawWorm(wm, team, time) {
   ctx.beginPath(); ctx.arc(hx + f * 3.5 + antW, hy - 9.5, 0.9, 0, TAU); ctx.fill();
   ctx.restore();
 
-  const topY = wm.y - segR - amp - 9;
-  // aktiver Wurm: Pfeil
+  const barY = wm.y - segR - amp - 9;
+  // aktiver Wurm: Pfeil (über Namen/Balken)
   if (wm === game.active && game.state === 'aim') {
     const bob = Math.sin(time * 4) * 2;
+    const ay = barY - 13 - bob;
     ctx.fillStyle = team.color;
     ctx.beginPath();
-    ctx.moveTo(wm.x, topY - 4 - bob); ctx.lineTo(wm.x - 5, topY - 12 - bob); ctx.lineTo(wm.x + 5, topY - 12 - bob);
+    ctx.moveTo(wm.x, ay); ctx.lineTo(wm.x - 5, ay - 8); ctx.lineTo(wm.x + 5, ay - 8);
     ctx.closePath(); ctx.fill();
   }
-  // HP-Balken
-  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(wm.x - 11, topY, 22, 4);
-  ctx.fillStyle = team.color; ctx.fillRect(wm.x - 11, topY, 22 * wm.hp / 100, 4);
-  ctx.fillStyle = '#fff'; ctx.font = '7px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText(wm.hp, wm.x, topY - 2);
+  // Name + HP-Zahl über dem Balken
+  ctx.textAlign = 'center';
+  ctx.font = '600 7px system-ui';
+  const label = `${wm.name || ''} ${wm.hp}`.trim();
+  ctx.lineWidth = 2.4; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.strokeText(label, wm.x, barY - 4);
+  ctx.fillStyle = '#fff'; ctx.fillText(label, wm.x, barY - 4);
+  // HP-Balken (farbcodiert: grün -> orange -> rot)
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(wm.x - 12, barY, 24, 4);
+  ctx.fillStyle = wm.hp > 50 ? team.color : (wm.hp > 25 ? '#e0a92e' : '#e0453e');
+  ctx.fillRect(wm.x - 12, barY, 24 * clamp(wm.hp, 0, 100) / 100, 4);
+  ctx.textAlign = 'left';
 }
 
 function drawProjectile(pr, time) {
@@ -582,6 +619,19 @@ function drawParticle(p) {
   } else if (p.kind === 'spark') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = '#ffd27f';
     ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+  } else if (p.kind === 'deadspark') {
+    ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = p.color || '#fff';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+  } else if (p.kind === 'death') {
+    const f = p.t / p.ttl;
+    ctx.globalAlpha = 1 - f * f;
+    ctx.font = '16px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('💀', p.x, p.y - f * 20);
+    if (p.name) {
+      ctx.font = '600 8px system-ui'; ctx.fillStyle = '#fff';
+      ctx.fillText(p.name, p.x, p.y - f * 20 + 11);
+    }
+    ctx.globalAlpha = 1; ctx.textAlign = 'left';
   } else if (p.kind === 'tracer') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.strokeStyle = '#fff4c0'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke(); ctx.globalAlpha = 1;
@@ -860,7 +910,7 @@ function sendSnapshot() {
     wi: game.weaponIdx, wind: game.wind, bn: game.banner || '', bnT: +(game.bannerT || 0).toFixed(2),
     win: game.winner ? game.winner.name : null, ac: { t: game.turnTeam, i: t ? t.cur : 0 },
     tm: teams.map((tt) => ({ c: tt.cur, au: tt.ammoUsed,
-      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing })) })),
+      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing, n: w.name })) })),
     pj: projectiles.map((p) => ({ t: p.type, x: Math.round(p.x), y: Math.round(p.y), r: p.r,
       vx: Math.round(p.vx || 0), vy: Math.round(p.vy || 0), ang: p.ang || 0 })),
     cr: net.craters.length ? net.craters.splice(0, net.craters.length) : undefined,
@@ -873,11 +923,15 @@ function applySnap(s) {
   if (!teams.length || teams.length !== s.tm.length || teams[0].worms.length !== s.tm[0].w.length) {
     teams = s.tm.map((tt, i) => ({ color: TEAM_COLORS[i], name: TEAM_NAMES[i], cur: tt.c, ammoUsed: tt.au || {},
       worms: tt.w.map((w) => ({ x: w.x, y: w.y, vx: 0, vy: 0, hp: w.hp, alive: !!w.al, facing: w.f,
-        team: i, grounded: true, fall: 0, crawl: Math.random() * TAU })) }));
+        team: i, grounded: true, fall: 0, crawl: Math.random() * TAU, name: w.n })) }));
   } else {
     s.tm.forEach((tt, i) => {
       teams[i].cur = tt.c; teams[i].ammoUsed = tt.au || {};
-      tt.w.forEach((w, j) => { const o = teams[i].worms[j]; o.x = w.x; o.y = w.y; o.hp = w.hp; o.alive = !!w.al; o.facing = w.f; });
+      tt.w.forEach((w, j) => {
+        const o = teams[i].worms[j];
+        if (o.alive && !w.al) killWorm(o);   // gerade gestorben -> Sterbe-Effekt
+        o.x = w.x; o.y = w.y; o.hp = w.hp; o.alive = !!w.al; o.facing = w.f; if (w.n) o.name = w.n;
+      });
     });
   }
   game.state = s.st; game.turnTeam = s.tt; game.aim = s.ai; game.power = s.pw;
@@ -1052,6 +1106,7 @@ function frame(now) {
       const ad = localAimDir(); if (ad !== net.lastAim) { net.lastAim = ad; net.client.send({ t: 'act', a: { k: 'aim', dir: ad } }); }
     } else { net.lastMove = 0; net.lastAim = 0; }
     for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
+    for (const p of particles) if (p.kind === 'spark' || p.kind === 'deadspark') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
     updateCamera(dt);
     if (net.ready) draw(time); else drawWaiting();
     requestAnimationFrame(frame);
@@ -1070,7 +1125,7 @@ function frame(now) {
   for (const wm of allWorms()) stepWorm(wm, dt);
   for (let i = projectiles.length - 1; i >= 0; i--) { if (stepProjectile(projectiles[i], dt)) projectiles.splice(i, 1); }
   for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
-  if (particles.length) for (const p of particles) if (p.kind === 'spark') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+  if (particles.length) for (const p of particles) if (p.kind === 'spark' || p.kind === 'deadspark') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
 
   if (game.state === 'busy') endTurnAfterSettle(dt);
 
