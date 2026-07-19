@@ -11,59 +11,65 @@
 <body class="landing">
   <div class="lp">
     <header class="lp-head">
-      <h1>🎮 Tims Game Library</h1>
-      <p class="lp-sub">Casual Gaming &amp; Multiplayer</p>
+      <div class="lp-title">
+        <h1>🎮 Tims Game Library</h1>
+        <p class="lp-sub">Casual Gaming &amp; Multiplayer</p>
+      </div>
 
-      <!-- Login (läuft vorerst lokal, Backend folgt) -->
-      <div class="auth" id="auth">
-        <div class="auth-box hidden" id="auth-guest">
-          <input id="in-name" type="text" placeholder="Spielername" autocomplete="username">
-          <input id="in-pass" type="password" placeholder="Passwort" autocomplete="current-password">
-          <div class="auth-btns">
-            <button id="btn-login" class="btn primary">Einloggen</button>
-            <button id="btn-register" class="btn">Registrieren</button>
+      <!-- Login: eingeklappt, bis man drauftippt (läuft vorerst lokal) -->
+      <div class="auth">
+        <details class="auth-details" id="auth-guest">
+          <summary class="auth-summary">🔑 Anmelden</summary>
+          <div class="auth-body">
+            <input id="in-name" type="text" placeholder="Spielername" autocomplete="username">
+            <input id="in-pass" type="password" placeholder="Passwort" autocomplete="current-password">
+            <div class="auth-btns">
+              <button id="btn-login" class="btn primary">Einloggen</button>
+              <button id="btn-register" class="btn">Registrieren</button>
+            </div>
+            <p class="auth-error hidden" id="auth-error"></p>
+            <p class="muted small">Konto &amp; Highscores werden vorerst lokal auf diesem Gerät gespeichert.</p>
           </div>
-          <p class="auth-error hidden" id="auth-error"></p>
-          <p class="muted small">Konto &amp; Highscores werden vorerst lokal auf diesem Gerät gespeichert.</p>
-        </div>
-        <div class="auth-box row hidden" id="auth-user">
-          <span>👤 Angemeldet als <b id="auth-name">…</b></span>
+        </details>
+        <div class="auth-badge hidden" id="auth-user">
+          <span>👤 <b id="auth-name">…</b></span>
           <button id="btn-logout" class="btn small">Abmelden</button>
         </div>
       </div>
     </header>
 
     <!-- Spiele -->
-    <section class="lp-sec">
-      <h2>Spiele</h2>
-      <div class="games">
-        <a class="game-card" href="sail.html">
-          <span class="gc-emoji">⛵</span>
-          <span class="gc-name">Segeln</span>
-          <span class="gc-desc">Physik-Regatta mit acht Booten</span>
-        </a>
-        <a class="game-card" href="auto.html">
-          <span class="gc-emoji">🏎</span>
-          <span class="gc-name">Autorennen</span>
-          <span class="gc-desc">GTA-Sicht, Drift &amp; Bestzeiten</span>
-        </a>
-        <a class="game-card" href="mtb.html">
-          <span class="gc-emoji">🚵</span>
-          <span class="gc-name">Mountainbike</span>
-          <span class="gc-desc">Rampen, Saltos &amp; Trickscore</span>
-        </a>
-        <a class="game-card" href="wurm.html">
-          <span class="gc-emoji">🐛</span>
-          <span class="gc-name">Raupen</span>
-          <span class="gc-desc">Rundenbasierte Artillerie-Schlacht</span>
-        </a>
-      </div>
-    </section>
+    <div class="games">
+      <a class="game-card" href="sail.html">
+        <span class="gc-emoji">⛵</span>
+        <span class="gc-name">Segeln</span>
+      </a>
+      <a class="game-card" href="auto.html">
+        <span class="gc-emoji">🏎</span>
+        <span class="gc-name">Autorennen</span>
+      </a>
+      <a class="game-card" href="mtb.html">
+        <span class="gc-emoji">🚵</span>
+        <span class="gc-name">Mountainbike</span>
+      </a>
+      <a class="game-card" href="wurm.html">
+        <span class="gc-emoji">🐛</span>
+        <span class="gc-name">Raupen</span>
+      </a>
+    </div>
 
-    <!-- Caterpillar-Sessions -->
-    <section class="lp-sec">
-      <h2>🐛 Caterpillars – Multiplayer</h2>
-      <div class="cat">
+    <!-- Highscores: eingeklappt -->
+    <details class="panel-details">
+      <summary>🏆 Highscores</summary>
+      <div class="pd-body">
+        <div id="score-list" class="scores"></div>
+      </div>
+    </details>
+
+    <!-- Caterpillars Multiplayer: eingeklappt -->
+    <details class="panel-details">
+      <summary>🐛 Caterpillars – Multiplayer</summary>
+      <div class="pd-body">
         <p class="cat-status off" id="cat-status">…</p>
 
         <div class="cat-forms">
@@ -86,21 +92,13 @@
         </div>
 
         <p class="cat-created hidden" id="cat-created"></p>
-        <h3 class="cat-list-title">Offene Sessions</h3>
         <div id="cat-sessions"></div>
       </div>
-    </section>
-
-    <!-- Highscores -->
-    <section class="lp-sec">
-      <h2>🏆 Deine Highscores</h2>
-      <div id="score-list" class="scores"></div>
-    </section>
+    </details>
 
     <footer class="lp-foot">
-      <p class="muted small">Alles läuft aktuell ohne Server – Login, Sessions und
-      Highscores werden lokal gespeichert. Sobald die Datenbank steht, wird online
-      gespielt (feste Konten, gemeinsame Caterpillar-Runden).</p>
+      <p class="muted small">Vorerst ohne Server – Login, Sessions &amp; Highscores liegen
+      lokal auf diesem Gerät. Sobald die Datenbank steht, wird online gespielt.</p>
     </footer>
   </div>
 

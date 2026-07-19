@@ -127,7 +127,7 @@ function spawnTeams() {
       const y = surfaceY(x | 0) - 8;
       worms.push({ x, y, vx: 0, vy: 0, hp: 100, alive: true, facing: 1, team: t, grounded: false, fall: 0, crawl: Math.random() * TAU });
     }
-    teams.push({ color: TEAM_COLORS[t], name: TEAM_NAMES[t], worms, cur: 0 });
+    teams.push({ color: TEAM_COLORS[t], name: TEAM_NAMES[t], worms, cur: 0, ammoUsed: {} });
   }
 }
 
@@ -400,8 +400,9 @@ function startTurn() {
   focusCam(game.active.x, game.active.y);
 }
 
-const ammoUsed = {}; // key -> Anzahl verbraucht (global, vereinfachter Vorrat)
-function weaponAmmo(i) { const w = WEAPONS[i]; return w.ammo === Infinity ? Infinity : w.ammo - (ammoUsed[w.key] || 0); }
+// Munitionsvorrat ist pro Team: jedes Team hat sein eigenes ammoUsed-Map.
+function teamAmmoUsed() { const t = teams[game.turnTeam]; return t ? t.ammoUsed : {}; }
+function weaponAmmo(i) { const w = WEAPONS[i]; return w.ammo === Infinity ? Infinity : w.ammo - (teamAmmoUsed()[w.key] || 0); }
 
 function fireWeapon() {
   const w = WEAPONS[game.weaponIdx];
@@ -409,7 +410,7 @@ function fireWeapon() {
   game.fireDone = true;
   const r = w.fire(game.active);
   if (r === 'more') return; // Schrot: zweiter Schuss folgt
-  if (w.ammo !== Infinity) ammoUsed[w.key] = (ammoUsed[w.key] || 0) + 1;
+  if (w.ammo !== Infinity) { const u = teamAmmoUsed(); u[w.key] = (u[w.key] || 0) + 1; }
   game.state = 'busy';
   game.settleT = 0;
   game.busyT = 0;
@@ -758,8 +759,7 @@ document.getElementById('btn-newgame').addEventListener('click', () => {
 
 function newGame() {
   generateTerrain((Math.random() * 1e9) | 0);
-  for (const k in ammoUsed) delete ammoUsed[k];
-  spawnTeams();
+  spawnTeams();  // jedes Team startet mit vollem, eigenem Munitionsvorrat
   projectiles.length = 0; particles.length = 0;
   game.turnTeam = -1; game.weaponIdx = 0; game.winner = null;
   startTurn();

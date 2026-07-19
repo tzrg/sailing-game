@@ -472,37 +472,56 @@ body.landing {
 }
 
 .lp {
-  max-width: 780px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: max(24px, env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
+  padding: max(20px, env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
 }
 
-.lp-head { text-align: center; margin-bottom: 28px; }
-.lp-head h1 { font-size: 30px; letter-spacing: 0.01em; }
-.lp-sub { color: #9fc0d8; margin-top: 4px; font-size: 15px; }
+.lp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.lp-head h1 { font-size: 24px; letter-spacing: 0.01em; }
+.lp-sub { color: #9fc0d8; margin-top: 2px; font-size: 13px; }
 
 .hidden { display: none !important; }
 .muted { color: #9fc0d8; }
 .small { font-size: 12px; }
 
-/* --- Auth --- */
-.auth { margin-top: 18px; }
-.auth-box {
+/* --- Auth (kompakt, ausklappbar) --- */
+.auth { margin-left: auto; }
+.auth-details {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 14px;
-  padding: 16px;
-  max-width: 380px;
-  margin: 0 auto;
-  text-align: left;
+  border-radius: 11px;
+  overflow: hidden;
 }
-.auth-box.row {
+.auth-details[open] { width: min(320px, 86vw); }
+.auth-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 9px 14px;
+  font-size: 14px;
+  user-select: none;
+  white-space: nowrap;
+}
+.auth-summary::-webkit-details-marker { display: none; }
+.auth-body { padding: 4px 14px 14px; text-align: left; }
+.auth-badge {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 11px;
+  padding: 7px 8px 7px 14px;
+  font-size: 14px;
 }
-.auth-box input {
+.auth-body input {
   display: block;
   width: 100%;
   margin-bottom: 10px;
@@ -531,37 +550,55 @@ body.landing {
 .btn.primary:active { background: #38b47e; }
 .btn.small { flex: none; padding: 8px 14px; font-size: 14px; }
 
-/* --- Sections --- */
-.lp-sec { margin: 26px 0; }
-.lp-sec > h2 {
-  font-size: 18px;
-  margin-bottom: 14px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+/* --- Ausklappbare Panels (Highscores, Multiplayer) --- */
+.panel-details {
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  overflow: hidden;
 }
+.panel-details > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 13px 16px;
+  font-size: 16px;
+  font-weight: 600;
+  user-select: none;
+  display: flex;
+  align-items: center;
+}
+.panel-details > summary::-webkit-details-marker { display: none; }
+.panel-details > summary::after {
+  content: '▸';
+  margin-left: auto;
+  color: #9fc0d8;
+  transition: transform 0.15s;
+}
+.panel-details[open] > summary::after { transform: rotate(90deg); }
+.pd-body { padding: 4px 16px 16px; }
 
 /* --- Game cards --- */
 .games {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
 }
 .game-card {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  gap: 12px;
   text-decoration: none;
   color: #fff;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 14px;
-  padding: 16px;
+  border-radius: 12px;
+  padding: 13px 15px;
   transition: transform 0.12s, background 0.12s;
 }
 .game-card:active { transform: scale(0.98); background: rgba(255, 255, 255, 0.13); }
-.gc-emoji { font-size: 34px; line-height: 1; }
-.gc-name { font-size: 17px; font-weight: 600; margin-top: 8px; }
-.gc-desc { font-size: 13px; color: #9fc0d8; margin-top: 3px; }
+.gc-emoji { font-size: 28px; line-height: 1; }
+.gc-name { font-size: 16px; font-weight: 600; }
 
 /* --- Caterpillar sessions --- */
 .cat {

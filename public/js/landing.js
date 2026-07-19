@@ -11,6 +11,7 @@ function renderAuth() {
   const user = $('auth-user');
   if (name) {
     guest.classList.add('hidden');
+    guest.open = false;
     user.classList.remove('hidden');
     $('auth-name').textContent = name;
   } else {
@@ -85,9 +86,11 @@ function renderScores() {
 function renderCaterpillar() {
   const status = $('cat-status');
   const online = Net.online;
-  status.textContent = online
-    ? '🟢 Server verbunden'
-    : '🟡 Server noch nicht eingerichtet – ihr spielt lokal am selben Gerät (Hotseat). Online-Sessions folgen.';
+  status.innerHTML = online
+    ? '🟢 Server verbunden – ihr könnt von verschiedenen Geräten mit dem Code beitreten.'
+    : '🟡 Server noch nicht eingerichtet. <b>Von einem anderen Gerät per Code beitreten geht daher noch nicht.</b> ' +
+      'Jetzt schon: eine Runde vorbereiten und lokal am selben Gerät im <b>Hotseat</b> spielen (Handy reihum weitergeben). ' +
+      'Sobald die Datenbank steht, wird der Code geräteübergreifend gültig.';
   status.className = 'cat-status ' + (online ? 'on' : 'off');
 
   renderSessionList();
