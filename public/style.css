@@ -241,6 +241,93 @@ html, body {
   display: none;
 }
 
+/* Wurmkrieg-Steuerung */
+#wctrl-left, #wctrl-right {
+  position: fixed;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0));
+  display: flex;
+  gap: 8px;
+  z-index: 12;
+  align-items: flex-end;
+}
+
+#wctrl-left { left: 14px; }
+#wctrl-right { right: 14px; }
+
+#wctrl-left button, #wctrl-right button {
+  background: rgba(8, 25, 42, 0.6);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  width: 58px;
+  height: 58px;
+  font-size: 22px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+#wctrl-right #b-fire {
+  width: 74px;
+  height: 74px;
+  font-size: 15px;
+  font-weight: 700;
+  background: #c0392b;
+  border-color: #fff;
+}
+
+#wctrl-left button:active, #wctrl-right button:active { background: rgba(8, 25, 42, 0.9); }
+#wctrl-right #b-fire:active { background: #e0453e; }
+
+#b-weapon {
+  position: fixed;
+  bottom: calc(88px + env(safe-area-inset-bottom, 0));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  background: rgba(8, 25, 42, 0.6);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+#wmenu {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 16, 28, 0.7);
+  z-index: 25;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  padding: max(40px, 8vh) 16px;
+  align-content: center;
+  overflow-y: auto;
+}
+
+#wmenu.hidden { display: none; }
+
+#wmenu .wpn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(10, 30, 50, 0.95);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  padding: 14px 8px;
+  cursor: pointer;
+}
+
+#wmenu .wpn.sel { border-color: #ffd166; background: rgba(40, 60, 40, 0.95); }
+#wmenu .wpn.out { opacity: 0.4; cursor: default; }
+#wmenu .wi { font-size: 30px; }
+#wmenu .wn { font-size: 13px; text-align: center; }
+#wmenu .wa { font-size: 12px; color: #ffd166; }
+
 #toolbar button {
   background: rgba(8, 25, 42, 0.55);
   color: #fff;
