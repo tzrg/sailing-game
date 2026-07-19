@@ -125,7 +125,7 @@ function spawnTeams() {
     for (let w = 0; w < cfg.wormCount; w++) {
       const x = spots[s++];
       const y = surfaceY(x | 0) - 8;
-      worms.push({ x, y, vx: 0, vy: 0, hp: 100, alive: true, facing: 1, team: t, grounded: false, fall: 0 });
+      worms.push({ x, y, vx: 0, vy: 0, hp: 100, alive: true, facing: 1, team: t, grounded: false, fall: 0, crawl: Math.random() * TAU });
     }
     teams.push({ color: TEAM_COLORS[t], name: TEAM_NAMES[t], worms, cur: 0 });
   }
@@ -146,6 +146,7 @@ const game = {
   winner: null,
   fireDone: false,
   settleT: 0,
+  actionBusy: false,
 };
 
 const projectiles = [];
@@ -213,9 +214,10 @@ function shotgun(w) {
 
 function uzi(w) {
   const dir = w.facing;
+  game.actionBusy = true; // hält die Runde, bis die Salve durch ist
   let n = 0;
   const iv = setInterval(() => {
-    if (n >= 8 || !game.active) { clearInterval(iv); return; }
+    if (n >= 8) { clearInterval(iv); game.actionBusy = false; return; }
     const a = game.aim + (Math.random() - 0.5) * 0.12;
     const dirx = dir * Math.cos(a), diry = -Math.sin(a);
     const res = hitscanRay(w.x + dir * 12, w.y - 10, dirx, diry, 800);
@@ -227,9 +229,10 @@ function uzi(w) {
 
 function blowtorch(w) {
   const dir = w.facing;
+  game.actionBusy = true; // hält die Runde, bis der Tunnel gegraben ist
   let step = 0;
   const iv = setInterval(() => {
-    if (step >= 22 || !game.active) { clearInterval(iv); return; }
+    if (step >= 22) { clearInterval(iv); game.actionBusy = false; return; }
     const px = w.x + dir * (10 + step * 3), py = w.y - 6;
     carveCircle(px | 0, py | 0, 12);
     for (const wm of allWorms()) if (wm.alive && wm !== w && Math.hypot(px - wm.x, py - wm.y) < 16) damage(wm, 6, dir * 60, -40);
@@ -296,6 +299,9 @@ function stepWorm(wm, dt) {
     wm.vx *= 0.6;
     if (Math.abs(wm.vx) < 6) wm.vx = 0;
   }
+  // Kriech-Phase (Wellenbewegung der Raupe)
+  if (wm.grounded && Math.abs(wm.vx) > 5) wm.crawl += Math.min(0.5, Math.abs(wm.vx) * dt * 0.5);
+  else wm.crawl += dt * 1.6; // ruhiges „Atmen"
   // Wasser
   if (wm.y > WATERLINE + 4) { wm.alive = false; wm.hp = 0; particles.push({ kind: 'splash', x: wm.x, y: WATERLINE, t: 0, ttl: 0.6 }); }
 }
@@ -377,7 +383,7 @@ function startTurn() {
   game.active = team.worms[team.cur];
   game.wind = +(Math.random() * 2 - 1).toFixed(2);
   game.aim = 0.6; game.power = 0; game.charging = false;
-  game.timer = 45; game.fireDone = false; game.shotgunShots = 0;
+  game.timer = 45; game.fireDone = false; game.shotgunShots = 0; game.actionBusy = false;
   game.state = 'aim';
   game.banner = 'Team ' + team.name + ' ist dran'; game.bannerT = 1.6;
   // Waffe mit Munition wählen, falls aktuelle leer
@@ -400,6 +406,7 @@ function fireWeapon() {
 }
 
 function endTurnAfterSettle(dt) {
+  if (game.actionBusy) { game.settleT = 0; return; } // Uzi/Brenner noch aktiv
   // warten bis Projektile weg und Würmer ruhig sind
   const moving = projectiles.length > 0 ||
     allWorms().some((w) => w.alive && (Math.abs(w.vx) > 8 || Math.abs(w.vy) > 8 || !w.grounded && w.y < WATERLINE));
@@ -459,33 +466,69 @@ function draw(time) {
   drawHUD(time);
 }
 
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = clamp((n >> 16) + amt, 0, 255), g = clamp(((n >> 8) & 255) + amt, 0, 255), b = clamp((n & 255) + amt, 0, 255);
+  return `rgb(${r | 0},${g | 0},${b | 0})`;
+}
+
+// Raupe: Kette aus Segmenten mit wandernder Kriech-Welle (Inchworm-Look)
 function drawWorm(wm, team, time) {
   if (!wm.alive) return;
+  const f = wm.facing;
+  const segN = 5, gap = 3.4, segR = 4.2;
+  const moving = wm.grounded && Math.abs(wm.vx) > 6;
+  const amp = moving ? 2.8 : 0.6;
+  const segY = (i) => wm.y - segR + Math.sin(wm.crawl - i * 0.95) * amp;
+
   ctx.save();
-  ctx.translate(wm.x, wm.y);
-  // Körper
-  ctx.fillStyle = team.color;
-  ctx.beginPath(); ctx.ellipse(0, -3, 6, 8, 0, 0, TAU); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 0.8; ctx.stroke();
-  // Augen (Blickrichtung)
+  // Beinchen
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+  for (let i = 0; i < segN; i++) {
+    const sx = wm.x - f * i * gap, sy = segY(i);
+    const wig = moving ? Math.sin(wm.crawl * 2 - i) * 1.2 : 0;
+    ctx.beginPath();
+    ctx.moveTo(sx - 2, sy + segR - 1); ctx.lineTo(sx - 2 + wig, sy + segR + 2.5);
+    ctx.moveTo(sx + 2, sy + segR - 1); ctx.lineTo(sx + 2 - wig, sy + segR + 2.5);
+    ctx.stroke();
+  }
+  // Körper (hinten zuerst, Kopf zuletzt)
+  for (let i = segN - 1; i >= 0; i--) {
+    const sx = wm.x - f * i * gap, sy = segY(i);
+    const r = i === 0 ? segR + 1.3 : segR * (1 - i * 0.06);
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU);
+    ctx.fillStyle = i % 2 ? team.color : shade(team.color, -22);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.6; ctx.stroke();
+  }
+  // Kopf-Details
+  const hx = wm.x, hy = segY(0);
   ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(wm.facing * 2, -6, 2, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(hx + f * 2, hy - 1.6, 1.9, 0, TAU); ctx.fill();
   ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.arc(wm.facing * 2.6, -6, 1, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(hx + f * 2.7, hy - 1.6, 0.95, 0, TAU); ctx.fill();
+  // Fühler
+  ctx.strokeStyle = team.color; ctx.lineWidth = 0.9;
+  const antW = Math.sin(time * 3 + wm.x) * 1;
+  ctx.beginPath(); ctx.moveTo(hx + f * 1.5, hy - 4.5); ctx.lineTo(hx + f * 3.5 + antW, hy - 9); ctx.stroke();
+  ctx.fillStyle = team.color;
+  ctx.beginPath(); ctx.arc(hx + f * 3.5 + antW, hy - 9.5, 0.9, 0, TAU); ctx.fill();
   ctx.restore();
+
+  const topY = wm.y - segR - amp - 9;
   // aktiver Wurm: Pfeil
   if (wm === game.active && game.state === 'aim') {
     const bob = Math.sin(time * 4) * 2;
     ctx.fillStyle = team.color;
     ctx.beginPath();
-    ctx.moveTo(wm.x, wm.y - 20 - bob); ctx.lineTo(wm.x - 5, wm.y - 28 - bob); ctx.lineTo(wm.x + 5, wm.y - 28 - bob);
+    ctx.moveTo(wm.x, topY - 4 - bob); ctx.lineTo(wm.x - 5, topY - 12 - bob); ctx.lineTo(wm.x + 5, topY - 12 - bob);
     ctx.closePath(); ctx.fill();
   }
   // HP-Balken
-  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(wm.x - 11, wm.y - 20, 22, 4);
-  ctx.fillStyle = team.color; ctx.fillRect(wm.x - 11, wm.y - 20, 22 * wm.hp / 100, 4);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(wm.x - 11, topY, 22, 4);
+  ctx.fillStyle = team.color; ctx.fillRect(wm.x - 11, topY, 22 * wm.hp / 100, 4);
   ctx.fillStyle = '#fff'; ctx.font = '7px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText(wm.hp, wm.x, wm.y - 22);
+  ctx.fillText(wm.hp, wm.x, topY - 2);
 }
 
 function drawProjectile(pr, time) {
@@ -600,20 +643,42 @@ function roundRect(x, y, w, h, r) {
 
 // ---- Eingabe (Bildschirm-Buttons) ------------------------------------------
 const buttons = {};
-function setBtn(id, fn, held) { const el = document.getElementById(id); buttons[id] = { el, held: false };
-  const down = (e) => { e.preventDefault(); buttons[id].held = true; if (!held) fn(); };
-  const up = (e) => { e.preventDefault(); buttons[id].held = false; if (held && held.up) held.up(); };
-  el.addEventListener('pointerdown', down); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('pointerleave', up);
+// onDown: beim Drücken, onUp: beim Loslassen (beide optional). Der gedrückte
+// Zustand steht immer in buttons[id].held (für Halten wie Laufen/Zielen).
+function setBtn(id, onDown, onUp) {
+  const el = document.getElementById(id);
+  buttons[id] = { held: false };
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch { /* egal */ }
+    buttons[id].held = true;
+    if (onDown) onDown();
+  });
+  const rel = (e) => {
+    e.preventDefault();
+    if (!buttons[id].held) return;
+    buttons[id].held = false;
+    if (onUp) onUp();
+  };
+  el.addEventListener('pointerup', rel);
+  el.addEventListener('pointercancel', rel);
 }
 
 function canAct() { return game.state === 'aim' && game.active && !game.fireDone; }
 
-setBtn('b-left', null, { });
-setBtn('b-right', null, { });
+function releaseFire() {
+  if (!game.charging) return;
+  game.charging = false;
+  if (canAct() && game.power > 0.02) fireWeapon();
+  else game.power = 0;
+}
+
+setBtn('b-left');
+setBtn('b-right');
 setBtn('b-jump', () => { if (canAct() && game.active.grounded) { game.active.vy = -230; game.active.vx = game.active.facing * 90; game.active.grounded = false; } });
-setBtn('b-aimup', null, {});
-setBtn('b-aimdn', null, {});
-setBtn('b-fire', () => { if (canAct()) game.charging = true; }, { up: () => { if (game.charging && canAct()) { game.charging = false; if (game.power > 0.02) fireWeapon(); else game.power = 0; } } });
+setBtn('b-aimup');
+setBtn('b-aimdn');
+setBtn('b-fire', () => { if (canAct()) game.charging = true; }, releaseFire);
 
 // Waffenmenü
 const wmenu = document.getElementById('wmenu');
@@ -645,7 +710,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
   keys.delete(k);
-  if (k === ' ' && game.charging && canAct()) { game.charging = false; if (game.power > 0.02) fireWeapon(); else game.power = 0; }
+  if (k === ' ') releaseFire();
 });
 
 function readInput(dt) {

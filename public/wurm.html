@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Wurmkrieg</title>
+  <title>Raupen · Caterpillars</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🪱%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🐛%3C/text%3E%3C/svg%3E">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -33,7 +33,7 @@
   <div id="menu" class="hidden">
     <div class="menu-panel">
       <div class="menu-head">
-        <h2>Wurmkrieg</h2>
+        <h2>🐛 Raupen</h2>
         <button id="btn-menu-close">✕</button>
       </div>
       <div class="menu-group">
@@ -42,7 +42,7 @@
           <a class="game-link" href="index.html">⛵</a>
           <a class="game-link" href="auto.html">🏎</a>
           <a class="game-link" href="mtb.html">🚵</a>
-          <a class="game-link active" href="wurm.html">🪱</a>
+          <a class="game-link active" href="wurm.html">🐛</a>
         </div>
       </div>
       <div class="menu-group">
@@ -50,10 +50,10 @@
         <label class="menu-select">Teams
           <select id="sel-teams"><option>2</option><option>3</option><option>4</option></select>
         </label>
-        <label class="menu-select">Würmer pro Team
+        <label class="menu-select">Raupen pro Team
           <select id="sel-worms"><option>2</option><option selected>3</option><option>4</option></select>
         </label>
-        <button class="menu-btn" id="btn-newgame">🪱 Neue Schlacht</button>
+        <button class="menu-btn" id="btn-newgame">🐛 Neue Schlacht</button>
       </div>
       <button class="menu-btn" id="btn-help">❓ Hilfe</button>
     </div>
@@ -61,7 +61,7 @@
 
   <div id="help">
     <div class="panel">
-      <h1>🪱 Wurmkrieg</h1>
+      <h1>🐛 Raupen · Caterpillars</h1>
       <ul>
         <li>Rundenbasiert im <b>Hotseat</b>: reicht das Handy reihum weiter – jedes Team ist abwechselnd dran.</li>
         <li><b>◀ ▶</b> laufen, <b>⤒</b> springen (links unten)</li>
@@ -71,8 +71,8 @@
         <li>Wer ins <b>Wasser</b> fällt oder keine HP mehr hat, ist raus. Das letzte Team gewinnt.</li>
         <li>Desktop: ← → laufen, W springen, ↑ ↓ zielen, <b>Leertaste halten</b> feuern, Tab = Waffenmenü</li>
       </ul>
-      <p>Eigenständiges Artillerie-Spiel im Worms-Stil. Bald auch online gegen
-        Freunde (mit Login & gemeinsamer Session).</p>
+      <p>Eigenständiges Artillerie-Spiel mit kriechenden Raupen. Bald auch
+        online gegen Freunde (mit Login &amp; gemeinsamer Session).</p>
       <button id="btn-start">Los geht's</button>
     </div>
   </div>
