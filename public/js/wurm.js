@@ -1,6 +1,9 @@
-// Wurmkrieg – rundenbasiertes Artillerie-Spiel im Worms-Stil.
-// 2D-Seitenansicht, prozedural erzeugtes, zerstörbares Gelände, Hotseat
-// (Handy weiterreichen). Eigenständiges Spiel mit eigenen Waffennamen.
+// Raupen · Caterpillars – rundenbasiertes Artillerie-Spiel.
+// 2D-Seitenansicht, prozedural erzeugtes, zerstörbares Gelände. Lokal als
+// Hotseat (Handy weiterreichen) oder online: der Host simuliert autoritativ
+// und schickt Snapshots, Gäste schicken nur ihre Eingaben (siehe net-Block).
+
+import { makeNet } from './netclient.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -92,6 +95,9 @@ function carveCircle(cx, cy, rad, rebuild = true) {
       if (dx * dx + dy * dy <= r2) mask[idx(x, y)] = 0;
     }
   }
+  // Online: der Host merkt sich jeden Krater und schickt ihn an die Gäste,
+  // damit ihr Gelände identisch zerstört wird (rebuild=false = Terrain-Gen).
+  if (rebuild && net.on && net.host) net.craters.push({ x: cx | 0, y: cy | 0, r: Math.round(rad) });
   if (rebuild && terrainImage) {
     recolorRegion(cx - rad - 6, cy - rad - 6, cx + rad + 6, cy + rad + 6);
     terrainCtx.putImageData(terrainImage, 0, 0);
@@ -393,6 +399,7 @@ function startTurn() {
   game.wind = +(Math.random() * 2 - 1).toFixed(2);
   game.aim = 0.6; game.power = 0; game.charging = false;
   game.timer = 45; game.fireDone = false; game.shotgunShots = 0; game.actionBusy = false;
+  net.remote.moveDir = 0; net.remote.aimDir = 0;   // relayed Eingaben zurücksetzen
   game.state = 'aim';
   game.banner = 'Team ' + team.name + ' ist dran'; game.bannerT = 1.6;
   // Waffe mit Munition wählen, falls aktuelle leer
@@ -687,12 +694,45 @@ function releaseFire() {
   else game.power = 0;
 }
 
+function actJump() {
+  if (canAct() && game.active && game.active.grounded) {
+    game.active.vy = -230; game.active.vx = game.active.facing * 90; game.active.grounded = false;
+  }
+}
+
+// Steuer-Intents werden je nach Modus lokal ausgeführt (Hotseat/Host) oder als
+// Aktion an den Host geschickt (Gast, nur wenn man am Zug ist).
+function onJump() {
+  if (net.on && !net.host) { if (iTurn()) net.client.send({ t: 'act', a: { k: 'jump' } }); return; }
+  if (net.on && game.turnTeam !== net.you) return;
+  actJump();
+}
+function onFireDown() {
+  if (net.on && !net.host) { if (iTurn()) net.client.send({ t: 'act', a: { k: 'fire', on: true } }); return; }
+  if (net.on && game.turnTeam !== net.you) return;
+  if (canAct()) game.charging = true;
+}
+function onFireUp() {
+  if (net.on && !net.host) { if (iTurn()) net.client.send({ t: 'act', a: { k: 'fire', on: false } }); return; }
+  if (net.on && game.turnTeam !== net.you) return;
+  releaseFire();
+}
+function selectWeapon(i) {
+  if (net.on) {
+    if (!iTurn()) return;
+    if (!net.host) net.client.send({ t: 'act', a: { k: 'weapon', i } });
+    game.weaponIdx = i; game.shotgunShots = 0;
+    return;
+  }
+  game.weaponIdx = i; game.shotgunShots = 0;
+}
+
 setBtn('b-left');
 setBtn('b-right');
-setBtn('b-jump', () => { if (canAct() && game.active.grounded) { game.active.vy = -230; game.active.vx = game.active.facing * 90; game.active.grounded = false; } });
+setBtn('b-jump', onJump);
 setBtn('b-aimup');
 setBtn('b-aimdn');
-setBtn('b-fire', () => { if (canAct()) game.charging = true; }, releaseFire);
+setBtn('b-fire', onFireDown, onFireUp);
 
 // Waffenmenü
 const wmenu = document.getElementById('wmenu');
@@ -704,7 +744,7 @@ function buildWeaponMenu() {
     const am = weaponAmmo(i);
     b.className = 'wpn' + (i === game.weaponIdx ? ' sel' : '') + (am <= 0 ? ' out' : '');
     b.innerHTML = `<span class="wi">${w.icon}</span><span class="wn">${w.name}</span><span class="wa">${am === Infinity ? '∞' : am}</span>`;
-    if (am > 0) b.addEventListener('click', () => { game.weaponIdx = i; game.shotgunShots = 0; wmenu.classList.add('hidden'); });
+    if (am > 0) b.addEventListener('click', () => { selectWeapon(i); wmenu.classList.add('hidden'); });
     wmenu.appendChild(b);
   });
   wmenu.classList.remove('hidden');
@@ -717,28 +757,43 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' ', 'enter'].includes(k)) e.preventDefault();
   keys.add(k);
-  if (k === ' ' && canAct() && !game.charging) game.charging = true;
+  if (k === ' ' && !e.repeat) onFireDown();
   if (k === 'tab') { e.preventDefault(); if (game.state === 'aim') buildWeaponMenu(); }
-  if (k === 'w' && canAct() && game.active.grounded) { game.active.vy = -230; game.active.vx = game.active.facing * 90; game.active.grounded = false; }
+  if (k === 'w' && !e.repeat) onJump();
 });
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
   keys.delete(k);
-  if (k === ' ') releaseFire();
+  if (k === ' ') onFireUp();
 });
 
+function localMoveDir() {
+  const l = keys.has('arrowleft') || buttons['b-left'].held;
+  const r = keys.has('arrowright') || buttons['b-right'].held;
+  return l ? -1 : r ? 1 : 0;
+}
+function localAimDir() {
+  const u = keys.has('arrowup') || buttons['b-aimup'].held;
+  const d = keys.has('arrowdown') || buttons['b-aimdn'].held;
+  return u ? 1 : d ? -1 : 0;
+}
+
+// Läuft nur beim Simulator (Hotseat oder Host). Beim Host-Zug eines fremden
+// Teams kommen Bewegung/Zielen aus net.remote (vom Gast relayed).
 function readInput(dt) {
   if (!canAct()) { return; }
   const wm = game.active;
-  const left = keys.has('arrowleft') || buttons['b-left'].held;
-  const right = keys.has('arrowright') || buttons['b-right'].held;
-  if (left) { wm.vx = -70; wm.facing = -1; }
-  else if (right) { wm.vx = 70; wm.facing = 1; }
+  let moveDir, aimDir;
+  if (net.on && net.host && game.turnTeam !== net.you) {
+    moveDir = net.remote.moveDir; aimDir = net.remote.aimDir;
+  } else {
+    moveDir = localMoveDir(); aimDir = localAimDir();
+  }
+  if (moveDir < 0) { wm.vx = -70; wm.facing = -1; }
+  else if (moveDir > 0) { wm.vx = 70; wm.facing = 1; }
   else if (wm.grounded) wm.vx *= 0.4;
-  const up = keys.has('arrowup') || buttons['b-aimup'].held;
-  const dn = keys.has('arrowdown') || buttons['b-aimdn'].held;
-  if (up) game.aim = clamp(game.aim + 1.5 * dt, -1.4, 1.4);
-  if (dn) game.aim = clamp(game.aim - 1.5 * dt, -1.4, 1.4);
+  if (aimDir > 0) game.aim = clamp(game.aim + 1.5 * dt, -1.4, 1.4);
+  if (aimDir < 0) game.aim = clamp(game.aim - 1.5 * dt, -1.4, 1.4);
   if (game.charging) game.power = clamp(game.power + dt * 0.9, 0, 1);
 }
 
@@ -786,13 +841,222 @@ resize();
 
 window.__wurm = { game, teams: () => teams, projectiles, WEAPONS, fireWeapon, weaponAmmo,
   set weapon(i) { game.weaponIdx = i; }, focus: () => game.active, newGame,
-  get mask() { return mask; }, solidAt, explode, cfg };
+  get mask() { return mask; }, solidAt, explode, cfg, net: () => net };
 
-newGame();
+// ==========================================================================
+//  Online-Multiplayer (Caterpillars) – Host-autoritativ
+// ==========================================================================
+const net = {
+  on: false, host: false, you: 0, players: [], client: null, ready: false,
+  remote: { moveDir: 0, aimDir: 0 }, craters: [], snapAcc: 0, lastMove: 0, lastAim: 0,
+};
+function iTurn() { return net.on && game.turnTeam === net.you && game.state === 'aim'; }
+
+// ---- Snapshot (Host -> Gäste) ----
+function sendSnapshot() {
+  const t = teams[game.turnTeam];
+  const s = {
+    st: game.state, tt: game.turnTeam, ai: +(+game.aim).toFixed(3), pw: +(+game.power).toFixed(3),
+    wi: game.weaponIdx, wind: game.wind, bn: game.banner || '', bnT: +(game.bannerT || 0).toFixed(2),
+    win: game.winner ? game.winner.name : null, ac: { t: game.turnTeam, i: t ? t.cur : 0 },
+    tm: teams.map((tt) => ({ c: tt.cur, au: tt.ammoUsed,
+      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing })) })),
+    pj: projectiles.map((p) => ({ t: p.type, x: Math.round(p.x), y: Math.round(p.y), r: p.r,
+      vx: Math.round(p.vx || 0), vy: Math.round(p.vy || 0), ang: p.ang || 0 })),
+    cr: net.craters.length ? net.craters.splice(0, net.craters.length) : undefined,
+  };
+  net.client.send({ t: 'snap', s });
+}
+
+// ---- Snapshot anwenden (Gast) ----
+function applySnap(s) {
+  if (!teams.length || teams.length !== s.tm.length || teams[0].worms.length !== s.tm[0].w.length) {
+    teams = s.tm.map((tt, i) => ({ color: TEAM_COLORS[i], name: TEAM_NAMES[i], cur: tt.c, ammoUsed: tt.au || {},
+      worms: tt.w.map((w) => ({ x: w.x, y: w.y, vx: 0, vy: 0, hp: w.hp, alive: !!w.al, facing: w.f,
+        team: i, grounded: true, fall: 0, crawl: Math.random() * TAU })) }));
+  } else {
+    s.tm.forEach((tt, i) => {
+      teams[i].cur = tt.c; teams[i].ammoUsed = tt.au || {};
+      tt.w.forEach((w, j) => { const o = teams[i].worms[j]; o.x = w.x; o.y = w.y; o.hp = w.hp; o.alive = !!w.al; o.facing = w.f; });
+    });
+  }
+  game.state = s.st; game.turnTeam = s.tt; game.aim = s.ai; game.power = s.pw;
+  game.weaponIdx = s.wi; game.wind = s.wind; game.banner = s.bn; game.bannerT = s.bnT;
+  game.winner = s.win ? { name: s.win } : null;
+  game.active = teams[s.ac.t] ? teams[s.ac.t].worms[s.ac.i] : null;
+  projectiles.length = 0;
+  for (const p of s.pj) projectiles.push({ type: p.t, x: p.x, y: p.y, r: p.r, vx: p.vx, vy: p.vy, ang: p.ang, t: 0 });
+  if (s.cr) for (const c of s.cr) carveCircle(c.x, c.y, c.r);
+  net.ready = true;
+}
+
+// ---- Match starten (beide Seiten, ausgelöst durch Server-'start') ----
+function beginMatch(m) {
+  net.on = true; net.you = m.you; net.host = !!m.host; net.players = m.players;
+  cfg.teamCount = m.players.length; cfg.wormCount = m.worms;
+  hideLobby(); hideHelp();
+  projectiles.length = 0; particles.length = 0; net.craters = [];
+  if (net.host) {
+    generateTerrain(m.seed | 0);
+    spawnTeams();
+    game.turnTeam = -1; game.weaponIdx = 0; game.winner = null;
+    net.ready = true;
+    startTurn();
+    sendSnapshot();
+  } else {
+    generateTerrain(m.seed | 0);   // gleiches Gelände aus gleichem Seed
+    teams = []; net.ready = false;
+    game.state = 'aim'; game.turnTeam = 0; game.active = null;
+  }
+}
+
+// ---- Remote-Aktion (Host wendet Gast-Eingabe an) ----
+function onRemoteAct(m) {
+  if (!net.host) return;
+  if (m.team !== game.turnTeam) return;   // nur der Spieler am Zug
+  const a = m.a || {};
+  if (a.k === 'move') net.remote.moveDir = a.dir | 0;
+  else if (a.k === 'aim') net.remote.aimDir = a.dir | 0;
+  else if (a.k === 'jump') actJump();
+  else if (a.k === 'fire') { if (a.on) { if (canAct()) game.charging = true; } else releaseFire(); }
+  else if (a.k === 'weapon') { if (canAct()) { game.weaponIdx = a.i | 0; game.shotgunShots = 0; } }
+}
+
+// ---- Lobby-UI ----
+const lobbyEl = document.getElementById('lobby');
+function showLobby() { if (lobbyEl) lobbyEl.classList.remove('hidden'); }
+function hideLobby() { if (lobbyEl) lobbyEl.classList.add('hidden'); }
+function lobbyStatus(msg, err) {
+  const el = document.getElementById('lobby-status');
+  if (el) { el.textContent = msg; el.classList.toggle('err', !!err); }
+}
+function renderRoster(room) {
+  const ul = document.getElementById('lobby-players');
+  if (!ul) return;
+  ul.innerHTML = '';
+  room.players.forEach((p) => {
+    const li = document.createElement('li');
+    li.textContent = (p.host ? '👑 ' : '👤 ') + p.name;
+    ul.appendChild(li);
+  });
+}
+function onRoom(room, isHost) {
+  net.host = isHost;
+  renderRoster(room);
+  const codeBox = document.getElementById('lobby-code');
+  const codeVal = document.getElementById('lobby-code-val');
+  if (codeBox && codeVal) { codeVal.textContent = room.code; codeBox.classList.remove('hidden'); }
+  document.getElementById('lobby-join')?.classList.add('hidden');
+  const startBtn = document.getElementById('lobby-start');
+  const wait = document.getElementById('lobby-wait');
+  if (isHost) {
+    startBtn?.classList.toggle('hidden', room.players.length < 2);
+    wait?.classList.add('hidden');
+    lobbyStatus(room.players.length < 2
+      ? 'Deine Session ist offen. Warte auf mindestens einen Mitspieler …'
+      : 'Bereit! Tippe auf „Spiel starten", sobald alle da sind.');
+  } else {
+    startBtn?.classList.add('hidden');
+    wait?.classList.remove('hidden');
+    lobbyStatus('Beigetreten. Warte, bis der Host startet …');
+  }
+}
+
+function startOnline(mode, params) {
+  showLobby();
+  const name = (localStorage.getItem('tgl_session') || 'Gast').slice(0, 24) || 'Gast';
+  lobbyStatus('Verbinde mit dem Server …');
+  const client = makeNet();
+  net.client = client;
+  client.onError(() => lobbyStatus('Server nicht erreichbar. Läuft der Online-Dienst schon? Du kannst unten lokal im Hotseat spielen.', true));
+  client.onClose(() => { if (!net.on) lobbyStatus('Verbindung getrennt.', true); });
+  client.open(() => client.send({ t: 'hello', name }));
+  client.on('welcome', () => {
+    if (mode === 'host') client.send({ t: 'create', teams: +params.get('teams') || 2, worms: +params.get('worms') || 3 });
+    else {
+      const code = (params.get('code') || '').toUpperCase();
+      if (code) client.send({ t: 'join', code });
+      else { document.getElementById('lobby-join')?.classList.remove('hidden'); lobbyStatus('Gib den Code deiner Runde ein:'); }
+    }
+  });
+  client.on('created', (m) => onRoom(m.room, true));
+  client.on('joined', (m) => onRoom(m.room, false));
+  client.on('room', (m) => onRoom(m.room, net.host));
+  client.on('error', (m) => lobbyStatus(m.msg || 'Fehler', true));
+  client.on('closed', (m) => {
+    if (net.on) { lobbyStatus(m.reason === 'host-left' ? 'Der Host hat die Runde beendet.' : 'Session geschlossen.', true); net.on = false; showLobby(); }
+    else lobbyStatus(m.reason === 'host-left' ? 'Der Host hat die Runde beendet.' : 'Session geschlossen.', true);
+  });
+  client.on('start', (m) => beginMatch(m));
+  client.on('act', (m) => onRemoteAct(m));
+  client.on('snap', (m) => applySnap(m.s));
+
+  document.getElementById('lobby-start')?.addEventListener('click', () => {
+    client.send({ t: 'start', seed: (Math.random() * 1e9) | 0 });
+  });
+  document.getElementById('lobby-join-btn')?.addEventListener('click', () => {
+    const v = (document.getElementById('lobby-code-in')?.value || '').toUpperCase();
+    if (v) client.send({ t: 'join', code: v });
+  });
+}
+
+function drawWaiting() {
+  ctx.fillStyle = '#0a2036';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#eaf3fa';
+  ctx.font = '600 18px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Warte auf den Host …', W / 2, H / 2);
+  ctx.textAlign = 'left';
+}
+
+// ---- Bootstrap: online (per URL) oder lokaler Hotseat ----
+const params = new URLSearchParams(location.search);
+const netMode = params.get('net');
+if (netMode === 'host' || netMode === 'join') {
+  hideHelp();
+  startOnline(netMode, params);
+} else {
+  newGame();
+}
+
+function updateCamera(dt) {
+  let ft = game.active;
+  if (projectiles.length) ft = projectiles[projectiles.length - 1];
+  if (ft) { cam.tx = ft.x; cam.ty = ft.y - 40; }
+  cam.x += ((cam.tx ?? cam.x) - cam.x) * Math.min(1, dt * 4);
+  cam.y += ((cam.ty ?? cam.y) - cam.y) * Math.min(1, dt * 4);
+  // Ist die Welt größer als die Ansicht -> klemmen; sonst zentrieren.
+  // (Sonst kreuzen sich die Grenzen und die Kamera flackert auf/ab.)
+  const hvx = W / 2 / cam.scale, hvy = H / 2 / cam.scale;
+  cam.x = WORLD_W - hvx > hvx ? clamp(cam.x, hvx, WORLD_W - hvx) : WORLD_W / 2;
+  const minY = hvy, maxY = WORLD_H - hvy + 40;
+  cam.y = maxY > minY ? clamp(cam.y, minY, maxY) : WORLD_H / 2;
+}
 
 let last = performance.now(), time = 0;
 function frame(now) {
   const dt = Math.min(0.033, (now - last) / 1000); last = now; time += dt; waveT += dt;
+
+  // Noch kein Gelände (z. B. Online-Lobby vor Spielstart): nur Hintergrund.
+  if (!terrainCanvas) {
+    ctx.fillStyle = '#0a2036'; ctx.fillRect(0, 0, W, H);
+    requestAnimationFrame(frame);
+    return;
+  }
+
+  if (net.on && !net.host) {
+    // Gast: nicht simulieren – nur Eingaben senden, Kamera + Zeichnen.
+    if (game.state === 'aim' && game.turnTeam === net.you) {
+      const md = localMoveDir(); if (md !== net.lastMove) { net.lastMove = md; net.client.send({ t: 'act', a: { k: 'move', dir: md } }); }
+      const ad = localAimDir(); if (ad !== net.lastAim) { net.lastAim = ad; net.client.send({ t: 'act', a: { k: 'aim', dir: ad } }); }
+    } else { net.lastMove = 0; net.lastAim = 0; }
+    for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
+    updateCamera(dt);
+    if (net.ready) draw(time); else drawWaiting();
+    requestAnimationFrame(frame);
+    return;
+  }
 
   if (game.bannerT > 0 && game.state !== 'over') game.bannerT -= dt;
 
@@ -810,19 +1074,13 @@ function frame(now) {
 
   if (game.state === 'busy') endTurnAfterSettle(dt);
 
-  // Kamera folgt Projektil oder aktivem Wurm
-  let ft = game.active;
-  if (projectiles.length) ft = projectiles[projectiles.length - 1];
-  if (ft) { cam.tx = ft.x; cam.ty = ft.y - 40; }
-  cam.x += ((cam.tx ?? cam.x) - cam.x) * Math.min(1, dt * 4);
-  cam.y += ((cam.ty ?? cam.y) - cam.y) * Math.min(1, dt * 4);
-  // Ist die Welt größer als die Ansicht -> klemmen; sonst zentrieren.
-  // (Sonst kreuzen sich die Grenzen und die Kamera flackert auf/ab.)
-  const hvx = W / 2 / cam.scale, hvy = H / 2 / cam.scale;
-  cam.x = WORLD_W - hvx > hvx ? clamp(cam.x, hvx, WORLD_W - hvx) : WORLD_W / 2;
-  const minY = hvy, maxY = WORLD_H - hvy + 40;
-  cam.y = maxY > minY ? clamp(cam.y, minY, maxY) : WORLD_H / 2;
+  // Host: autoritativen Zustand ~20×/s an die Gäste schicken.
+  if (net.on && net.host) {
+    net.snapAcc += dt;
+    if (net.snapAcc >= 0.05) { net.snapAcc = 0; sendSnapshot(); }
+  }
 
+  updateCamera(dt);
   draw(time);
   requestAnimationFrame(frame);
 }

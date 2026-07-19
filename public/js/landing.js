@@ -1,5 +1,6 @@
-// Landing-Page: Login, Highscore-Übersicht und Caterpillar-Sessions.
-import { Auth, Scores, Net } from './lib.js';
+// Landing-Page: Login (Server + lokaler Fallback), Highscores/Bestenliste und
+// Einstieg in die Caterpillar-Online-Sessions (die im Spiel selbst laufen).
+import { Auth, Scores, fmtValue } from './lib.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -7,74 +8,81 @@ const $ = (id) => document.getElementById(id);
 
 function renderAuth() {
   const name = Auth.current();
-  const guest = $('auth-guest');
-  const user = $('auth-user');
+  const guest = $('auth-guest'), user = $('auth-user');
   if (name) {
-    guest.classList.add('hidden');
-    guest.open = false;
+    guest.classList.add('hidden'); guest.open = false;
     user.classList.remove('hidden');
     $('auth-name').textContent = name;
   } else {
     guest.classList.remove('hidden');
     user.classList.add('hidden');
   }
-  renderCaterpillar();
 }
+function authError(msg) { const el = $('auth-error'); el.textContent = msg || ''; el.classList.toggle('hidden', !msg); }
 
-function authError(msg) {
-  const el = $('auth-error');
-  el.textContent = msg || '';
-  el.classList.toggle('hidden', !msg);
+async function afterAuthChange() {
+  renderAuth();
+  renderNetStatus();
+  if (Auth.serverUp && Auth.isLoggedIn()) await Scores.syncUp();
+  await renderLeaderboard();
 }
 
 async function doLogin() {
   authError('');
-  try {
-    await Auth.login($('in-name').value, $('in-pass').value);
-    $('in-pass').value = '';
-    renderAuth();
-  } catch (e) { authError(e.message); }
+  try { await Auth.login($('in-name').value, $('in-pass').value); $('in-pass').value = ''; await afterAuthChange(); }
+  catch (e) { authError(e.message); }
 }
-
 async function doRegister() {
   authError('');
-  try {
-    await Auth.register($('in-name').value, $('in-pass').value);
-    $('in-pass').value = '';
-    renderAuth();
-  } catch (e) { authError(e.message); }
+  try { await Auth.register($('in-name').value, $('in-pass').value); $('in-pass').value = ''; await afterAuthChange(); }
+  catch (e) { authError(e.message); }
 }
-
-function doLogout() {
-  Auth.logout();
-  renderAuth();
-}
+async function doLogout() { await Auth.logout(); await afterAuthChange(); }
 
 /* --------------------------------------------------------- Highscores ---- */
 
 function renderScores() {
-  const wrap = $('score-list');
+  const wrap = $('score-mine');
   wrap.innerHTML = '';
   const summary = Scores.summary();
-
   if (Scores.isEmpty(summary)) {
-    wrap.innerHTML = '<p class="muted">Noch keine Bestzeiten – spiel eine Runde, ' +
-      'dann tauchen deine Highscores hier auf.</p>';
+    wrap.innerHTML = '<p class="muted small">Noch keine eigenen Bestzeiten – spiel eine Runde.</p>';
     return;
   }
-
   for (const g of Object.values(summary)) {
     if (!g.entries.length) continue;
     const box = document.createElement('div');
     box.className = 'score-game';
-    const h = document.createElement('h3');
-    h.textContent = g.title;
-    box.appendChild(h);
+    box.innerHTML = `<h3>${g.title}</h3>`;
     for (const e of g.entries.slice(0, 6)) {
       const row = document.createElement('div');
       row.className = 'score-row';
-      row.innerHTML = `<span class="s-label">${e.label}<small>${e.sub}</small></span>` +
-        `<span class="s-val">${e.value}</span>`;
+      row.innerHTML = `<span class="s-label">${e.label}<small>${e.sub}</small></span><span class="s-val">${e.value}</span>`;
+      box.appendChild(row);
+    }
+    wrap.appendChild(box);
+  }
+}
+
+async function renderLeaderboard() {
+  const wrap = $('score-global');
+  const board = await Scores.leaderboard();
+  if (!board) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = '<h3 class="lb-title">🌍 Bestenliste (alle Spieler)</h3>';
+  if (!board.length) { wrap.innerHTML += '<p class="muted small">Noch keine Einträge – lade deine Bestzeiten mit dem Login hoch.</p>'; return; }
+  const byGame = {};
+  for (const r of board) (byGame[r.game] ||= []).push(r);
+  for (const [game, rows] of Object.entries(byGame)) {
+    rows.sort((a, b) => (a.sub || '').localeCompare(b.sub || ''));
+    const box = document.createElement('div');
+    box.className = 'score-game';
+    box.innerHTML = `<h3>${Scores.gameTitle(game)}</h3>`;
+    for (const r of rows.slice(0, 8)) {
+      const row = document.createElement('div');
+      row.className = 'score-row';
+      row.innerHTML = `<span class="s-label">${r.label || r.variant}<small>${r.sub || ''} · 👑 ${r.user_name}</small></span>` +
+        `<span class="s-val">${fmtValue(r.value, r.better)}</span>`;
       box.appendChild(row);
     }
     wrap.appendChild(box);
@@ -83,95 +91,47 @@ function renderScores() {
 
 /* ------------------------------------------------------- Caterpillars ---- */
 
-function renderCaterpillar() {
-  const status = $('cat-status');
-  const online = Net.online;
-  status.innerHTML = online
-    ? '🟢 Server verbunden – ihr könnt von verschiedenen Geräten mit dem Code beitreten.'
-    : '🟡 Server noch nicht eingerichtet. <b>Von einem anderen Gerät per Code beitreten geht daher noch nicht.</b> ' +
-      'Jetzt schon: eine Runde vorbereiten und lokal am selben Gerät im <b>Hotseat</b> spielen (Handy reihum weitergeben). ' +
-      'Sobald die Datenbank steht, wird der Code geräteübergreifend gültig.';
-  status.className = 'cat-status ' + (online ? 'on' : 'off');
-
-  renderSessionList();
-}
-
-function renderSessionList() {
-  const wrap = $('cat-sessions');
-  wrap.innerHTML = '';
-  const sessions = Net.listSessions();
-  if (!sessions.length) {
-    wrap.innerHTML = '<p class="muted">Keine offenen Sessions.</p>';
-    return;
-  }
-  for (const s of sessions) {
-    const row = document.createElement('div');
-    row.className = 'cat-row';
-    row.innerHTML =
-      `<span class="c-code">${s.code}</span>` +
-      `<span class="c-meta">${s.teams} Teams · ${s.worms} Raupen<small>Host: ${s.host}</small></span>`;
-    const play = document.createElement('a');
-    play.className = 'c-play';
-    play.href = 'wurm.html';
-    play.textContent = '▶ Spielen';
-    const del = document.createElement('button');
-    del.className = 'c-del';
-    del.textContent = '✕';
-    del.onclick = () => { Net.removeSession(s.code); renderSessionList(); };
-    row.appendChild(play);
-    row.appendChild(del);
-    wrap.appendChild(row);
+function renderNetStatus() {
+  const el = $('cat-status');
+  if (Auth.serverUp) {
+    el.innerHTML = '🟢 Server verbunden – erstellt eine Session und spielt geräteübergreifend mit dem Code.';
+    el.className = 'cat-status on';
+  } else {
+    el.innerHTML = '🟡 Online-Dienst nicht erreichbar. Ihr könnt trotzdem lokal am selben Gerät im <b>Hotseat</b> spielen.';
+    el.className = 'cat-status off';
   }
 }
 
-async function createSession() {
-  const host = Auth.current() || 'Gast';
+function createSession() {
   const teams = parseInt($('cat-teams').value, 10) || 2;
   const worms = parseInt($('cat-worms').value, 10) || 3;
-  const s = await Net.createSession({ host, teams, worms });
-  renderSessionList();
-  flash($('cat-created'), `Session ${s.code} erstellt – teile den Code mit deinen Mitspielern.`);
+  location.href = `wurm.html?net=host&teams=${teams}&worms=${worms}`;
 }
-
-async function joinSession() {
-  const player = Auth.current() || 'Gast';
-  const code = $('cat-code').value;
+function joinSession() {
+  const code = ($('cat-code').value || '').trim().toUpperCase();
   const err = $('cat-join-err');
-  err.classList.add('hidden');
-  try {
-    const s = await Net.joinSession(code, player);
-    $('cat-code').value = '';
-    renderSessionList();
-    flash($('cat-created'), `Session ${s.code} beigetreten.`);
-  } catch (e) {
-    err.textContent = e.message;
-    err.classList.remove('hidden');
-  }
-}
-
-function flash(el, msg) {
-  el.textContent = msg;
-  el.classList.remove('hidden');
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.add('hidden'), 4000);
+  if (!code) { err.textContent = 'Bitte einen Code eingeben.'; err.classList.remove('hidden'); return; }
+  location.href = `wurm.html?net=join&code=${encodeURIComponent(code)}`;
 }
 
 /* --------------------------------------------------------------- init ---- */
 
-function init() {
+async function init() {
   $('btn-login').onclick = doLogin;
   $('btn-register').onclick = doRegister;
   $('btn-logout').onclick = doLogout;
   $('in-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
-
   $('cat-create').onclick = createSession;
   $('cat-join').onclick = joinSession;
+  $('cat-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinSession(); });
 
-  // Falls später ein Server konfiguriert wird, hier verbinden.
-  Net.ping().catch(() => {});
-
+  renderScores();          // sofort aus localStorage
+  renderNetStatus();
+  await Auth.probe();      // Server prüfen + Token verifizieren
   renderAuth();
-  renderScores();
+  renderNetStatus();
+  if (Auth.serverUp && Auth.isLoggedIn()) await Scores.syncUp();
+  await renderLeaderboard();
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -119,49 +119,67 @@ Lift/Drag-Ansätze für Segelphysik):
 
 ## Lokal starten
 
-Ohne Docker (irgendein statischer Server, z. B.):
+Der Node-Dienst liefert die Spiele **und** die API/WebSocket aus:
 
 ```bash
-npx serve public
-# oder: python3 -m http.server 8080 --directory public
-```
-
-Mit Docker:
-
-```bash
-docker build -t sailing-game .
-docker run --rm -p 8080:8080 sailing-game
+npm install
+npm start
 # -> http://localhost:8080
 ```
+
+Ohne Datenbank läuft der Server im **In-Memory-Modus** (Konten/Highscores
+gehen bei Neustart verloren), sonst sagt man ihm per `DATABASE_URL` eine
+Postgres-Datenbank. Mit Docker:
+
+```bash
+docker build -t tims-game-library .
+docker run --rm -p 8080:8080 tims-game-library
+# -> http://localhost:8080
+```
+
+Rein statisch (nur die Spiele, ohne Login/Online) geht weiterhin, z. B.
+`python3 -m http.server 8080 --directory public` – die Seite fällt dann
+automatisch in den lokalen Offline-Modus (localStorage, Hotseat).
 
 ## Deployment auf Railway (sailinggame.conut.de)
 
 1. Repo auf GitHub pushen (dieser Stand).
 2. Auf [railway.com](https://railway.com): **New Project → Deploy from GitHub repo**
    → dieses Repo wählen. Railway erkennt das `Dockerfile` automatisch
-   (zusätzlich per `railway.json` festgelegt).
-3. Im Service unter **Settings → Networking → Public Networking** eine Domain
+   (zusätzlich per `railway.json` festgelegt) und startet den Node-Dienst.
+3. **Postgres hinzufügen:** im Projekt **New → Database → Add PostgreSQL**.
+   Railway legt die Variable `DATABASE_URL` an. Im Web-Service unter
+   **Variables** sicherstellen, dass `DATABASE_URL` referenziert ist
+   (`${{Postgres.DATABASE_URL}}`) – dann speichert der Server Konten,
+   Tokens und Highscores dauerhaft. Die Tabellen legt er beim Start selbst an.
+4. Im Service unter **Settings → Networking → Public Networking** eine Domain
    erzeugen (zum Testen) und dann **Custom Domain** `sailinggame.conut.de`
    hinzufügen.
-4. Beim DNS-Anbieter von `conut.de` einen **CNAME**-Eintrag anlegen:
+5. Beim DNS-Anbieter von `conut.de` einen **CNAME**-Eintrag anlegen:
    `sailinggame` → auf den von Railway angezeigten Zielhost
    (z. B. `xyz.up.railway.app`). Railway stellt das TLS-Zertifikat automatisch aus.
-5. Der Container liest die von Railway gesetzte `PORT`-Variable automatisch
-   (nginx-Template), es ist keine weitere Konfiguration nötig.
+6. `PORT` setzt Railway selbst; der Server liest sie. Solange keine
+   `DATABASE_URL` gesetzt ist, läuft alles trotzdem (nur nicht persistent).
 
 ## Struktur
 
 ```
+server/            Node-Backend (Express + ws + pg)
+  index.js         HTTP/REST, statische Dateien, WebSocket-Aufhängung
+  db.js            Speicher: Postgres oder In-Memory (Konten, Tokens, Scores)
+  rooms.js         Caterpillar-Sessions: Lobby + Relay (host-autoritativ)
+package.json       Node-Manifest (npm start -> server/index.js)
 public/            statische Spielesammlung
   index.html       🎮 Landing-Page (Login, Highscores, Multiplayer)
   sail.html        ⛵ Segeln
   auto.html        🏎 Autorennen
   mtb.html         🚵 Mountainbike
-  wurm.html        🐛 Raupen · Caterpillars
+  wurm.html        🐛 Raupen · Caterpillars (inkl. Online-Lobby)
   style.css
   js/
-    lib.js         Landing: Auth, Scores, Net (localStorage-Stubs, backend-ready)
-    landing.js     Landing: Login-UI, Highscore-Übersicht, Session-Lobby
+    lib.js         Auth + Scores (Server mit localStorage-Fallback)
+    landing.js     Landing-Page: Login-UI, Highscores/Bestenliste
+    netclient.js   kleiner WebSocket-Client für Online-Sessions
     main.js        Segeln: Spielschleife, Eingabe, Kollision
     boat.js        Segeln: Bootsphysik + Windmodell + Bootstypen
     race.js        Segeln: Regattakurs, Zeitnahme, Bestzeiten
@@ -170,25 +188,38 @@ public/            statische Spielesammlung
     util.js        Segeln: Vektor-/Winkel-Helfer
     auto.js        Autorennen (komplett in einer Datei)
     mtb.js         Mountainbike (komplett in einer Datei)
-    wurm.js        Raupen · Caterpillars (komplett in einer Datei)
-nginx/             nginx-Template (nutzt $PORT von Railway)
+    wurm.js        Raupen · Caterpillars + Online-Netzcode
 Dockerfile
 railway.json
 ```
 
-## Multiplayer / Backend (geplant)
+## Multiplayer / Backend
 
-Login, Caterpillar-Sessions und Highscores sind bereits als lokale Stubs
-in `js/lib.js` implementiert (`Auth`, `Net`, `Scores`) und über `async`
-ausgelegt. Sobald der **Railway-Backend-Dienst** (feste Benutzerkonten,
-WebSocket/REST) steht, werden nur diese Methoden gegen echte Aufrufe
-getauscht – die Landing-Page und die Spiele bleiben unverändert. Bis dahin
-funktioniert alles offline: Konten und Bestzeiten liegen im `localStorage`
-des Geräts, Caterpillars läuft im Hotseat.
+Der Node-Dienst bietet:
+
+- **Konten** (`/api/register`, `/api/login`, `/api/me`, `/api/logout`):
+  feste Benutzerkonten, Passwörter mit scrypt gehasht, Bearer-Token.
+- **Highscores** (`/api/scores`, `/api/leaderboard`): die Spiele speichern
+  ihre Bestwerte weiterhin lokal; nach dem Login lädt die Landing-Page sie
+  hoch und zeigt eine globale Bestenliste.
+- **Caterpillar-Online-Sessions** über WebSocket (`/ws`): der **Host
+  simuliert autoritativ** und schickt ~20×/s Snapshots (Würmer, Projektile,
+  Wind, Zug, sowie Krater-Ereignisse fürs zerstörbare Gelände). Gäste
+  erzeugen aus dem gemeinsamen Seed dasselbe Gelände und schicken nur ihre
+  Eingaben, wenn sie am Zug sind. Der Server ist dabei reiner Relay +
+  Session-Register (Räume sind flüchtig).
+
+Der Ablauf: Auf der Landing-Page **Session erstellen** oder mit **Code
+beitreten** → das öffnet die Lobby in `wurm.html` (eine WebSocket-Verbindung
+bleibt von der Lobby bis ins Match bestehen). Der Host startet, sobald alle
+da sind. Ohne erreichbaren Server fällt alles automatisch auf den lokalen
+Offline-Modus zurück (localStorage-Konten, Hotseat am selben Gerät).
 
 ## Ideen für später
 
 - Weitere Bootstypen (`BOAT_TYPES` in `boat.js`: Masse, Segelflächen,
   Widerstände, Drehfreudigkeit, Steifigkeit pro Typ).
 - Echte Bojen-Rundung (Seite vorgeben), Strafen, Geisterboot der Bestzeit.
-- Wenden/Halsen-Feedback, Sound, Mehrspieler, Login & Bestenlisten.
+- Wenden/Halsen-Feedback, Sound. (Mehrspieler, Login & Bestenlisten sind für
+  Caterpillars umgesetzt – als Nächstes ließe sich das auch auf die anderen
+  Spiele ausweiten, z. B. Live-Rennen.)

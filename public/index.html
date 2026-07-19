@@ -62,7 +62,9 @@
     <details class="panel-details">
       <summary>🏆 Highscores</summary>
       <div class="pd-body">
-        <div id="score-list" class="scores"></div>
+        <div id="score-global" class="scores hidden"></div>
+        <h3 class="lb-title" style="margin-top:14px">🙋 Deine Bestzeiten (dieses Gerät)</h3>
+        <div id="score-mine" class="scores"></div>
       </div>
     </details>
 
@@ -91,14 +93,15 @@
           </div>
         </div>
 
-        <p class="cat-created hidden" id="cat-created"></p>
-        <div id="cat-sessions"></div>
+        <p class="muted small" style="margin-top:12px">Die Session-Lobby (Code teilen, warten,
+          starten) öffnet sich im Spiel und bleibt bis zum Match verbunden.</p>
       </div>
     </details>
 
     <footer class="lp-foot">
-      <p class="muted small">Vorerst ohne Server – Login, Sessions &amp; Highscores liegen
-      lokal auf diesem Gerät. Sobald die Datenbank steht, wird online gespielt.</p>
+      <p class="muted small">Konten &amp; Highscores werden im Backend gespeichert, sobald der
+      Online-Dienst läuft – sonst lokal auf diesem Gerät. Caterpillars spielt ihr dann
+      geräteübergreifend über einen Sitzungs-Code.</p>
     </footer>
   </div>
 

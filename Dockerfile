@@ -1,8 +1,19 @@
-FROM nginx:alpine
+# Tims Game Library – Node-Backend serviert die statischen Spiele, die REST-API
+# (Login, Highscores) und den WebSocket für die Caterpillar-Online-Sessions.
+FROM node:22-alpine
 
-# Statisches Spiel; nginx rendert das Template mit dem PORT, den Railway vorgibt.
-COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
-COPY public /usr/share/nginx/html
+WORKDIR /app
 
+# Nur Manifeste kopieren -> Layer-Cache für npm install
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev
+
+# App
+COPY server ./server
+COPY public ./public
+
+ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
+
+CMD ["node", "server/index.js"]

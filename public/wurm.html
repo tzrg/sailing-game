@@ -32,6 +32,25 @@
 
   <div id="wmenu" class="hidden"></div>
 
+  <!-- Online-Lobby (nur bei ?net=host / ?net=join) -->
+  <div id="lobby" class="hidden">
+    <div class="lobby-panel">
+      <h1>🐛 Online-Session</h1>
+      <p id="lobby-status">Verbinde …</p>
+      <div id="lobby-code" class="hidden">Code: <b id="lobby-code-val">····</b>
+        <div class="muted small">Teile diesen Code mit deinen Mitspielern.</div>
+      </div>
+      <div id="lobby-join" class="hidden">
+        <input id="lobby-code-in" placeholder="CODE" maxlength="4" style="text-transform:uppercase">
+        <button id="lobby-join-btn" class="menu-btn">Beitreten</button>
+      </div>
+      <ul id="lobby-players"></ul>
+      <button id="lobby-start" class="menu-btn hidden">▶ Spiel starten</button>
+      <p id="lobby-wait" class="hidden muted small">Warten, bis der Host startet …</p>
+      <a href="index.html" class="lobby-back">← Zurück zur Library</a>
+    </div>
+  </div>
+
   <div id="menu" class="hidden">
     <div class="menu-panel">
       <div class="menu-head">

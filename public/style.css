@@ -319,6 +319,47 @@ html, body {
   #wctrl-left, #wctrl-right { gap: 5px; bottom: calc(10px + env(safe-area-inset-bottom, 0)); }
 }
 
+/* Online-Lobby (Raupen) */
+#lobby {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 16, 28, 0.82);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+#lobby.hidden { display: none; }
+.lobby-panel {
+  background: rgba(10, 30, 50, 0.98);
+  color: #eaf3fa;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  padding: 22px 24px calc(20px + env(safe-area-inset-bottom, 0));
+  width: min(360px, 92vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  text-align: center;
+}
+.lobby-panel h1 { font-size: 20px; margin-bottom: 12px; }
+#lobby-status { font-size: 14px; color: #cfe2f0; margin-bottom: 12px; line-height: 1.45; }
+#lobby-status.err { color: #ff9b8f; }
+#lobby-code { margin: 12px 0; font-size: 15px; }
+#lobby-code-val { font-family: ui-monospace, monospace; font-size: 26px; letter-spacing: 0.14em; color: #ffd166; }
+#lobby-join input {
+  width: 100%; margin: 8px 0; padding: 11px 12px; font-size: 18px; text-align: center;
+  letter-spacing: 0.14em; background: rgba(255,255,255,0.08); color: #fff;
+  border: 1px solid rgba(255,255,255,0.25); border-radius: 9px;
+}
+#lobby-players { list-style: none; margin: 12px 0; padding: 0; }
+#lobby-players li {
+  padding: 9px 12px; margin: 6px 0; background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 9px; font-size: 15px;
+}
+#lobby-start { background: #2f9e6e; border-color: #2f9e6e; text-align: center; }
+.lobby-back { display: inline-block; margin-top: 12px; color: #9fc0d8; text-decoration: none; font-size: 14px; }
+
 #wmenu {
   position: fixed;
   inset: 0;
@@ -718,6 +759,8 @@ body.landing {
 .score-row:first-of-type { border-top: none; }
 .s-label small { display: block; color: #8aa7bd; font-size: 11px; }
 .s-val { font-variant-numeric: tabular-nums; color: #8fe0b6; white-space: nowrap; }
+.lb-title { font-size: 13px; color: #9fc0d8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+.scores.hidden { display: none; }
 
 .lp-foot { margin-top: 30px; text-align: center; }
 
