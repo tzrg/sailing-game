@@ -948,7 +948,7 @@ function applySnap(s) {
 function beginMatch(m) {
   net.on = true; net.you = m.you; net.host = !!m.host; net.players = m.players;
   cfg.teamCount = m.players.length; cfg.wormCount = m.worms;
-  hideLobby(); hideHelp();
+  hideLobby(); hideHelp(); hideChat();   // Chat aus (per 💬 wieder öffnbar), Toasts zeigen Nachrichten
   projectiles.length = 0; particles.length = 0; net.craters = [];
   if (net.host) {
     generateTerrain(m.seed | 0);
@@ -978,14 +978,44 @@ function onRemoteAct(m) {
 
 // ---- Lobby-UI ----
 const lobbyEl = document.getElementById('lobby');
+const $ = (id) => document.getElementById(id);
 function showLobby() { if (lobbyEl) lobbyEl.classList.remove('hidden'); }
 function hideLobby() { if (lobbyEl) lobbyEl.classList.add('hidden'); }
 function lobbyStatus(msg, err) {
-  const el = document.getElementById('lobby-status');
+  const el = $('lobby-status');
   if (el) { el.textContent = msg; el.classList.toggle('err', !!err); }
 }
+function showSection(which) {  // 'browse' | 'room'
+  $('lobby-browse')?.classList.toggle('hidden', which !== 'browse');
+  $('lobby-room')?.classList.toggle('hidden', which !== 'room');
+}
+
+// Live-Liste offener Spiele
+function renderOpenGames(list) {
+  const box = $('lb-list');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!list.length) { box.innerHTML = '<p class="muted small">Gerade keine offenen Spiele – eröffne selbst eins!</p>'; return; }
+  for (const g of list) {
+    const row = document.createElement('div');
+    row.className = 'lb-item';
+    row.innerHTML = `<span class="lb-host">${g.locked ? '🔒 ' : ''}${g.host}</span>` +
+      `<span class="lb-meta">${g.players}/${g.teams} Spieler · ${g.worms} Raupen</span>`;
+    const btn = document.createElement('button');
+    btn.textContent = 'Beitreten';
+    btn.onclick = () => joinGame(g.code, g.locked);
+    row.appendChild(btn);
+    box.appendChild(row);
+  }
+}
+function joinGame(code, locked) {
+  let password = '';
+  if (locked) { password = prompt('Passwort für diese Runde:') || ''; if (!password) return; }
+  net.client.send({ t: 'join', code, password });
+}
+
 function renderRoster(room) {
-  const ul = document.getElementById('lobby-players');
+  const ul = $('lobby-players');
   if (!ul) return;
   ul.innerHTML = '';
   room.players.forEach((p) => {
@@ -996,63 +1026,114 @@ function renderRoster(room) {
 }
 function onRoom(room, isHost) {
   net.host = isHost;
+  showSection('room');
   renderRoster(room);
-  const codeBox = document.getElementById('lobby-code');
-  const codeVal = document.getElementById('lobby-code-val');
+  const codeBox = $('lobby-code'), codeVal = $('lobby-code-val');
   if (codeBox && codeVal) { codeVal.textContent = room.code; codeBox.classList.remove('hidden'); }
-  document.getElementById('lobby-join')?.classList.add('hidden');
-  const startBtn = document.getElementById('lobby-start');
-  const wait = document.getElementById('lobby-wait');
+  const startBtn = $('lobby-start'), wait = $('lobby-wait');
   if (isHost) {
     startBtn?.classList.toggle('hidden', room.players.length < 2);
     wait?.classList.add('hidden');
     lobbyStatus(room.players.length < 2
-      ? 'Deine Session ist offen. Warte auf mindestens einen Mitspieler …'
+      ? 'Deine Runde ist offen – Mitspieler finden dich im Browser oder per Code.'
       : 'Bereit! Tippe auf „Spiel starten", sobald alle da sind.');
   } else {
     startBtn?.classList.add('hidden');
     wait?.classList.remove('hidden');
     lobbyStatus('Beigetreten. Warte, bis der Host startet …');
   }
+  showChatButton(true);
+  $('chat')?.classList.remove('hidden');   // Chat direkt offen fürs Warten/Smack-Talk
 }
 
 function startOnline(mode, params) {
   showLobby();
   const name = (localStorage.getItem('tgl_session') || 'Gast').slice(0, 24) || 'Gast';
+  const token = localStorage.getItem('tgl_token') || '';
   lobbyStatus('Verbinde mit dem Server …');
   const client = makeNet();
   net.client = client;
-  client.onError(() => lobbyStatus('Server nicht erreichbar. Läuft der Online-Dienst schon? Du kannst unten lokal im Hotseat spielen.', true));
+  client.onError(() => lobbyStatus('Server nicht erreichbar. Läuft der Online-Dienst schon? Über die Library kannst du lokal im Hotseat spielen.', true));
   client.onClose(() => { if (!net.on) lobbyStatus('Verbindung getrennt.', true); });
-  client.open(() => client.send({ t: 'hello', name }));
-  client.on('welcome', () => {
-    if (mode === 'host') client.send({ t: 'create', teams: +params.get('teams') || 2, worms: +params.get('worms') || 3 });
-    else {
-      const code = (params.get('code') || '').toUpperCase();
-      if (code) client.send({ t: 'join', code });
-      else { document.getElementById('lobby-join')?.classList.remove('hidden'); lobbyStatus('Gib den Code deiner Runde ein:'); }
+  client.open(() => client.send({ t: 'hello', name, token }));
+
+  client.on('welcome', (m) => {
+    net.authed = !!m.authed;
+    if (mode === 'host') { client.send({ t: 'create', teams: +params.get('teams') || 2, worms: +params.get('worms') || 3, password: params.get('pw') || '' }); return; }
+    if (mode === 'join') { const code = (params.get('code') || '').toUpperCase(); if (code) return joinGame(code, false); }
+    // Lobby-Browser
+    showSection('browse');
+    if (!net.authed) {
+      lobbyStatus('Bitte melde dich in der Library an, um online zu spielen.', true);
+      $('lb-create')?.setAttribute('disabled', 'disabled');
+    } else {
+      lobbyStatus(`Angemeldet als ${m.name}. Eröffne ein Spiel oder tritt einem offenen bei.`);
     }
+    client.send({ t: 'list' });
   });
+  client.on('rooms', (m) => renderOpenGames(m.list || []));
   client.on('created', (m) => onRoom(m.room, true));
   client.on('joined', (m) => onRoom(m.room, false));
   client.on('room', (m) => onRoom(m.room, net.host));
   client.on('error', (m) => lobbyStatus(m.msg || 'Fehler', true));
   client.on('closed', (m) => {
-    if (net.on) { lobbyStatus(m.reason === 'host-left' ? 'Der Host hat die Runde beendet.' : 'Session geschlossen.', true); net.on = false; showLobby(); }
-    else lobbyStatus(m.reason === 'host-left' ? 'Der Host hat die Runde beendet.' : 'Session geschlossen.', true);
+    const why = m.reason === 'host-left' ? 'Der Host hat die Runde beendet.' : 'Session geschlossen.';
+    net.on = false; net.ready = false;
+    showLobby(); showSection('browse'); showChatButton(false); hideChat();
+    lobbyStatus(why, true);
+    client.send({ t: 'list' });
   });
-  client.on('start', (m) => beginMatch(m));
+  client.on('start', (m) => { beginMatch(m); showChatButton(true); });
   client.on('act', (m) => onRemoteAct(m));
   client.on('snap', (m) => applySnap(m.s));
+  client.on('chat', (m) => chatReceive(m.from, m.text));
 
-  document.getElementById('lobby-start')?.addEventListener('click', () => {
-    client.send({ t: 'start', seed: (Math.random() * 1e9) | 0 });
+  $('lobby-start')?.addEventListener('click', () => client.send({ t: 'start', seed: (Math.random() * 1e9) | 0 }));
+  $('lobby-join-btn')?.addEventListener('click', () => {
+    const v = ($('lobby-code-in')?.value || '').toUpperCase(); if (v) net.client.send({ t: 'join', code: v, password: '' });
   });
-  document.getElementById('lobby-join-btn')?.addEventListener('click', () => {
-    const v = (document.getElementById('lobby-code-in')?.value || '').toUpperCase();
-    if (v) client.send({ t: 'join', code: v });
+  $('lb-create')?.addEventListener('click', () => {
+    client.send({ t: 'create', teams: +$('lb-teams').value || 2, worms: +$('lb-worms').value || 3, password: $('lb-pass').value || '' });
   });
+  $('lobby-leave')?.addEventListener('click', () => { client.send({ t: 'leave' }); net.on = false; net.ready = false; showSection('browse'); showChatButton(false); hideChat(); client.send({ t: 'list' }); });
 }
+
+/* ---- Ingame-Chat ---- */
+function showChatButton(on) { $('btn-chat')?.classList.toggle('hidden', !on); }
+function hideChat() { $('chat')?.classList.add('hidden'); }
+function toggleChat() {
+  const c = $('chat'); if (!c) return;
+  c.classList.toggle('hidden');
+  if (!c.classList.contains('hidden')) $('chat-input')?.focus();
+}
+function chatReceive(from, text) {
+  const log = $('chat-log');
+  if (log) {
+    const div = document.createElement('div');
+    div.className = 'chat-msg';
+    const mine = from === (localStorage.getItem('tgl_session') || 'Gast');
+    div.innerHTML = `<b style="color:${mine ? '#8fe0b6' : '#ffd166'}">${from}:</b> ${escapeHtml(text)}`;
+    log.appendChild(div);
+    while (log.children.length > 60) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+  if ($('chat')?.classList.contains('hidden')) chatToast(`${from}: ${text}`);
+}
+let toastT = 0;
+function chatToast(text) {
+  const el = $('chat-toast'); if (!el) return;
+  el.textContent = text; el.classList.remove('hidden');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 3500);
+}
+function chatSend() {
+  const inp = $('chat-input'); if (!inp || !net.client) return;
+  const text = inp.value.trim(); if (!text) return;
+  net.client.send({ t: 'chat', text }); inp.value = '';
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+$('btn-chat')?.addEventListener('click', toggleChat);
+$('chat-send')?.addEventListener('click', chatSend);
+$('chat-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); chatSend(); } });
 
 function drawWaiting() {
   ctx.fillStyle = '#0a2036';
@@ -1067,7 +1148,7 @@ function drawWaiting() {
 // ---- Bootstrap: online (per URL) oder lokaler Hotseat ----
 const params = new URLSearchParams(location.search);
 const netMode = params.get('net');
-if (netMode === 'host' || netMode === 'join') {
+if (netMode === 'host' || netMode === 'join' || netMode === 'lobby') {
   hideHelp();
   startOnline(netMode, params);
 } else {

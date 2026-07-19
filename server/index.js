@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { initDb, db, hashPassword, verifyPassword, newToken } from './db.js';
-import { handleMessage, handleClose } from './rooms.js';
+import { handleMessage, handleClose, handleOpen } from './rooms.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -118,9 +118,25 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', (ws) => {
   ws.name = 'Gast';
   ws.room = null;
+  ws.authed = false;
   ws.isAlive = true;
+  handleOpen(ws);
   ws.on('pong', () => { ws.isAlive = true; });
-  ws.on('message', (data) => {
+  ws.on('message', async (data) => {
+    let msg; try { msg = JSON.parse(data.toString()); } catch { return; }
+    // hello wird hier behandelt: optionales Token verifizieren (nur eingeloggte
+    // Spieler dürfen Spiele eröffnen und erscheinen mit ihrem echten Namen).
+    if (msg.t === 'hello') {
+      let name = String(msg.name || 'Gast').slice(0, 24) || 'Gast';
+      ws.authed = false;
+      if (msg.token) {
+        try { const u = await db.userForToken(msg.token); if (u) { name = u.name; ws.authed = true; } }
+        catch { /* egal */ }
+      }
+      ws.name = name;
+      ws.send(JSON.stringify({ t: 'welcome', name, authed: ws.authed }));
+      return;
+    }
     try { handleMessage(ws, data.toString()); } catch (e) { console.error('[ws]', e.message); }
   });
   ws.on('close', () => handleClose(ws));

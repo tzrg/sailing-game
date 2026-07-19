@@ -74,27 +74,16 @@
       <div class="pd-body">
         <p class="cat-status off" id="cat-status">…</p>
 
-        <div class="cat-forms">
-          <div class="cat-form">
-            <h3>Session erstellen</h3>
-            <label class="mini">Teams
-              <select id="cat-teams"><option>2</option><option>3</option><option>4</option></select>
-            </label>
-            <label class="mini">Raupen / Team
-              <select id="cat-worms"><option>2</option><option selected>3</option><option>4</option></select>
-            </label>
-            <button id="cat-create" class="btn primary">Session erstellen</button>
-          </div>
-          <div class="cat-form">
-            <h3>Session beitreten</h3>
-            <input id="cat-code" type="text" placeholder="Code (z. B. K7QP)" maxlength="4" style="text-transform:uppercase">
-            <button id="cat-join" class="btn">Beitreten</button>
-            <p class="auth-error hidden" id="cat-join-err"></p>
-          </div>
-        </div>
+        <button id="cat-lobby" class="btn primary" style="width:100%">🎮 Online-Lobby öffnen</button>
+        <p class="muted small" style="margin:10px 0">In der Lobby siehst du alle offenen Runden,
+          eröffnest selbst eine (mit oder ohne Passwort) und chattest mit den Mitspielern.</p>
 
-        <p class="muted small" style="margin-top:12px">Die Session-Lobby (Code teilen, warten,
-          starten) öffnet sich im Spiel und bleibt bis zum Match verbunden.</p>
+        <div class="cat-form" style="margin-top:8px">
+          <h3>Direkt mit Code beitreten</h3>
+          <input id="cat-code" type="text" placeholder="Code (z. B. K7QP)" maxlength="4" style="text-transform:uppercase">
+          <button id="cat-join" class="btn">Beitreten</button>
+          <p class="auth-error hidden" id="cat-join-err"></p>
+        </div>
       </div>
     </details>
 

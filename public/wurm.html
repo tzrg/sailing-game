@@ -16,6 +16,7 @@
     <button id="btn-menu">☰</button>
     <button id="btn-rotate" title="Querformat">⟳</button>
     <button id="b-weapon">🔫</button>
+    <button id="btn-chat" class="hidden" title="Chat">💬</button>
   </div>
 
   <!-- Bewegungs- & Kampf-Buttons -->
@@ -32,24 +33,64 @@
 
   <div id="wmenu" class="hidden"></div>
 
-  <!-- Online-Lobby (nur bei ?net=host / ?net=join) -->
+  <!-- Online-Lobby (?net=lobby / host / join) -->
   <div id="lobby" class="hidden">
     <div class="lobby-panel">
-      <h1>🐛 Online-Session</h1>
+      <h1>🐛 Online-Lobby</h1>
       <p id="lobby-status">Verbinde …</p>
-      <div id="lobby-code" class="hidden">Code: <b id="lobby-code-val">····</b>
-        <div class="muted small">Teile diesen Code mit deinen Mitspielern.</div>
+
+      <!-- Spiele-Browser (vor Beitritt) -->
+      <div id="lobby-browse" class="hidden">
+        <div class="lobby-sec">
+          <div class="group-title">Neues Spiel eröffnen</div>
+          <div class="lobby-form">
+            <label class="mini">Teams
+              <select id="lb-teams"><option>2</option><option>3</option><option>4</option></select>
+            </label>
+            <label class="mini">Raupen / Team
+              <select id="lb-worms"><option>2</option><option selected>3</option><option>4</option></select>
+            </label>
+            <input id="lb-pass" placeholder="Passwort (optional)" maxlength="40">
+            <button id="lb-create" class="menu-btn">🎮 Spiel eröffnen</button>
+          </div>
+        </div>
+        <div class="lobby-sec">
+          <div class="group-title">Offene Spiele</div>
+          <div id="lb-list"><p class="muted small">Lade …</p></div>
+        </div>
+        <div class="lobby-sec">
+          <div class="group-title">Mit Code beitreten</div>
+          <div id="lobby-join">
+            <input id="lobby-code-in" placeholder="CODE" maxlength="4" style="text-transform:uppercase">
+            <button id="lobby-join-btn" class="menu-btn">Beitreten</button>
+          </div>
+        </div>
       </div>
-      <div id="lobby-join" class="hidden">
-        <input id="lobby-code-in" placeholder="CODE" maxlength="4" style="text-transform:uppercase">
-        <button id="lobby-join-btn" class="menu-btn">Beitreten</button>
+
+      <!-- aktive Runde (nach create/join) -->
+      <div id="lobby-room" class="hidden">
+        <div id="lobby-code" class="hidden">Code: <b id="lobby-code-val">····</b>
+          <div class="muted small">Teile den Code – oder lass Mitspieler dich in „Offene Spiele" finden.</div>
+        </div>
+        <ul id="lobby-players"></ul>
+        <button id="lobby-start" class="menu-btn hidden">▶ Spiel starten</button>
+        <p id="lobby-wait" class="hidden muted small">Warten, bis der Host startet …</p>
+        <button id="lobby-leave" class="menu-btn">↩ Runde verlassen</button>
       </div>
-      <ul id="lobby-players"></ul>
-      <button id="lobby-start" class="menu-btn hidden">▶ Spiel starten</button>
-      <p id="lobby-wait" class="hidden muted small">Warten, bis der Host startet …</p>
+
       <a href="index.html" class="lobby-back">← Zurück zur Library</a>
     </div>
   </div>
+
+  <!-- Ingame-Chat -->
+  <div id="chat" class="hidden">
+    <div id="chat-log"></div>
+    <div id="chat-row">
+      <input id="chat-input" placeholder="Smack Talk…" maxlength="200" autocomplete="off">
+      <button id="chat-send">▶</button>
+    </div>
+  </div>
+  <div id="chat-toast" class="hidden"></div>
 
   <div id="menu" class="hidden">
     <div class="menu-panel">

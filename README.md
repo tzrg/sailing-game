@@ -208,12 +208,17 @@ Der Node-Dienst bietet:
   erzeugen aus dem gemeinsamen Seed dasselbe Gelände und schicken nur ihre
   Eingaben, wenn sie am Zug sind. Der Server ist dabei reiner Relay +
   Session-Register (Räume sind flüchtig).
+- **Open-Games-Browser & Chat**: eingeloggte Spieler sehen offene Runden
+  live, eröffnen selbst welche (mit oder ohne **Passwort**) und treten per
+  Klick oder Code bei. Ein kleiner **Ingame-Chat** (WebSocket-Relay) läuft in
+  Lobby und Match; eingehende Nachrichten erscheinen als kurze Toasts.
 
-Der Ablauf: Auf der Landing-Page **Session erstellen** oder mit **Code
-beitreten** → das öffnet die Lobby in `wurm.html` (eine WebSocket-Verbindung
-bleibt von der Lobby bis ins Match bestehen). Der Host startet, sobald alle
-da sind. Ohne erreichbaren Server fällt alles automatisch auf den lokalen
-Offline-Modus zurück (localStorage-Konten, Hotseat am selben Gerät).
+Der Ablauf: Auf der Landing-Page **Online-Lobby öffnen** (nur für angemeldete
+Spieler) oder direkt mit **Code beitreten** → die Lobby läuft in `wurm.html`
+(eine WebSocket-Verbindung bleibt vom Browser über die Lobby bis ins Match
+bestehen). Der Host startet, sobald alle da sind. Ohne erreichbaren Server
+fällt alles automatisch auf den lokalen Offline-Modus zurück
+(localStorage-Konten, Hotseat am selben Gerät).
 
 ## Ideen für später
 

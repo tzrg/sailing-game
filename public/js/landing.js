@@ -93,8 +93,14 @@ async function renderLeaderboard() {
 
 function renderNetStatus() {
   const el = $('cat-status');
+  const btn = $('cat-lobby');
   if (Auth.serverUp) {
-    el.innerHTML = '🟢 Server verbunden – erstellt eine Session und spielt geräteübergreifend mit dem Code.';
+    if (Auth.isLoggedIn()) {
+      el.innerHTML = '🟢 Server verbunden – öffne die Lobby und leg los.';
+      btn?.removeAttribute('disabled');
+    } else {
+      el.innerHTML = '🟢 Server verbunden – <b>zum Online-Spielen bitte oben einloggen</b> (Open-Games-Lobby ist für angemeldete Spieler).';
+    }
     el.className = 'cat-status on';
   } else {
     el.innerHTML = '🟡 Online-Dienst nicht erreichbar. Ihr könnt trotzdem lokal am selben Gerät im <b>Hotseat</b> spielen.';
@@ -102,10 +108,13 @@ function renderNetStatus() {
   }
 }
 
-function createSession() {
-  const teams = parseInt($('cat-teams').value, 10) || 2;
-  const worms = parseInt($('cat-worms').value, 10) || 3;
-  location.href = `wurm.html?net=host&teams=${teams}&worms=${worms}`;
+function openLobby() {
+  if (Auth.serverUp && !Auth.isLoggedIn()) {
+    $('cat-status').innerHTML = '🔑 Bitte zuerst oben einloggen, dann Lobby öffnen.';
+    $('auth-guest')?.setAttribute('open', 'open');
+    return;
+  }
+  location.href = 'wurm.html?net=lobby';
 }
 function joinSession() {
   const code = ($('cat-code').value || '').trim().toUpperCase();
@@ -121,7 +130,7 @@ async function init() {
   $('btn-register').onclick = doRegister;
   $('btn-logout').onclick = doLogout;
   $('in-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
-  $('cat-create').onclick = createSession;
+  $('cat-lobby').onclick = openLobby;
   $('cat-join').onclick = joinSession;
   $('cat-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinSession(); });
 
