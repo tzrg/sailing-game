@@ -816,8 +816,12 @@ function frame(now) {
   if (ft) { cam.tx = ft.x; cam.ty = ft.y - 40; }
   cam.x += ((cam.tx ?? cam.x) - cam.x) * Math.min(1, dt * 4);
   cam.y += ((cam.ty ?? cam.y) - cam.y) * Math.min(1, dt * 4);
-  cam.x = clamp(cam.x, W / 2 / cam.scale, WORLD_W - W / 2 / cam.scale);
-  cam.y = clamp(cam.y, H / 2 / cam.scale, WORLD_H - H / 2 / cam.scale + 40);
+  // Ist die Welt größer als die Ansicht -> klemmen; sonst zentrieren.
+  // (Sonst kreuzen sich die Grenzen und die Kamera flackert auf/ab.)
+  const hvx = W / 2 / cam.scale, hvy = H / 2 / cam.scale;
+  cam.x = WORLD_W - hvx > hvx ? clamp(cam.x, hvx, WORLD_W - hvx) : WORLD_W / 2;
+  const minY = hvy, maxY = WORLD_H - hvy + 40;
+  cam.y = maxY > minY ? clamp(cam.y, minY, maxY) : WORLD_H / 2;
 
   draw(time);
   requestAnimationFrame(frame);
