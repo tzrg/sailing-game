@@ -15,7 +15,7 @@ export function makeNet() {
     if (fn) fn(m);
   };
   ws.addEventListener('open', () => {
-    keepalive = setInterval(() => { if (ws.readyState === 1) ws.send('{"t":"ping"}'); }, 20000);
+    keepalive = setInterval(() => { if (ws.readyState === 1) ws.send('{"t":"ping"}'); }, 12000);
   });
   ws.addEventListener('close', () => clearInterval(keepalive));
   return {

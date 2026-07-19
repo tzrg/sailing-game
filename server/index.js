@@ -165,14 +165,18 @@ wss.on('connection', (ws) => {
   ws.on('error', () => {});
 });
 
-// Tote Verbindungen aufräumen
+// Tote Verbindungen aufräumen – erst nach mehreren verpassten Pings kappen,
+// damit ein kurz pausierter (z. B. in den Hintergrund gewechselter) Tab nicht
+// sofort rausfliegt. Der Client sendet zusätzlich alle 12 s einen App-Ping.
 setInterval(() => {
   for (const ws of wss.clients) {
-    if (!ws.isAlive) { ws.terminate(); continue; }
+    if (ws.isAlive) ws.missed = 0;
+    else ws.missed = (ws.missed || 0) + 1;
+    if (ws.missed >= 3) { ws.terminate(); continue; }   // ~135 s Toleranz
     ws.isAlive = false;
     try { ws.ping(); } catch { /* egal */ }
   }
-}, 30000);
+}, 45000);
 
 let STORE = 'memory';
 initDb().then((mode) => {

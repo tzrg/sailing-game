@@ -673,7 +673,7 @@ function drawAim(wm) {
 // Pfeile am Rand zu allen anderen Raupen (außerhalb des Bildes), mit Entfernung.
 function drawTargets() {
   if (game.state !== 'aim' || !game.active) return;
-  const cx = W / 2, cy = H / 2, mx = 46, my = 52;
+  const cx = W / 2, cy = H / 2, mx = 66, my = 96;   // Rand freihalten (Buttons/HUD)
   const halfW = W / 2 - mx, halfH = H / 2 - my;
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '600 11px system-ui';
@@ -709,7 +709,7 @@ function drawHUD(time) {
   teams.forEach((t, i) => {
     const total = t.worms.reduce((s, w) => s + Math.max(0, w.hp), 0);
     const max = t.worms.length * 100;
-    const x = 14 + i * (bw + 10), y = 54; // unter der Toolbar
+    const x = 14 + i * (bw + 10), y = 64; // unter der Toolbar
     ctx.fillStyle = 'rgba(8,25,42,0.55)'; roundRect(x, y, bw, 30, 8); ctx.fill();
     ctx.fillStyle = t.color; roundRect(x + 4, y + 18, (bw - 8) * total / max, 8, 3); ctx.fill();
     ctx.fillStyle = i === game.turnTeam ? '#fff' : 'rgba(255,255,255,0.7)';
@@ -1119,7 +1119,7 @@ function startOnline(mode, params) {
   net.name = (localStorage.getItem('tgl_session') || 'Gast').slice(0, 24) || 'Gast';
   net.token = localStorage.getItem('tgl_token') || '';
   net.mode = mode; net.params = params;
-  net.code = null; net.pw = ''; net.intentional = false; net.backoff = 1000;
+  net.code = null; net.pw = ''; net.intentional = false; net.backoff = 800;
   showLobby();
   lobbyStatus('Verbinde mit dem Server …');
   wireLobbyButtons();
@@ -1141,7 +1141,7 @@ function connect() {
       net.backoff = Math.min(net.backoff * 2, 15000);
     } else if (!net.on) lobbyStatus('Verbindung getrennt.', true);
   });
-  client.open(() => { net.backoff = 1000; client.send({ t: 'hello', name: net.name, token: net.token }); });
+  client.open(() => { net.backoff = 800; client.send({ t: 'hello', name: net.name, token: net.token }); });
 
   client.on('welcome', (m) => {
     net.authed = !!m.authed;
@@ -1165,7 +1165,7 @@ function dispatchInitial(m) {
   if (net.mode === 'host') { net._createPw = net.params.get('pw') || ''; net.client.send({ t: 'create', teams: +net.params.get('teams') || 2, worms: +net.params.get('worms') || 3, password: net._createPw }); return; }
   if (net.mode === 'join') { const code = (net.params.get('code') || '').toUpperCase(); if (code) return joinGame(code, false); }
   showSection('browse');
-  if (!net.authed) { lobbyStatus('Bitte melde dich in der Library an, um online zu spielen.', true); $('lb-create')?.setAttribute('disabled', 'disabled'); }
+  if (!net.authed) { lobbyStatus('Als Gast dabei: du kannst offenen Runden beitreten. Zum Eröffnen einer eigenen Runde in der Library einloggen.'); $('lb-create')?.setAttribute('disabled', 'disabled'); }
   else lobbyStatus(`Angemeldet als ${m.name}. Eröffne ein Spiel oder tritt einem offenen bei.`);
   net.client.send({ t: 'list' });
 }
