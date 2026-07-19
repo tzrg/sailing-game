@@ -439,6 +439,19 @@ function startTurn() {
   focusCam(game.active.x, game.active.y);
 }
 
+// Vor dem Zug die eigene Raupe durchschalten (nächste lebende des Teams).
+function switchWorm() {
+  const team = teams[game.turnTeam];
+  if (!team) return;
+  for (let k = 1; k <= team.worms.length; k++) {
+    const wi = (team.cur + k) % team.worms.length;
+    if (team.worms[wi].alive) { team.cur = wi; break; }
+  }
+  game.active = team.worms[team.cur];
+  game.charging = false; game.power = 0;
+  focusCam(game.active.x, game.active.y);
+}
+
 // Munitionsvorrat ist pro Team: jedes Team hat sein eigenes ammoUsed-Map.
 function teamAmmoUsed() { const t = teams[game.turnTeam]; return t ? t.ammoUsed : {}; }
 function weaponAmmo(i) { const w = WEAPONS[i]; return w.ammo === Infinity ? Infinity : w.ammo - (teamAmmoUsed()[w.key] || 0); }
@@ -469,9 +482,10 @@ function endTurnAfterSettle(dt) {
 }
 
 // ---- Kamera ----------------------------------------------------------------
-const cam = { x: WORLD_W / 2, y: WORLD_H / 2, scale: 1 };
+const cam = { x: WORLD_W / 2, y: WORLD_H / 2, scale: 1, base: 1, zoom: 1 };
 let W = 0, H = 0;
 function focusCam(x, y) { cam.tx = x; cam.ty = y; }
+function setZoom(z) { cam.zoom = clamp(z, 0.45, 1.7); }
 
 // ---- Rendering -------------------------------------------------------------
 const canvas = document.getElementById('game');
@@ -656,8 +670,40 @@ function drawAim(wm) {
   ctx.beginPath(); ctx.arc(wm.x + dx * 80, wm.y - 8 + dy * 80, 3, 0, TAU); ctx.fill();
 }
 
+// Pfeile am Rand zu allen anderen Raupen (außerhalb des Bildes), mit Entfernung.
+function drawTargets() {
+  if (game.state !== 'aim' || !game.active) return;
+  const cx = W / 2, cy = H / 2, mx = 46, my = 52;
+  const halfW = W / 2 - mx, halfH = H / 2 - my;
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '600 11px system-ui';
+  for (const t of teams) {
+    for (const wm of t.worms) {
+      if (!wm.alive || wm === game.active) continue;
+      const s = worldToScreen(wm.x, wm.y);
+      if (s.x > mx && s.x < W - mx && s.y > my && s.y < H - my) continue;   // sichtbar -> kein Pfeil
+      let dx = s.x - cx, dy = s.y - cy;
+      const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+      const scale = Math.min(halfW / (Math.abs(dx) || 1e-6), halfH / (Math.abs(dy) || 1e-6));
+      const ex = cx + dx * scale, ey = cy + dy * scale;
+      ctx.fillStyle = t.color;
+      ctx.save(); ctx.translate(ex, ey); ctx.rotate(Math.atan2(dy, dx));
+      ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-7, -6); ctx.lineTo(-7, 6); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      const dist = Math.hypot(wm.x - game.active.x, wm.y - game.active.y);
+      const label = Math.round(dist / 10) + ' m';
+      const tx = cx + dx * (scale - 26), ty = cy + dy * (scale - 26);
+      const tw = ctx.measureText(label).width + 8;
+      ctx.fillStyle = 'rgba(8,25,42,0.72)'; roundRect(tx - tw / 2, ty - 9, tw, 16, 4); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillText(label, tx, ty + 3);
+    }
+  }
+  ctx.restore();
+}
+
 // ---- HUD -------------------------------------------------------------------
 function drawHUD(time) {
+  drawTargets();
   // Team-Gesundheitsbalken oben
   const bw = Math.min(150, (W - 28 - (teams.length - 1) * 10) / teams.length);
   teams.forEach((t, i) => {
@@ -778,6 +824,11 @@ function selectWeapon(i) {
   }
   game.weaponIdx = i; game.shotgunShots = 0;
 }
+function onSwitch() {
+  if (net.on && !net.host) { if (iTurn()) net.client.send({ t: 'act', a: { k: 'switch' } }); return; }
+  if (net.on && game.turnTeam !== net.you) return;
+  if (canAct()) switchWorm();
+}
 
 setBtn('b-left');
 setBtn('b-right');
@@ -786,22 +837,30 @@ setBtn('b-aimup');
 setBtn('b-aimdn');
 setBtn('b-fire', onFireDown, onFireUp);
 
-// Waffenmenü
+// Waffenmenü – zentrierte Karte in der Mitte (überlagert nicht mehr die HUD oben)
 const wmenu = document.getElementById('wmenu');
 document.getElementById('b-weapon').addEventListener('click', () => { if (game.state === 'aim') buildWeaponMenu(); });
 function buildWeaponMenu() {
   wmenu.innerHTML = '';
+  const panel = document.createElement('div');
+  panel.className = 'wmenu-panel';
   WEAPONS.forEach((w, i) => {
     const b = document.createElement('button');
     const am = weaponAmmo(i);
     b.className = 'wpn' + (i === game.weaponIdx ? ' sel' : '') + (am <= 0 ? ' out' : '');
     b.innerHTML = `<span class="wi">${w.icon}</span><span class="wn">${w.name}</span><span class="wa">${am === Infinity ? '∞' : am}</span>`;
     if (am > 0) b.addEventListener('click', () => { selectWeapon(i); wmenu.classList.add('hidden'); });
-    wmenu.appendChild(b);
+    panel.appendChild(b);
   });
+  wmenu.appendChild(panel);
   wmenu.classList.remove('hidden');
 }
 wmenu.addEventListener('click', (e) => { if (e.target === wmenu) wmenu.classList.add('hidden'); });
+
+// Raupe wechseln + Zoom
+document.getElementById('b-switch').addEventListener('click', onSwitch);
+document.getElementById('b-zoomin').addEventListener('click', () => setZoom(cam.zoom * 1.25));
+document.getElementById('b-zoomout').addEventListener('click', () => setZoom(cam.zoom / 1.25));
 
 // Tastatur (Desktop)
 const keys = new Set();
@@ -812,6 +871,9 @@ window.addEventListener('keydown', (e) => {
   if (k === ' ' && !e.repeat) onFireDown();
   if (k === 'tab') { e.preventDefault(); if (game.state === 'aim') buildWeaponMenu(); }
   if (k === 'w' && !e.repeat) onJump();
+  if ((k === 'enter' || k === 'q') && !e.repeat) onSwitch();
+  if (k === '+' || k === '=') setZoom(cam.zoom * 1.25);
+  if (k === '-' || k === '_') setZoom(cam.zoom / 1.25);
 });
 window.addEventListener('keyup', (e) => {
   const k = e.key.toLowerCase();
@@ -882,7 +944,8 @@ function resize() {
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cam.scale = clamp(H / (WORLD_H * 0.62), 0.5, 1.1);
+  cam.base = clamp(H / (WORLD_H * 0.62), 0.5, 1.1);
+  cam.scale = cam.base * cam.zoom;
 }
 window.addEventListener('resize', resize);
 document.getElementById('btn-rotate').addEventListener('click', () => {
@@ -893,7 +956,7 @@ resize();
 
 window.__wurm = { game, teams: () => teams, projectiles, WEAPONS, fireWeapon, weaponAmmo,
   set weapon(i) { game.weaponIdx = i; }, focus: () => game.active, newGame,
-  get mask() { return mask; }, solidAt, explode, cfg, net: () => net };
+  get mask() { return mask; }, solidAt, explode, cfg, net: () => net, cam };
 
 // ==========================================================================
 //  Online-Multiplayer (Caterpillars) – Host-autoritativ
@@ -976,6 +1039,7 @@ function onRemoteAct(m) {
   else if (a.k === 'jump') actJump();
   else if (a.k === 'fire') { if (a.on) { if (canAct()) game.charging = true; } else releaseFire(); }
   else if (a.k === 'weapon') { if (canAct()) { game.weaponIdx = a.i | 0; game.shotgunShots = 0; } }
+  else if (a.k === 'switch') { if (canAct()) switchWorm(); }
 }
 
 // ---- Lobby-UI ----
@@ -1209,6 +1273,7 @@ if (netMode === 'host' || netMode === 'join' || netMode === 'lobby') {
 }
 
 function updateCamera(dt) {
+  cam.scale = cam.base * cam.zoom;   // Zoom live anwenden
   let ft = game.active;
   if (projectiles.length) ft = projectiles[projectiles.length - 1];
   if (ft) { cam.tx = ft.x; cam.ty = ft.y - 40; }
