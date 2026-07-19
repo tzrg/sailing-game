@@ -629,6 +629,8 @@ body.landing {
 }
 .auth-btns { display: flex; gap: 8px; margin-bottom: 6px; }
 .auth-error { color: #ff9b8f; font-size: 13px; margin: 6px 0; }
+/* Honeypot: aus dem Sichtfeld, aber im DOM (fängt Auto-Fill-Bots) */
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
 .btn {
   flex: 1;

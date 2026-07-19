@@ -199,6 +199,15 @@ Der Node-Dienst bietet:
 
 - **Konten** (`/api/register`, `/api/login`, `/api/me`, `/api/logout`):
   feste Benutzerkonten, Passwörter mit scrypt gehasht, Bearer-Token.
+- **Spam-/Bot-Schutz** (`server/security.js`): Die Registrierung verlangt einen
+  **Proof-of-Work** (SHA-256 mit führenden Null-Bits – im Browser < 1 s, für
+  Massen-Bots teuer; per `POW_BITS` einstellbar), plus ein **Honeypot**-Feld
+  und **Rate-Limits pro IP** (Registrieren 6/10 min, Login 12/5 min,
+  Challenge 40/5 min). Login gleicht die Antwortzeit für unbekannte Namen an
+  (kein User-Enumeration), der Chat und das Eröffnen von Runden haben eine
+  Flut-Bremse. Dazu ein paar Sicherheits-Header (`nosniff`, `X-Frame-Options`
+  usw.). Für stabile Challenges über Neustarts hinweg optional `APP_SECRET`
+  als Env setzen.
 - **Highscores** (`/api/scores`, `/api/leaderboard`): die Spiele speichern
   ihre Bestwerte weiterhin lokal; nach dem Login lädt die Landing-Page sie
   hoch und zeigt eine globale Bestenliste.

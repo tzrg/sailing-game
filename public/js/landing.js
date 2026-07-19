@@ -34,8 +34,15 @@ async function doLogin() {
 }
 async function doRegister() {
   authError('');
-  try { await Auth.register($('in-name').value, $('in-pass').value); $('in-pass').value = ''; await afterAuthChange(); }
-  catch (e) { authError(e.message); }
+  const btn = $('btn-register');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Bot-Check…';
+  try {
+    await Auth.register($('in-name').value, $('in-pass').value, $('hp-field')?.value || '');
+    $('in-pass').value = '';
+    await afterAuthChange();
+  } catch (e) { authError(e.message); }
+  finally { btn.disabled = false; btn.textContent = old; }
 }
 async function doLogout() { await Auth.logout(); await afterAuthChange(); }
 

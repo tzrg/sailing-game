@@ -71,6 +71,10 @@ export function handleMessage(ws, raw) {
 
   if (t === 'create') {
     if (!ws.authed) return send(ws, { t: 'error', code: 'auth', msg: 'Zum Eröffnen bitte einloggen.' });
+    const now = Date.now();
+    if (now - (ws._lastCreate || 0) < 4000) return send(ws, { t: 'error', code: 'slow', msg: 'Bitte kurz warten.' });
+    if (rooms.size >= 300) return send(ws, { t: 'error', code: 'busy', msg: 'Server ist gerade voll – bitte später erneut.' });
+    ws._lastCreate = now;
     leaveRoom(ws);
     const code = newCode();
     const pw = (msg.password || '').toString().slice(0, 40) || null;
@@ -125,6 +129,11 @@ export function handleMessage(ws, raw) {
   if (t === 'snap') { if (ws !== room.hostWs) return; broadcast(room, { t: 'snap', s: msg.s }, ws); return; }
 
   if (t === 'chat') {
+    // Flood-Schutz: max. 5 Nachrichten in 3 s, min. 300 ms Abstand.
+    const now = Date.now();
+    ws._chat = (ws._chat || []).filter((x) => now - x < 3000);
+    if (ws._chat.length >= 5 || now - (ws._lastChat || 0) < 300) return;
+    ws._chat.push(now); ws._lastChat = now;
     const text = String(msg.text || '').slice(0, 200).trim();
     if (text) broadcast(room, { t: 'chat', from: ws.name, text });
     return;

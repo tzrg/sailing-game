@@ -21,6 +21,33 @@ async function api(path, opts = {}) {
   return data;
 }
 
+/* ------------------------------------------------------- Proof-of-Work ---- */
+// Bot-Check bei der Registrierung: SHA-256(challenge:nonce) mit n führenden
+// Null-Bits finden. Für einen Menschen < 1 s, bei Massen-Bots teuer.
+async function sha256Bytes(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return new Uint8Array(buf);
+}
+function leadingZeroBits(buf) {
+  let bits = 0;
+  for (const b of buf) {
+    if (b === 0) { bits += 8; continue; }
+    let x = b;
+    while ((x & 0x80) === 0) { bits++; x = (x << 1) & 0xff; }
+    break;
+  }
+  return bits;
+}
+async function solvePow(challenge, difficulty) {
+  if (!globalThis.crypto || !crypto.subtle) throw new Error('Registrierung braucht eine sichere (https) Verbindung.');
+  for (let nonce = 0; nonce < 5e7; nonce++) {
+    const h = await sha256Bytes(`${challenge}:${nonce}`);
+    if (leadingZeroBits(h) >= difficulty) return String(nonce);
+    if ((nonce & 2047) === 0) await new Promise((r) => setTimeout(r, 0)); // UI atmen lassen
+  }
+  throw new Error('Bot-Check fehlgeschlagen. Bitte erneut versuchen.');
+}
+
 /* ---------------------------------------------------------------- Auth ---- */
 
 function djb2(str) {
@@ -60,9 +87,12 @@ export const Auth = {
     localStorage.removeItem(SESSION_KEY);
   },
 
-  async register(name, pass) {
+  async register(name, pass, hp = '') {
     if (this.serverUp) {
-      const d = await api('/api/register', { method: 'POST', body: JSON.stringify({ name, pass }) });
+      const ch = await api('/api/challenge');                 // Bot-Check-Aufgabe holen
+      const nonce = await solvePow(ch.challenge, ch.difficulty);
+      const pow = { challenge: ch.challenge, ts: ch.ts, difficulty: ch.difficulty, sig: ch.sig, nonce };
+      const d = await api('/api/register', { method: 'POST', body: JSON.stringify({ name, pass, hp, pow }) });
       this._save(d); return d.name;
     }
     return this._localRegister(name, pass);

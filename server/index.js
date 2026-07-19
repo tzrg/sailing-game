@@ -5,18 +5,27 @@
 
 import http from 'node:http';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { initDb, db, hashPassword, verifyPassword, newToken } from './db.js';
 import { handleMessage, handleClose, handleOpen } from './rooms.js';
+import { rateLimiter, issueChallenge, verifyPow, securityHeaders } from './security.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, '..', 'public');
 const PORT = process.env.PORT || 8080;
 
 const app = express();
-app.use(express.json({ limit: '256kb' }));
+app.set('trust proxy', true);   // hinter Railway-Proxy -> echte Client-IP aus X-Forwarded-For
+app.use(securityHeaders);
+app.use(express.json({ limit: '64kb' }));
+
+// Rate-Limits pro IP (gleitendes Fenster)
+const limitChallenge = rateLimiter({ windowMs: 5 * 60 * 1000, max: 40 });
+const limitRegister = rateLimiter({ windowMs: 10 * 60 * 1000, max: 6 });
+const limitLogin = rateLimiter({ windowMs: 5 * 60 * 1000, max: 12 });
 
 // ---- Auth-Helfer -----------------------------------------------------------
 async function userFromReq(req) {
@@ -31,11 +40,19 @@ function validName(n) { return typeof n === 'string' && /^[\w äöüÄÖÜß.\-]
 // ---- API -------------------------------------------------------------------
 app.get('/api/health', (req, res) => res.json({ ok: true, store: STORE }));
 
-app.post('/api/register', async (req, res) => {
+// Proof-of-Work-Aufgabe für die Registrierung (Bot-Check).
+app.get('/api/challenge', limitChallenge, (req, res) => res.json(issueChallenge()));
+
+app.post('/api/register', limitRegister, async (req, res) => {
   const name = String(req.body?.name || '').trim();
   const pass = String(req.body?.pass || '');
-  if (!validName(name)) return res.status(400).json({ error: 'Name: 2–24 Zeichen.' });
-  if (pass.length < 3) return res.status(400).json({ error: 'Passwort zu kurz (min. 3).' });
+  // Honeypot: verstecktes Feld – nur Bots füllen es aus.
+  if (String(req.body?.hp || '').length > 0) return res.status(400).json({ error: 'Bot erkannt.' });
+  // Proof-of-Work prüfen (Bot-Check).
+  const pow = verifyPow(req.body?.pow);
+  if (!pow.ok) return res.status(400).json({ error: pow.error });
+  if (!validName(name)) return res.status(400).json({ error: 'Name: 2–24 Zeichen (Buchstaben, Zahlen, . - _).' });
+  if (pass.length < 4) return res.status(400).json({ error: 'Passwort zu kurz (min. 4 Zeichen).' });
   try {
     await db.createUser(name, hashPassword(pass));
   } catch (e) {
@@ -47,11 +64,15 @@ app.post('/api/register', async (req, res) => {
   res.json({ token, name });
 });
 
-app.post('/api/login', async (req, res) => {
+// Dummy-Hash, damit Login bei unbekanntem Namen genauso lange dauert (kein User-Enum).
+const DUMMY_HASH = hashPassword(crypto.randomBytes(8).toString('hex'));
+
+app.post('/api/login', limitLogin, async (req, res) => {
   const name = String(req.body?.name || '').trim();
   const pass = String(req.body?.pass || '');
   const u = await db.findUser(name);
-  if (!u || !verifyPassword(pass, u.pass)) return res.status(401).json({ error: 'Name oder Passwort falsch.' });
+  const ok = u ? verifyPassword(pass, u.pass) : (verifyPassword(pass, DUMMY_HASH), false);
+  if (!ok) return res.status(401).json({ error: 'Name oder Passwort falsch.' });
   const token = newToken();
   await db.setToken(token, u.name);
   res.json({ token, name: u.name });

@@ -23,6 +23,8 @@
           <div class="auth-body">
             <input id="in-name" type="text" placeholder="Spielername" autocomplete="username">
             <input id="in-pass" type="password" placeholder="Passwort" autocomplete="current-password">
+            <!-- Honeypot: für Menschen unsichtbar, nur Bots füllen es aus -->
+            <input id="hp-field" name="email" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
             <div class="auth-btns">
               <button id="btn-login" class="btn primary">Einloggen</button>
               <button id="btn-register" class="btn">Registrieren</button>
