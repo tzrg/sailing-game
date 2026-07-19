@@ -10,6 +10,7 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 // ---- Welt ------------------------------------------------------------------
 const WORLD_W = 1600, WORLD_H = 640, WATERLINE = 600;
+const EDGE_WATER = 48;   // Wasser-Rand links/rechts (kein Land)
 const GRAV = 520;              // px/s²
 let mask;                       // Uint8Array: 1 = fester Grund
 let terrainCanvas, terrainCtx, terrainImage;
@@ -53,6 +54,9 @@ function generateTerrain(seed) {
     const cx = (r() * WORLD_W) | 0, cy = (200 + r() * 300) | 0, rad = 30 + r() * 60;
     carveCircle(cx, cy, rad, false);
   }
+  // Wasser direkt an den Rändern: die äußersten Spalten kein Land -> wer dort
+  // hinfällt oder hingeschlagen wird, landet im Meer.
+  for (let x = 0; x < EDGE_WATER; x++) for (let y = 0; y < WORLD_H; y++) { mask[idx(x, y)] = 0; mask[idx(WORLD_W - 1 - x, y)] = 0; }
   buildTerrainCanvas();
 }
 
@@ -171,23 +175,23 @@ const particles = [];
 const WEAPONS = [
   { key: 'panzer', name: 'Panzerfaust', icon: '🚀', ammo: Infinity, aimed: true,
     fire: (w) => launch(w, 'rocket', 720, { r: 34, dmg: 48, wind: 1 }) },
-  { key: 'granate', name: 'Splittergranate', icon: '💣', ammo: Infinity, aimed: true,
+  { key: 'granate', name: 'Splittergranate', icon: '💣', ammo: Infinity, aimed: true, retreat: true,
     fire: (w) => launch(w, 'grenade', 620, { r: 36, dmg: 46, fuse: 3, bounce: 0.55, wind: 0.5 }) },
   { key: 'schrot', name: 'Schrotflinte', icon: '🔫', ammo: Infinity, aimed: true, hitscan: true,
     fire: (w) => shotgun(w) },
   { key: 'mp', name: 'MP (Uzi)', icon: '🔩', ammo: Infinity, aimed: true, hitscan: true,
     fire: (w) => uzi(w) },
-  { key: 'dynamit', name: 'Dynamit', icon: '🧨', ammo: 3, aimed: false,
+  { key: 'dynamit', name: 'Dynamit', icon: '🧨', ammo: 3, aimed: false, retreat: true,
     fire: (w) => drop(w, 'dynamite', { r: 52, dmg: 62, fuse: 4 }) },
-  { key: 'cluster', name: 'Streubombe', icon: '🍒', ammo: 2, aimed: true,
+  { key: 'cluster', name: 'Streubombe', icon: '🍒', ammo: 2, aimed: true, retreat: true,
     fire: (w) => launch(w, 'cluster', 640, { r: 24, dmg: 26, fuse: 3, bounce: 0.5, wind: 1, cluster: 6 }) },
-  { key: 'allmacht', name: 'Allmachtsgranate', icon: '✨', ammo: 1, aimed: true,
+  { key: 'allmacht', name: 'Allmachtsgranate', icon: '✨', ammo: 1, aimed: true, retreat: true,
     fire: (w) => launch(w, 'grenade', 600, { r: 100, dmg: 115, fuse: 3.5, bounce: 0.45, wind: 0.5, holy: 1 }) },
   { key: 'brenner', name: 'Schweißbrenner', icon: '🔥', ammo: 2, aimed: false, endsTurn: true,
     fire: (w) => blowtorch(w) },
   { key: 'bat', name: 'Baseballschläger', icon: '🏏', ammo: Infinity, aimed: true, melee: true,
     fire: (w) => bat(w) },
-  { key: 'schaf', name: 'Explosivschaf', icon: '🐑', ammo: 2, aimed: false,
+  { key: 'schaf', name: 'Explosivschaf', icon: '🐑', ammo: 2, aimed: false, retreat: true,
     fire: (w) => dropSheep(w) },
   { key: 'minigun', name: 'Minigun', icon: '🌀', ammo: 3, aimed: true, hitscan: true,
     fire: (w) => minigun(w) },
@@ -305,7 +309,7 @@ function minigun(w) {
     const dirx = dir * Math.cos(a), diry = -Math.sin(a);
     const res = hitscanRay(w.x + dir * 12, w.y - 10, dirx, diry, 700);
     spawnTracer(w.x + dir * 12, w.y - 10, res.x, res.y);
-    if (res.hit && res.hit !== 'edge' && res.hit !== 'ground') explode(res.x, res.y, 10, 34, false);
+    if (res.hit && res.hit !== 'edge' && res.hit !== 'ground') explode(res.x, res.y, 9, 22, false);
     else if (res.hit === 'ground') explode(res.x, res.y, 5, 0, true);
     n++;
   }, 45);
@@ -490,7 +494,7 @@ function startTurn() {
   game.active = team.worms[team.cur];
   game.wind = +(Math.random() * 2 - 1).toFixed(2);
   game.aim = 0.6; game.power = 0; game.charging = false;
-  game.timer = 45; game.fireDone = false; game.shotgunShots = 0; game.actionBusy = false;
+  game.timer = 45; game.fireDone = false; game.shotgunShots = 0; game.actionBusy = false; game.retreatT = 0;
   net.remote.moveDir = 0; net.remote.aimDir = 0;   // relayed Eingaben zurücksetzen
   game.state = 'aim';
   game.banner = 'Team ' + team.name + ' ist dran'; game.bannerT = 1.6;
@@ -523,9 +527,15 @@ function fireWeapon() {
   const r = w.fire(game.active);
   if (r === 'more') return; // Schrot: zweiter Schuss folgt
   if (w.ammo !== Infinity) { const u = teamAmmoUsed(); u[w.key] = (u[w.key] || 0) + 1; }
-  game.state = 'busy';
-  game.settleT = 0;
-  game.busyT = 0;
+  if (w.retreat) {
+    // Nach Granate/Dynamit & Co. noch kurz weglaufen dürfen.
+    game.retreatT = 3.5;
+    game.banner = 'Rückzug!'; game.bannerT = 1.2;
+  } else {
+    game.state = 'busy';
+    game.settleT = 0;
+    game.busyT = 0;
+  }
 }
 
 function endTurnAfterSettle(dt) {
@@ -585,8 +595,8 @@ function draw(time) {
   // Partikel
   for (const p of particles) drawParticle(p);
 
-  // Zielhilfe des aktiven Wurms
-  if (game.state === 'aim' && game.active && curWeapon().aimed) drawAim(game.active);
+  // Zielhilfe des aktiven Wurms (nicht mehr im Rückzug)
+  if (game.state === 'aim' && game.active && curWeapon().aimed && !game.fireDone) drawAim(game.active);
 
   ctx.restore();
 
@@ -791,10 +801,15 @@ function drawHUD(time) {
   ctx.fillStyle = ctx.strokeStyle; const ah = wv >= 0 ? 1 : -1;
   ctx.beginPath(); ctx.moveTo(W / 2 + wv * 46 + ah * 6, 34); ctx.lineTo(W / 2 + wv * 46, 30); ctx.lineTo(W / 2 + wv * 46, 38); ctx.fill();
 
-  // Timer
+  // Timer / Rückzug
   if (game.state === 'aim') {
-    ctx.fillStyle = game.timer < 10 ? '#ff6a5a' : '#fff'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'right';
-    ctx.fillText(Math.ceil(game.timer) + 's', W - 16, 34);
+    if (game.retreatT > 0) {
+      ctx.fillStyle = '#ffd166'; ctx.font = 'bold 17px system-ui'; ctx.textAlign = 'right';
+      ctx.fillText('🏃 Rückzug ' + Math.ceil(game.retreatT) + 's', W - 16, 34);
+    } else {
+      ctx.fillStyle = game.timer < 10 ? '#ff6a5a' : '#fff'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'right';
+      ctx.fillText(Math.ceil(game.timer) + 's', W - 16, 34);
+    }
   }
 
   // Waffe + Power (über der unteren Button-Reihe)
@@ -848,6 +863,7 @@ function setBtn(id, onDown, onUp) {
 }
 
 function canAct() { return game.state === 'aim' && game.active && !game.fireDone; }
+function canMove() { return game.state === 'aim' && game.active; }   // auch im Rückzug (nach fireDone)
 
 function releaseFire() {
   if (!game.charging) return;
@@ -858,7 +874,7 @@ function releaseFire() {
 }
 
 function actJump() {
-  if (canAct() && game.active && game.active.grounded) {
+  if (canMove() && game.active && game.active.grounded) {   // Springen auch im Rückzug
     game.active.vy = -230; game.active.vx = game.active.facing * 90; game.active.grounded = false;
   }
 }
@@ -960,7 +976,7 @@ function localAimDir() {
 // Läuft nur beim Simulator (Hotseat oder Host). Beim Host-Zug eines fremden
 // Teams kommen Bewegung/Zielen aus net.remote (vom Gast relayed).
 function readInput(dt) {
-  if (!canAct()) { return; }
+  if (!canMove()) { return; }
   const wm = game.active;
   let moveDir, aimDir;
   if (net.on && net.host && game.turnTeam !== net.you) {
@@ -971,6 +987,7 @@ function readInput(dt) {
   if (moveDir < 0) { wm.vx = -70; wm.facing = -1; }
   else if (moveDir > 0) { wm.vx = 70; wm.facing = 1; }
   else if (wm.grounded) wm.vx *= 0.4;
+  if (game.fireDone) return;   // Rückzug: nur noch laufen/springen, kein Zielen/Aufladen
   if (aimDir > 0) game.aim = clamp(game.aim + 1.5 * dt, -1.4, 1.4);
   if (aimDir < 0) game.aim = clamp(game.aim - 1.5 * dt, -1.4, 1.4);
   if (game.charging) game.power = clamp(game.power + dt * 0.9, 0, 1);
@@ -1038,6 +1055,7 @@ function sendSnapshot() {
   const s = {
     st: game.state, tt: game.turnTeam, ai: +(+game.aim).toFixed(3), pw: +(+game.power).toFixed(3),
     wi: game.weaponIdx, wind: game.wind, bn: game.banner || '', bnT: +(game.bannerT || 0).toFixed(2),
+    rt: +(game.retreatT || 0).toFixed(2), fd: game.fireDone ? 1 : 0,
     win: game.winner ? game.winner.name : null, ac: { t: game.turnTeam, i: t ? t.cur : 0 },
     tm: teams.map((tt) => ({ c: tt.cur, au: tt.ammoUsed,
       w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing, n: w.name })) })),
@@ -1066,6 +1084,7 @@ function applySnap(s) {
   }
   game.state = s.st; game.turnTeam = s.tt; game.aim = s.ai; game.power = s.pw;
   game.weaponIdx = s.wi; game.wind = s.wind; game.banner = s.bn; game.bannerT = s.bnT;
+  game.retreatT = s.rt || 0; game.fireDone = !!s.fd;
   game.winner = s.win ? { name: s.win } : null;
   game.active = teams[s.ac.t] ? teams[s.ac.t].worms[s.ac.i] : null;
   projectiles.length = 0;
@@ -1381,8 +1400,13 @@ function frame(now) {
 
   if (game.state === 'aim') {
     readInput(dt);
-    game.timer -= dt;
-    if (game.timer <= 0 && !game.fireDone) { game.state = 'busy'; game.settleT = 0; game.busyT = 0; }
+    if (game.retreatT > 0) {
+      game.retreatT -= dt;
+      if (game.retreatT <= 0) { game.retreatT = 0; game.state = 'busy'; game.settleT = 0; game.busyT = 0; }
+    } else {
+      game.timer -= dt;
+      if (game.timer <= 0 && !game.fireDone) { game.state = 'busy'; game.settleT = 0; game.busyT = 0; }
+    }
   }
 
   // Physik immer (Würmer fallen, auch nach Explosionen)
