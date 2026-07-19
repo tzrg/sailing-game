@@ -185,6 +185,12 @@ const WEAPONS = [
     fire: (w) => launch(w, 'grenade', 600, { r: 100, dmg: 115, fuse: 3.5, bounce: 0.45, wind: 0.5, holy: 1 }) },
   { key: 'brenner', name: 'Schweißbrenner', icon: '🔥', ammo: 2, aimed: false, endsTurn: true,
     fire: (w) => blowtorch(w) },
+  { key: 'bat', name: 'Baseballschläger', icon: '🏏', ammo: Infinity, aimed: true, melee: true,
+    fire: (w) => bat(w) },
+  { key: 'schaf', name: 'Explosivschaf', icon: '🐑', ammo: 2, aimed: false,
+    fire: (w) => dropSheep(w) },
+  { key: 'minigun', name: 'Minigun', icon: '🌀', ammo: 3, aimed: true, hitscan: true,
+    fire: (w) => minigun(w) },
 ];
 
 function curWeapon() { return WEAPONS[game.weaponIdx]; }
@@ -260,6 +266,48 @@ function blowtorch(w) {
     w.x = clamp(sx + dir * (step * 6), 4, WORLD_W - 4);   // Wurm folgt konstant, keine Beschleunigung
     w.vx = 0; w.vy = 0;
     step++;
+  }, 45);
+}
+
+// Baseballschläger: Nahkampf – trifft Raupen direkt vor sich und schlägt sie
+// kräftig in Zielrichtung weg (gern ins Wasser!).
+function bat(w) {
+  const a = game.aim, dir = w.facing;
+  const dirx = dir * Math.cos(a), diry = -Math.sin(a);
+  const hx = w.x + dirx * 22, hy = (w.y - 6) + diry * 22;
+  let hit = false;
+  for (const wm of allWorms()) {
+    if (!wm.alive || wm === w) continue;
+    if (Math.hypot(wm.x - hx, (wm.y - 6) - hy) < 30) {
+      damage(wm, 26, dirx * 600, diry * 420 - 130);   // Schaden + kräftiger Schlag
+      hit = true;
+    }
+  }
+  spawnTracer(w.x + dir * 6, w.y - 8, w.x + dirx * 36, w.y - 8 + diry * 36);
+  for (let i = 0; i < 6; i++) particles.push({ kind: 'spark', x: hx, y: hy, vx: (Math.random() - 0.5) * 120, vy: -Math.random() * 120, t: 0, ttl: 0.3 });
+  if (!hit) game.banner = 'Daneben!', game.bannerT = 0.8;
+}
+
+// Explosivschaf: hüpft in Blickrichtung los und explodiert bei Kontakt mit
+// einer Raupe (oder nach Ablauf der Zündschnur).
+function dropSheep(w) {
+  projectiles.push({ type: 'sheep', x: w.x + w.facing * 14, y: w.y - 10, vx: w.facing * 70, vy: -60, t: 0, dir: w.facing, r: 46, dmg: 62, hopCd: 0.2, fuse: 7 });
+}
+
+// Minigun: riesige Streuung – trifft fast nie, aber jeder Treffer tut richtig weh.
+function minigun(w) {
+  const dir = w.facing;
+  game.actionBusy = true;
+  let n = 0;
+  const iv = setInterval(() => {
+    if (n >= 26) { clearInterval(iv); game.actionBusy = false; return; }
+    const a = game.aim + (Math.random() - 0.5) * 1.15;   // absichtlich sehr ungenau
+    const dirx = dir * Math.cos(a), diry = -Math.sin(a);
+    const res = hitscanRay(w.x + dir * 12, w.y - 10, dirx, diry, 700);
+    spawnTracer(w.x + dir * 12, w.y - 10, res.x, res.y);
+    if (res.hit && res.hit !== 'edge' && res.hit !== 'ground') explode(res.x, res.y, 10, 34, false);
+    else if (res.hit === 'ground') explode(res.x, res.y, 5, 0, true);
+    n++;
   }, 45);
 }
 
@@ -366,9 +414,21 @@ function stepProjectile(pr, dt) {
 
   // Wasser
   if (ny > WATERLINE) { particles.push({ kind: 'splash', x: nx, y: WATERLINE, t: 0, ttl: 0.5 }); return true; }
-  // Wurm getroffen (Raketen/Cluster explodieren bei Kontakt) – Körpermitte
-  if (pr.type === 'rocket' || pr.type === 'cluster') {
-    for (const wm of allWorms()) if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - (wm.y - 6)) < 11) { detonate(pr, nx, ny); return true; }
+  // Wurm getroffen (Raketen/Cluster/Schaf explodieren bei Kontakt) – Körpermitte
+  if (pr.type === 'rocket' || pr.type === 'cluster' || pr.type === 'sheep') {
+    for (const wm of allWorms()) if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - (wm.y - 6)) < 13) { detonate(pr, nx, ny); return true; }
+  }
+  // Schaf: hüpft über den Boden statt liegen zu bleiben
+  if (pr.type === 'sheep') {
+    pr.hopCd -= dt;
+    if (solidAt(nx, ny + 7)) {                 // steht auf dem Boden
+      while (solidAt(nx, ny) && ny > 40) ny -= 1;  // aus dem Boden schieben
+      if (pr.hopCd <= 0) { pr.vy = -250; pr.vx = pr.dir * 135; pr.hopCd = 0.45; }
+      else if (pr.vy > 0) pr.vy = 0;
+    }
+    pr.x = nx; pr.y = ny;
+    if (pr.fuse != null && pr.t >= pr.fuse) { detonate(pr, pr.x, pr.y); return true; }
+    return false;
   }
   // Gelände
   if (solidAt(nx, ny)) {
@@ -617,6 +677,10 @@ function drawProjectile(pr, time) {
     ctx.fillStyle = '#c0392b'; ctx.fillRect(-3, -8, 6, 16);
     const on = Math.floor(time * 10) % 2 === 0;
     ctx.fillStyle = on ? '#ffcc33' : '#883'; ctx.beginPath(); ctx.arc(0, -9, 2, 0, TAU); ctx.fill();
+  } else if (pr.type === 'sheep') {
+    ctx.font = '20px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🐑', 0, 0);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   } else {
     ctx.fillStyle = pr.holy ? '#f5d76e' : '#2c3e50';
     ctx.beginPath(); ctx.arc(0, 0, pr.holy ? 6 : 4, 0, TAU); ctx.fill();
@@ -788,7 +852,8 @@ function canAct() { return game.state === 'aim' && game.active && !game.fireDone
 function releaseFire() {
   if (!game.charging) return;
   game.charging = false;
-  if (canAct() && game.power > 0.02) fireWeapon();
+  // Nahkampf (Baseballschläger) braucht keine Aufladung – tippen reicht.
+  if (canAct() && (game.power > 0.02 || curWeapon().melee)) fireWeapon();
   else game.power = 0;
 }
 
