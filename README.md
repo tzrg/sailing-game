@@ -1,27 +1,39 @@
-# 🎮 Spielesammlung (Segeln · Auto · MTB)
+# 🎮 Tims Game Library
 
-Drei browserbasierte Top-Down-Spiele, umschaltbar über das ☰-Menü
-(Abschnitt „Spiel wechseln“). Alles läuft komplett im Browser
+Eine browserbasierte Spielesammlung mit **Landing-Page, Login und
+Multiplayer-Vorbereitung**. Alles läuft komplett im Browser
 (HTML5 Canvas, Vanilla JS, keine Build-Tools) und wird als
-Docker-Container deployt. Jedes Spiel ist eine eigene Seite:
+Docker-Container deployt.
 
-- **`index.html` – ⛵ Segelspiel** (siehe unten): physikalisch plausible
-  Segelphysik, sieben Boote, Regatta mit Bojen-Rundung.
+- **`index.html` – 🎮 Landing-Page „Tims Game Library"**: Login
+  (Registrieren/Anmelden), Spielekacheln, aggregierte **Highscores** aus
+  allen Spielen und der **Caterpillars-Multiplayer**-Bereich (Session
+  erstellen/beitreten). Login, Sessions und Highscores laufen **vorerst
+  komplett lokal** (localStorage) – die Logik ist in `js/lib.js`
+  (`Auth`, `Scores`, `Net`) gekapselt, sodass später ein echter
+  Railway-Backend-Dienst (feste Konten, gemeinsame Sessions) eingehängt
+  werden kann, ohne die Spiele anzufassen.
+- **`sail.html` – ⛵ Segelspiel** (siehe unten): physikalisch plausible
+  Segelphysik, acht Boote, Regatta mit Bojen-Rundung.
 - **`auto.html` – 🏎 Autorennen**: GTA2-artige Top-Down-Sicht durch eine
-  Stadt, Driften über die Bremse, drei Autos (Sportwagen, Muscle-Car,
-  Kleinwagen), zwei Strecken (City-Rundkurs, Drift-Parcours),
-  Rundenzeiten + Drift-Punkte, Bestzeit je Strecke/Auto.
+  Stadt, Driften über die Bremse, sieben Fahrzeuge (Sportwagen,
+  Lamborghini, Motorrad, Muscle-Car, Kleinwagen, Krankenwagen, Feuerwehr),
+  zwei Strecken (City-Rundkurs, Drift-Parcours), Rundenzeiten +
+  Drift-Punkte, Bestzeit je Strecke/Auto.
 - **`mtb.html` – 🚵 Mountainbike**: Top-Down-Parcours mit Rampen; über
   Sprünge Saltos (vor/zurück lehnen) und Spins (lenken) – sauber landen
   oder crashen. Drei Räder (Fully-MTB, BMX, Kinderrad), zwei Parcours
   (Waldstrecke, Jumphalle), Trickscore + Bestzeit, optionaler
   „Annoying-Mode“ (Gas durch Wackeln). Steuerung: linke Hälfte lenken +
   lehnen, rechte Hälfte Gas/Bremse.
+- **`wurm.html` – 🐛 Raupen · Caterpillars**: rundenbasiertes
+  Artillerie-Spiel mit kriechenden Raupen, zerstörbarem Gelände, Wind und
+  acht Waffen; Hotseat am selben Gerät, Querformat-Drehung fürs Handy.
+  Online-Sessions folgen mit dem Backend.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
-`<spiel>.html`, teilt sich `style.css` und den ☰-Menü-Rahmen. Neue Spiele
-lassen sich analog ergänzen und in die „Spiel wechseln“-Navigation
-aufnehmen.
+`<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
+(🏠 führt zurück zur Landing-Page). Neue Spiele lassen sich analog ergänzen.
 
 ---
 
@@ -141,11 +153,15 @@ docker run --rm -p 8080:8080 sailing-game
 
 ```
 public/            statische Spielesammlung
-  index.html       ⛵ Segeln
+  index.html       🎮 Landing-Page (Login, Highscores, Multiplayer)
+  sail.html        ⛵ Segeln
   auto.html        🏎 Autorennen
   mtb.html         🚵 Mountainbike
+  wurm.html        🐛 Raupen · Caterpillars
   style.css
   js/
+    lib.js         Landing: Auth, Scores, Net (localStorage-Stubs, backend-ready)
+    landing.js     Landing: Login-UI, Highscore-Übersicht, Session-Lobby
     main.js        Segeln: Spielschleife, Eingabe, Kollision
     boat.js        Segeln: Bootsphysik + Windmodell + Bootstypen
     race.js        Segeln: Regattakurs, Zeitnahme, Bestzeiten
@@ -154,10 +170,21 @@ public/            statische Spielesammlung
     util.js        Segeln: Vektor-/Winkel-Helfer
     auto.js        Autorennen (komplett in einer Datei)
     mtb.js         Mountainbike (komplett in einer Datei)
+    wurm.js        Raupen · Caterpillars (komplett in einer Datei)
 nginx/             nginx-Template (nutzt $PORT von Railway)
 Dockerfile
 railway.json
 ```
+
+## Multiplayer / Backend (geplant)
+
+Login, Caterpillar-Sessions und Highscores sind bereits als lokale Stubs
+in `js/lib.js` implementiert (`Auth`, `Net`, `Scores`) und über `async`
+ausgelegt. Sobald der **Railway-Backend-Dienst** (feste Benutzerkonten,
+WebSocket/REST) steht, werden nur diese Methoden gegen echte Aufrufe
+getauscht – die Landing-Page und die Spiele bleiben unverändert. Bis dahin
+funktioniert alles offline: Konten und Bestzeiten liegen im `localStorage`
+des Geräts, Caterpillars läuft im Hotseat.
 
 ## Ideen für später
 

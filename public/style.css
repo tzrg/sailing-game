@@ -457,3 +457,234 @@ html, body {
   cursor: pointer;
   width: 100%;
 }
+
+/* ======================================================= Landing-Page ==== */
+html:has(body.landing) {
+  overflow: auto;
+  background: #0a2036;
+}
+body.landing {
+  min-height: 100%;
+  overflow: auto;
+  background: linear-gradient(160deg, #0a2036 0%, #123651 60%, #0d2942 100%) fixed;
+  color: #eaf3fa;
+  -webkit-text-size-adjust: 100%;
+}
+
+.lp {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: max(24px, env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
+}
+
+.lp-head { text-align: center; margin-bottom: 28px; }
+.lp-head h1 { font-size: 30px; letter-spacing: 0.01em; }
+.lp-sub { color: #9fc0d8; margin-top: 4px; font-size: 15px; }
+
+.hidden { display: none !important; }
+.muted { color: #9fc0d8; }
+.small { font-size: 12px; }
+
+/* --- Auth --- */
+.auth { margin-top: 18px; }
+.auth-box {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  padding: 16px;
+  max-width: 380px;
+  margin: 0 auto;
+  text-align: left;
+}
+.auth-box.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.auth-box input {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  font-size: 15px;
+}
+.auth-btns { display: flex; gap: 8px; margin-bottom: 6px; }
+.auth-error { color: #ff9b8f; font-size: 13px; margin: 6px 0; }
+
+.btn {
+  flex: 1;
+  padding: 11px 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 9px;
+  font-size: 15px;
+  cursor: pointer;
+}
+.btn:active { background: rgba(255, 255, 255, 0.2); }
+.btn.primary { background: #2f9e6e; border-color: #2f9e6e; }
+.btn.primary:active { background: #38b47e; }
+.btn.small { flex: none; padding: 8px 14px; font-size: 14px; }
+
+/* --- Sections --- */
+.lp-sec { margin: 26px 0; }
+.lp-sec > h2 {
+  font-size: 18px;
+  margin-bottom: 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* --- Game cards --- */
+.games {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+.game-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-decoration: none;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  padding: 16px;
+  transition: transform 0.12s, background 0.12s;
+}
+.game-card:active { transform: scale(0.98); background: rgba(255, 255, 255, 0.13); }
+.gc-emoji { font-size: 34px; line-height: 1; }
+.gc-name { font-size: 17px; font-weight: 600; margin-top: 8px; }
+.gc-desc { font-size: 13px; color: #9fc0d8; margin-top: 3px; }
+
+/* --- Caterpillar sessions --- */
+.cat {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  padding: 16px;
+}
+.cat-status {
+  font-size: 13px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+.cat-status.off { background: rgba(224, 176, 32, 0.14); border: 1px solid rgba(224, 176, 32, 0.4); }
+.cat-status.on  { background: rgba(47, 158, 110, 0.16); border: 1px solid rgba(47, 158, 110, 0.5); }
+
+.cat-forms {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.cat-form {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 11px;
+  padding: 13px;
+}
+.cat-form h3 { font-size: 14px; margin-bottom: 10px; color: #cfe2f0; }
+.cat-form .btn { width: 100%; }
+.cat-form input {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  font-size: 15px;
+}
+.mini {
+  display: block;
+  font-size: 12px;
+  color: #9fc0d8;
+  margin-bottom: 9px;
+}
+.mini select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  font-size: 15px;
+}
+.mini option { background: #0a1e32; }
+.cat-created { color: #8fe0b6; font-size: 13px; margin: 12px 0 4px; }
+.cat-list-title { font-size: 13px; color: #9fc0d8; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.c-code { font-size: 18px; font-weight: 700; letter-spacing: 0.08em; font-family: ui-monospace, monospace; }
+.c-meta { flex: 1; font-size: 13px; color: #cfe2f0; }
+.c-meta small { display: block; color: #8aa7bd; font-size: 11px; }
+.c-play {
+  text-decoration: none;
+  background: #2f9e6e;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.c-del {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  width: 34px; height: 34px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* --- Highscores --- */
+.scores {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.score-game {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  padding: 13px 14px;
+}
+.score-game h3 { font-size: 15px; margin-bottom: 9px; }
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 14px;
+}
+.score-row:first-of-type { border-top: none; }
+.s-label small { display: block; color: #8aa7bd; font-size: 11px; }
+.s-val { font-variant-numeric: tabular-nums; color: #8fe0b6; white-space: nowrap; }
+
+.lp-foot { margin-top: 30px; text-align: center; }
+
+@media (max-width: 480px) {
+  .cat-forms { grid-template-columns: 1fr; }
+  .lp-head h1 { font-size: 25px; }
+}
