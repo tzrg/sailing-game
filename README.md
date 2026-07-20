@@ -28,8 +28,13 @@ Docker-Container deployt.
   lehnen, rechte Hälfte Gas/Bremse.
 - **`wurm.html` – 🐛 Raupen · Caterpillars**: rundenbasiertes
   Artillerie-Spiel mit kriechenden Raupen, zerstörbarem Gelände, Wind und
-  acht Waffen; Hotseat am selben Gerät, Querformat-Drehung fürs Handy.
-  Online-Sessions folgen mit dem Backend.
+  vielen Waffen (inkl. Baseballschläger, Explosivschaf, Minigun); Hotseat
+  am selben Gerät **oder online** über Lobby/Code, Querformat-Drehung.
+- **`lemminge.html` – 🐭 Lemminge**: Puzzle im Stil des Genre-Klassikers
+  (eigenständig umgesetzt). Kleine Kerlchen laufen stur los; per Fähigkeit
+  (Kletterer, Schirm, Sprenger, Blocker, Bauer, Graben, Schräg-Graben,
+  Buddler) lotst man genug von ihnen zum Ausgang. Zerstörbares Pixel-Gelände,
+  vier Level.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
@@ -175,6 +180,7 @@ public/            statische Spielesammlung
   auto.html        🏎 Autorennen
   mtb.html         🚵 Mountainbike
   wurm.html        🐛 Raupen · Caterpillars (inkl. Online-Lobby)
+  lemminge.html    🐭 Lemminge (Puzzle)
   style.css
   js/
     lib.js         Auth + Scores (Server mit localStorage-Fallback)
@@ -189,6 +195,7 @@ public/            statische Spielesammlung
     auto.js        Autorennen (komplett in einer Datei)
     mtb.js         Mountainbike (komplett in einer Datei)
     wurm.js        Raupen · Caterpillars + Online-Netzcode
+    lemminge.js    Lemminge (Pixel-Gelände, Lauf-KI, Fähigkeiten, Level)
 Dockerfile
 railway.json
 ```

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Lemminge</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🐭%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+    <button id="btn-pause" title="Pause">⏸</button>
+    <button id="btn-nuke" title="Alle sprengen">☢</button>
+  </div>
+
+  <!-- Status oben rechts wird auf dem Canvas gezeichnet -->
+
+  <!-- Fähigkeiten-Leiste unten -->
+  <div id="skillbar"></div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>🐭 Lemminge</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link" href="index.html">🏠</a>
+          <a class="game-link" href="sail.html">⛵</a>
+          <a class="game-link" href="auto.html">🏎</a>
+          <a class="game-link" href="mtb.html">🚵</a>
+          <a class="game-link" href="wurm.html">🐛</a>
+          <a class="game-link active" href="lemminge.html">🐭</a>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Level</div>
+        <label class="menu-select">Auswahl
+          <select id="sel-level"></select>
+        </label>
+        <button class="menu-btn" id="btn-restart">🔄 Level neu starten</button>
+      </div>
+
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>🐭 Lemminge</h1>
+      <ul>
+        <li>Die kleinen Kerlchen kommen aus der <b>Luke</b> und laufen stur geradeaus – an Wänden drehen sie um, über Kanten fallen sie.</li>
+        <li>Bring genug von ihnen lebend zum <b>Ausgang</b> 🚪, bevor die Zeit abläuft.</li>
+        <li>Wähle unten eine <b>Fähigkeit</b> und tippe dann einen Lemming an, um sie ihm zu geben (jede Fähigkeit gibt es nur begrenzt oft):</li>
+        <li><b>🧗 Kletterer</b> klettert Wände hoch · <b>🪂 Schirm</b> überlebt tiefe Stürze · <b>🛑 Blocker</b> hält andere auf (dreht sie um)</li>
+        <li><b>🧱 Bauer</b> baut eine Treppe · <b>⛏ Graben</b> gräbt waagerecht · <b>⚒ Schräg</b> gräbt schräg nach unten · <b>🔽 Buddler</b> gräbt gerade nach unten</li>
+        <li><b>💥 Sprenger</b> zählt runter und explodiert (sprengt Gelände weg)</li>
+        <li>Oben: <b>⏸ Pause</b>, <b>☢</b> jagt alle in die Luft (Aufgeben).</li>
+        <li>Desktop: Zahlentasten 1–8 wählen Fähigkeiten, Klick weist zu, Leertaste = Pause.</li>
+        <li>📱 Tipp: Handy <b>quer halten</b> – dann wird das Spielfeld deutlich größer und das Antippen leichter.</li>
+      </ul>
+      <p>Rette den Trupp! Das Gelände ist zerstörbar – grabt und baut euch den Weg zum Ausgang.</p>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/lemminge.js"></script>
+</body>
+</html>
