@@ -101,8 +101,8 @@ const LEVELS = [
     entrance: { x: 90, y: 150 }, exit: { x: 850, y: 172, w: 46, h: 40 },
     skills: { builder: 12, blocker: 3, digger: 2, floater: 3, climber: 2 },
     paint() {
-      rect(0, 212, 440, WORLD_H - 212);              // linker Boden
-      rect(560, 212, WORLD_W - 560, WORLD_H - 212);  // rechter Boden – Grube x 440..560
+      rect(0, 212, 445, WORLD_H - 212);              // linker Boden
+      rect(520, 212, WORLD_W - 520, WORLD_H - 212);  // rechter Boden – Grube x 445..520 (~75px)
     },
   },
   {
@@ -139,7 +139,8 @@ const game = {
 // Physik-Konstanten (px pro Sekunde bzw. Sekunden)
 const WALK = 46, FALL = 150, FLOAT = 46, CLIMB = 42;
 const MAX_UP = 5, MAX_DOWN = 4, SPLAT = 76, FLOAT_TRIGGER = 26;
-const DIG_IV = 0.09, BASH_IV = 0.05, MINE_IV = 0.06, BUILD_IV = 0.42;
+const DIG_IV = 0.09, BASH_IV = 0.05, MINE_IV = 0.06, BUILD_IV = 0.30;
+const BUILD_BRICKS = 18;     // Ziegel pro Bauer -> längere, flachere Treppe
 const LEM_H = 11, LEM_HALF = 3;
 
 function startLevel(i) {
@@ -295,8 +296,8 @@ function tickBuild(l, dt) {
   l.dt += dt; if (l.dt < BUILD_IV) return; l.dt -= BUILD_IV;
   if (l.bricks <= 0) { l.state = 'walk'; return; }
   const dir = l.dir, fx = l.x | 0, fy = l.y | 0;
-  fillRect(dir > 0 ? fx : fx - 6, fy, 7, 2);
-  l.x += dir * 3; l.y -= 2; l.bricks--;
+  fillRect(dir > 0 ? fx : fx - 8, fy, 9, 2);   // breiter Ziegel -> durchgehende Rampe
+  l.x += dir * 5; l.y -= 2; l.bricks--;          // flacher (5 vor / 2 hoch) und weiter
   if (solid((l.x | 0) + dir, (l.y | 0) - LEM_H)) { l.dir = -dir; l.state = 'walk'; }
 }
 
@@ -348,7 +349,7 @@ function applySkill(l, key) {
     case 'floater': if (l.floater) return false; l.floater = true; return true;
     case 'bomber': if (l.bomb > 0) return false; l.bomb = 5; return true;
     case 'blocker': if (l.state === 'block' || l.state === 'fall') return false; l.state = 'block'; return true;
-    case 'builder': if (l.state !== 'walk') return false; l.state = 'build'; l.bricks = 12; l.dt = BUILD_IV; return true;
+    case 'builder': if (l.state !== 'walk') return false; l.state = 'build'; l.bricks = BUILD_BRICKS; l.dt = BUILD_IV; return true;
     case 'basher': if (l.state !== 'walk') return false; l.state = 'bash'; l.dt = 0; return true;
     case 'miner': if (l.state !== 'walk') return false; l.state = 'mine'; l.dt = 0; return true;
     case 'digger': if (l.state !== 'walk') return false; l.state = 'dig'; l.dt = 0; return true;
