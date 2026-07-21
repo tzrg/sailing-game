@@ -369,11 +369,14 @@ function saveProgress() {
 // ---- Rendering -------------------------------------------------------------
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
 let CW = 0, CH = 0, S = 1, OX = 0, OY = 0;
 const TOP_UI = 96, BOT_UI = 66;   // Platz für Toolbar+Status oben, Skill-Leiste unten
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  CW = window.innerWidth; CH = window.innerHeight;
+  const rot = stage.classList.contains('rot');   // Querformat: ganze Bühne 90° gedreht
+  CW = rot ? window.innerHeight : window.innerWidth;
+  CH = rot ? window.innerWidth : window.innerHeight;
   canvas.width = Math.round(CW * dpr); canvas.height = Math.round(CH * dpr);
   canvas.style.width = CW + 'px'; canvas.style.height = CH + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -384,6 +387,14 @@ function resize() {
 window.addEventListener('resize', resize);
 
 function screenToWorld(sx, sy) { return { x: (sx - OX) / S, y: (sy - OY) / S }; }
+// Bildschirm-Pointer -> Canvas-lokale Koordinaten (berücksichtigt die Drehung)
+function pointerToCanvas(e) {
+  if (stage.classList.contains('rot')) {
+    return { x: e.clientY, y: window.innerWidth - e.clientX };
+  }
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
 
 function draw(time) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -525,8 +536,8 @@ function refreshSkillbar() {
 // ---- Eingabe ---------------------------------------------------------------
 canvas.addEventListener('pointerdown', (e) => {
   if (game.over) return;
-  const r = canvas.getBoundingClientRect();
-  const w = screenToWorld(e.clientX - r.left, e.clientY - r.top);
+  const c = pointerToCanvas(e);
+  const w = screenToWorld(c.x, c.y);
   assignSkill(w.x, w.y);
 });
 window.addEventListener('keydown', (e) => {
@@ -548,6 +559,7 @@ document.getElementById('btn-restart').addEventListener('click', () => { menuEl.
 document.getElementById('btn-pause').addEventListener('click', togglePause);
 document.getElementById('btn-nuke').addEventListener('click', () => { if (!game.over) nuke(); });
 function togglePause() { if (!game.over) game.paused = !game.paused; }
+document.getElementById('btn-rotate').addEventListener('click', () => { stage.classList.toggle('rot'); resize(); });
 
 const selLevel = document.getElementById('sel-level');
 LEVELS.forEach((l, i) => { const o = document.createElement('option'); o.value = i; o.textContent = l.name; selLevel.appendChild(o); });
@@ -564,8 +576,10 @@ function frame(now) {
 }
 
 window.__lem = { game, lems: () => lems, startLevel, get mask() { return mask; }, solid, level: () => level, SKILLS,
-  applySkill, spawnLem, assignSkill };
+  applySkill, spawnLem, assignSkill, getView: () => ({ S, OX, OY, rot: stage.classList.contains('rot') }) };
 
+// Auf Hochformat-Handys automatisch ins Querformat drehen (mehr Platz fürs breite Feld).
+if (window.innerWidth < window.innerHeight) stage.classList.add('rot');
 resize();
 startLevel(0);
 requestAnimationFrame(frame);

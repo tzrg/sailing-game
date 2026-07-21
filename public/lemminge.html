@@ -9,15 +9,15 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🐭%3C/text%3E%3C/svg%3E">
 </head>
 <body>
+ <div id="stage">
   <canvas id="game"></canvas>
 
   <div id="toolbar">
     <button id="btn-menu">☰</button>
+    <button id="btn-rotate" title="Drehen (Quer/Hoch)">⟳</button>
     <button id="btn-pause" title="Pause">⏸</button>
     <button id="btn-nuke" title="Alle sprengen">☢</button>
   </div>
-
-  <!-- Status oben rechts wird auf dem Canvas gezeichnet -->
 
   <!-- Fähigkeiten-Leiste unten -->
   <div id="skillbar"></div>
@@ -65,12 +65,13 @@
         <li><b>💥 Sprenger</b> zählt runter und explodiert (sprengt Gelände weg)</li>
         <li>Oben: <b>⏸ Pause</b>, <b>☢</b> jagt alle in die Luft (Aufgeben).</li>
         <li>Desktop: Zahlentasten 1–8 wählen Fähigkeiten, Klick weist zu, Leertaste = Pause.</li>
-        <li>📱 Tipp: Handy <b>quer halten</b> – dann wird das Spielfeld deutlich größer und das Antippen leichter.</li>
+        <li>📱 Auf dem Handy startet das Spiel im <b>Querformat</b> (großes Feld) – Handy quer drehen. Mit <b>⟳</b> oben schaltest du zwischen Quer- und Hochformat um.</li>
       </ul>
       <p>Rette den Trupp! Das Gelände ist zerstörbar – grabt und baut euch den Weg zum Ausgang.</p>
       <button id="btn-start">Los geht's</button>
     </div>
   </div>
+ </div>
 
   <script type="module" src="js/lemminge.js"></script>
 </body>
