@@ -231,6 +231,12 @@ Der Node-Dienst bietet:
 
 - **Konten** (`/api/register`, `/api/login`, `/api/me`, `/api/logout`):
   feste Benutzerkonten, Passwörter mit scrypt gehasht, Bearer-Token.
+- **Community** (`/api/forum/*`, `/api/feedback`, Seite `forum.html`):
+  Forum (Themen + Antworten) und Feedback-Formular, beides **nur für
+  eingeloggte Nutzer** (401 ohne Token) und mit Schreib-Rate-Limit.
+  Feedback sieht jeder Nutzer nur von sich selbst; Admins (Namen in der
+  Env-Variable `ADMIN_USERS`, kommasepariert) sehen alle Einsendungen.
+  Rendering strikt über textContent -> kein XSS über Beiträge.
 - **Spam-/Bot-Schutz** (`server/security.js`): Die Registrierung verlangt einen
   **Proof-of-Work** (SHA-256 mit führenden Null-Bits – im Browser < 1 s, für
   Massen-Bots teuer; per `POW_BITS` einstellbar), plus ein **Honeypot**-Feld

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Community</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E💬%3C/text%3E%3C/svg%3E">
+</head>
+<body class="landing">
+  <div class="lp">
+    <header class="lp-head">
+      <div class="lp-title">
+        <h1>💬 Community</h1>
+        <p class="lp-sub">Forum &amp; Feedback · <a href="index.html" class="plain-link">← zur Library</a></p>
+      </div>
+      <div class="auth">
+        <div class="auth-badge hidden" id="auth-user">
+          <span>👤 <b id="auth-name">…</b></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hinweis, wenn nicht eingeloggt -->
+    <div id="gate" class="cat-status off hidden">
+      🔑 Forum und Feedback sind nur für <b>eingeloggte Spieler</b>.
+      <a href="index.html" class="plain-link"><b>In der Library anmelden</b></a> und wiederkommen!
+    </div>
+    <div id="offline" class="cat-status off hidden">
+      🟡 Der Online-Dienst ist gerade nicht erreichbar – Forum und Feedback brauchen den Server.
+    </div>
+
+    <div id="community" class="hidden">
+      <!-- Forum -->
+      <details class="panel-details" open>
+        <summary>🗣 Forum</summary>
+        <div class="pd-body">
+          <div id="fr-list-view">
+            <div class="forum-new">
+              <input id="fr-title" placeholder="Neues Thema – Titel" maxlength="120">
+              <textarea id="fr-text" placeholder="Worum geht's?" maxlength="4000" rows="3"></textarea>
+              <button id="fr-create" class="btn primary">Thema eröffnen</button>
+              <p class="auth-error hidden" id="fr-err"></p>
+            </div>
+            <div id="fr-threads"><p class="muted small">Lade …</p></div>
+          </div>
+          <div id="fr-thread-view" class="hidden">
+            <button id="fr-back" class="btn small">← Alle Themen</button>
+            <h3 id="fr-thread-title" class="forum-title"></h3>
+            <div id="fr-posts"></div>
+            <div class="forum-new">
+              <textarea id="fr-reply" placeholder="Antwort schreiben …" maxlength="4000" rows="3"></textarea>
+              <button id="fr-send" class="btn primary">Antworten</button>
+              <p class="auth-error hidden" id="fr-reply-err"></p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Feedback -->
+      <details class="panel-details">
+        <summary>📮 Feedback an Tim</summary>
+        <div class="pd-body">
+          <div class="forum-new">
+            <select id="fb-game" class="fb-select">
+              <option value="">Allgemein / Library</option>
+              <option value="sail">⛵ Segeln</option>
+              <option value="auto">🏎 Autorennen</option>
+              <option value="mtb">🚵 Mountainbike</option>
+              <option value="wurm">🐛 Raupen</option>
+              <option value="lem">🐭 Lemminge</option>
+              <option value="gorilla">🦍 Gorillas</option>
+              <option value="mampf">🟡 Mampf</option>
+              <option value="maze">🧩 Super Maze</option>
+              <option value="snake">🐍 Snake</option>
+            </select>
+            <textarea id="fb-text" placeholder="Lob, Bugs, Wünsche – alles hier rein …" maxlength="4000" rows="4"></textarea>
+            <button id="fb-send" class="btn primary">Feedback abschicken</button>
+            <p class="auth-error hidden" id="fb-err"></p>
+            <p class="cat-created hidden" id="fb-ok"></p>
+          </div>
+          <h3 class="lb-title" id="fb-list-title" style="margin-top:14px">Deine bisherigen Einsendungen</h3>
+          <div id="fb-list"></div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <script type="module" src="js/forum.js"></script>
+</body>
+</html>

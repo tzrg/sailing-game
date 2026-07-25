@@ -26,6 +26,11 @@ app.use(express.json({ limit: '64kb' }));
 const limitChallenge = rateLimiter({ windowMs: 5 * 60 * 1000, max: 40 });
 const limitRegister = rateLimiter({ windowMs: 10 * 60 * 1000, max: 6 });
 const limitLogin = rateLimiter({ windowMs: 5 * 60 * 1000, max: 12 });
+const limitWrite = rateLimiter({ windowMs: 10 * 60 * 1000, max: 20 });   // Forum-/Feedback-Beiträge
+
+// Admins (dürfen alles Feedback lesen): Namen kommasepariert in ADMIN_USERS
+const ADMINS = new Set((process.env.ADMIN_USERS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+const isAdmin = (name) => ADMINS.has(String(name).toLowerCase());
 
 // ---- Auth-Helfer -----------------------------------------------------------
 async function userFromReq(req) {
@@ -114,6 +119,63 @@ app.get('/api/scores', async (req, res) => {
   const u = await userFromReq(req);
   if (!u) return res.status(401).json({ error: 'Nicht angemeldet.' });
   res.json({ scores: await db.userScores(u.name) });
+});
+
+// ---- Feedback & Forum (nur für eingeloggte Nutzer) -------------------------
+async function requireAuth(req, res) {
+  const u = await userFromReq(req);
+  if (!u) { res.status(401).json({ error: 'Bitte einloggen.' }); return null; }
+  return u;
+}
+const cleanText = (v, max) => String(v || '').trim().slice(0, max);
+
+app.post('/api/feedback', limitWrite, async (req, res) => {
+  const u = await requireAuth(req, res); if (!u) return;
+  const text = cleanText(req.body?.text, 4000);
+  const game = cleanText(req.body?.game, 40);
+  if (text.length < 3) return res.status(400).json({ error: 'Bitte etwas mehr Text.' });
+  await db.addFeedback(u.name, game || null, text);
+  res.json({ ok: true });
+});
+
+app.get('/api/feedback', async (req, res) => {
+  const u = await requireAuth(req, res); if (!u) return;
+  const rows = await db.listFeedback(isAdmin(u.name) ? null : u.name);
+  res.json({ feedback: rows, admin: isAdmin(u.name) });
+});
+
+app.get('/api/forum/threads', async (req, res) => {
+  const u = await requireAuth(req, res); if (!u) return;
+  res.json({ threads: await db.listThreads() });
+});
+
+app.post('/api/forum/threads', limitWrite, async (req, res) => {
+  const u = await requireAuth(req, res); if (!u) return;
+  const title = cleanText(req.body?.title, 120);
+  const text = cleanText(req.body?.text, 4000);
+  if (title.length < 3) return res.status(400).json({ error: 'Titel zu kurz.' });
+  if (text.length < 1) return res.status(400).json({ error: 'Der erste Beitrag fehlt.' });
+  const t = await db.createThread(u.name, title, text);
+  res.json({ thread: t });
+});
+
+app.get('/api/forum/threads/:id', async (req, res) => {
+  const u = await requireAuth(req, res); if (!u) return;
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Ungültige ID.' });
+  const t = await db.getThread(id);
+  if (!t) return res.status(404).json({ error: 'Thread nicht gefunden.' });
+  res.json({ thread: t });
+});
+
+app.post('/api/forum/threads/:id/posts', limitWrite, async (req, res) => {
+  const u = await requireAuth(req, res); if (!u) return;
+  const id = parseInt(req.params.id, 10);
+  const text = cleanText(req.body?.text, 4000);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Ungültige ID.' });
+  if (text.length < 1) return res.status(400).json({ error: 'Leerer Beitrag.' });
+  try { await db.addPost(id, u.name, text); } catch { return res.status(404).json({ error: 'Thread nicht gefunden.' }); }
+  res.json({ ok: true });
 });
 
 // Globale Bestenliste: bester Wert je (game,variant) über alle Spieler

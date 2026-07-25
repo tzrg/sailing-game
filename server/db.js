@@ -32,6 +32,10 @@ const mem = {
   users: new Map(),   // nameLower -> { name, pass, created }
   tokens: new Map(),  // token -> name
   scores: new Map(),  // `${nameLower}|${game}|${variant}` -> row
+  feedback: [],       // { id, user_name, game, text, created }
+  threads: [],        // { id, title, author, created, last_post }
+  posts: [],          // { id, thread_id, author, text, created }
+  nextId: 1,
 };
 
 const memStore = {
@@ -62,6 +66,40 @@ const memStore = {
   },
   async leaderboard() {
     return [...mem.scores.values()];
+  },
+  // ---- Feedback ----
+  async addFeedback(name, game, text) {
+    mem.feedback.push({ id: mem.nextId++, user_name: name, game, text, created: Date.now() });
+  },
+  async listFeedback(name) {   // name = null -> alle (Admin)
+    const all = [...mem.feedback].sort((a, b) => b.created - a.created);
+    return name == null ? all : all.filter((f) => f.user_name.toLowerCase() === name.toLowerCase());
+  },
+  // ---- Forum ----
+  async createThread(author, title, text) {
+    const now = Date.now();
+    const t = { id: mem.nextId++, title, author, created: now, last_post: now };
+    mem.threads.push(t);
+    mem.posts.push({ id: mem.nextId++, thread_id: t.id, author, text, created: now });
+    return t;
+  },
+  async listThreads() {
+    return [...mem.threads]
+      .sort((a, b) => b.last_post - a.last_post)
+      .slice(0, 100)
+      .map((t) => ({ ...t, posts: mem.posts.filter((p) => p.thread_id === t.id).length }));
+  },
+  async getThread(id) {
+    const t = mem.threads.find((x) => x.id === id);
+    if (!t) return null;
+    return { ...t, posts: mem.posts.filter((p) => p.thread_id === id).sort((a, b) => a.created - b.created) };
+  },
+  async addPost(threadId, author, text) {
+    const t = mem.threads.find((x) => x.id === threadId);
+    if (!t) throw new Error('no-thread');
+    const now = Date.now();
+    mem.posts.push({ id: mem.nextId++, thread_id: threadId, author, text, created: now });
+    t.last_post = now;
   },
 };
 
@@ -103,6 +141,27 @@ async function makePgStore() {
           better     text NOT NULL,
           updated    bigint NOT NULL,
           PRIMARY KEY (user_name, game, variant)
+        );
+        CREATE TABLE IF NOT EXISTS feedback (
+          id         serial PRIMARY KEY,
+          user_name  text NOT NULL,
+          game       text,
+          text       text NOT NULL,
+          created    bigint NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS threads (
+          id         serial PRIMARY KEY,
+          title      text NOT NULL,
+          author     text NOT NULL,
+          created    bigint NOT NULL,
+          last_post  bigint NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS posts (
+          id         serial PRIMARY KEY,
+          thread_id  integer NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+          author     text NOT NULL,
+          text       text NOT NULL,
+          created    bigint NOT NULL
         );
       `);
     },
@@ -152,6 +211,40 @@ async function makePgStore() {
       const r = await pg.query('SELECT * FROM scores');
       return r.rows;
     },
+    // ---- Feedback ----
+    async addFeedback(name, game, text) {
+      await pg.query('INSERT INTO feedback(user_name,game,text,created) VALUES($1,$2,$3,$4)', [name, game, text, Date.now()]);
+    },
+    async listFeedback(name) {
+      const r = name == null
+        ? await pg.query('SELECT * FROM feedback ORDER BY created DESC LIMIT 200')
+        : await pg.query('SELECT * FROM feedback WHERE lower(user_name)=lower($1) ORDER BY created DESC LIMIT 50', [name]);
+      return r.rows;
+    },
+    // ---- Forum ----
+    async createThread(author, title, text) {
+      const now = Date.now();
+      const r = await pg.query('INSERT INTO threads(title,author,created,last_post) VALUES($1,$2,$3,$3) RETURNING *', [title, author, now]);
+      await pg.query('INSERT INTO posts(thread_id,author,text,created) VALUES($1,$2,$3,$4)', [r.rows[0].id, author, text, now]);
+      return r.rows[0];
+    },
+    async listThreads() {
+      const r = await pg.query(`SELECT t.*, (SELECT count(*) FROM posts p WHERE p.thread_id=t.id)::int AS posts
+        FROM threads t ORDER BY t.last_post DESC LIMIT 100`);
+      return r.rows;
+    },
+    async getThread(id) {
+      const t = await pg.query('SELECT * FROM threads WHERE id=$1', [id]);
+      if (!t.rows[0]) return null;
+      const p = await pg.query('SELECT * FROM posts WHERE thread_id=$1 ORDER BY created ASC LIMIT 500', [id]);
+      return { ...t.rows[0], posts: p.rows };
+    },
+    async addPost(threadId, author, text) {
+      const now = Date.now();
+      const r = await pg.query('INSERT INTO posts(thread_id,author,text,created) SELECT $1,$2,$3,$4 WHERE EXISTS (SELECT 1 FROM threads WHERE id=$1) RETURNING id', [threadId, author, text, now]);
+      if (!r.rows[0]) throw new Error('no-thread');
+      await pg.query('UPDATE threads SET last_post=$2 WHERE id=$1', [threadId, now]);
+    },
   };
 }
 
@@ -184,4 +277,10 @@ export const db = {
   upsertScore: (...a) => store.upsertScore(...a),
   userScores: (...a) => store.userScores(...a),
   leaderboard: (...a) => store.leaderboard(...a),
+  addFeedback: (...a) => store.addFeedback(...a),
+  listFeedback: (...a) => store.listFeedback(...a),
+  createThread: (...a) => store.createThread(...a),
+  listThreads: (...a) => store.listThreads(...a),
+  getThread: (...a) => store.getThread(...a),
+  addPost: (...a) => store.addPost(...a),
 };
