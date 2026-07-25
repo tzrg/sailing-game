@@ -45,6 +45,13 @@ Docker-Container deployt.
   Ziggy, Otto), Kraftpillen mit Geister-Kettenbonus, Tunnel, Level mit
   steigendem Tempo; Highscore zählt für die Bestenliste. Wisch-Steuerung
   auf dem Handy.
+- **`maze.html` – 🧩 Super Maze**: prozedural generierte Labyrinthe mit
+  Laternen-Nebel (nur die Umgebung ist sichtbar), 3 versteckten Sternen pro
+  Level und Zeitlimit. Jedes Level wird größer; Punkte für Ankunft, Sterne
+  und Restzeit.
+- **`snake.html` – 🐍 Snake**: der Handy-Klassiker. Äpfel fressen, wachsen,
+  immer schneller; Bonus-Kirsche alle 5 Äpfel; Modi „Wände tödlich" oder
+  „Durchgang" (Wrap). Highscore für die Bestenliste.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
@@ -193,6 +200,8 @@ public/            statische Spielesammlung
   lemminge.html    🐭 Lemminge (Puzzle)
   gorilla.html     🦍 Gorillas (Bananen-Artillerie)
   mampf.html       🟡 Mampf (Labyrinth-Arcade)
+  maze.html        🧩 Super Maze (prozedurale Labyrinthe)
+  snake.html       🐍 Snake (Klassiker)
   style.css
   js/
     lib.js         Auth + Scores (Server mit localStorage-Fallback)
@@ -210,6 +219,8 @@ public/            statische Spielesammlung
     lemminge.js    Lemminge (Pixel-Gelände, Lauf-KI, Fähigkeiten, Level)
     gorilla.js     Gorillas (Skyline-Maske, Wurfphysik, Computer-Gegner)
     mampf.js       Mampf (Labyrinth, Geister-KI, Highscore)
+    maze.js        Super Maze (Backtracker-Generator, Nebel, Sterne)
+    snake.js       Snake (Grid, Wachstum, Bonus, zwei Modi)
 Dockerfile
 railway.json
 ```
