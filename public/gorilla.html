@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Gorillas</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🦍%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+ <div id="stage">
+  <canvas id="game"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+    <button id="btn-rotate" title="Drehen (Quer/Hoch)">⟳</button>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>🦍 Gorillas</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link" href="index.html">🏠</a>
+          <a class="game-link" href="sail.html">⛵</a>
+          <a class="game-link" href="auto.html">🏎</a>
+          <a class="game-link" href="mtb.html">🚵</a>
+          <a class="game-link" href="wurm.html">🐛</a>
+          <a class="game-link" href="lemminge.html">🐭</a>
+          <a class="game-link active" href="gorilla.html">🦍</a>
+          <a class="game-link" href="mampf.html">🟡</a>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Gegner</div>
+        <div class="seg">
+          <button id="mode-cpu" class="active">🤖 Computer</button>
+          <button id="mode-2p">👤 2 Spieler</button>
+        </div>
+        <button class="menu-btn" id="btn-restart">🔄 Neues Match</button>
+      </div>
+
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>🦍 Gorillas</h1>
+      <ul>
+        <li>Zwei Gorillas auf den Dächern werfen sich <b>Bananen</b> zu – wer den anderen trifft, macht den Punkt. <b>3 Punkte</b> gewinnen das Match.</li>
+        <li><b>Ziehen &amp; loslassen</b> (wie eine Steinschleuder): Finger irgendwo aufsetzen, in die Gegenrichtung ziehen – Pfeil zeigt Richtung und Kraft – loslassen = Wurf.</li>
+        <li>Achte auf den <b>Wind</b> (Pfeil oben) – er krümmt die Flugbahn!</li>
+        <li>Die <b>Häuser sind zerstörbar</b>: Jede Explosion sprengt Löcher in die Skyline. Grabe dich frei oder schieß durch die Lücken.</li>
+        <li>Nach jedem Punkt gibt es eine <b>neue Stadt</b> und neuen Wind.</li>
+        <li>Gegner im Menü wählbar: <b>🤖 Computer</b> (wirft mit jedem Versuch besser) oder <b>👤 2 Spieler</b> im Hotseat.</li>
+        <li>📱 Auf dem Handy startet das Spiel im Querformat – mit <b>⟳</b> umschalten.</li>
+      </ul>
+      <p>Hommage an den Artillerie-Urahn aus der QBasic-Ära – eigenständig neu gebaut.</p>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+ </div>
+
+  <script type="module" src="js/gorilla.js"></script>
+</body>
+</html>

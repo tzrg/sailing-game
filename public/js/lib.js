@@ -162,10 +162,13 @@ function parseKey(key, raw) {
   if (m) return { game: 'mtb', variant: `score_${m[1]}_${m[2]}`, label: BIKE_NAMES[m[2]] || m[2], sub: (MTB_TRACKS[m[1]] || m[1]) + ' · Score', value: raw, better: 'high' };
   m = key.match(/^mtb_([^_]+)_(.+)$/);
   if (m) return { game: 'mtb', variant: `time_${m[1]}_${m[2]}`, label: BIKE_NAMES[m[2]] || m[2], sub: (MTB_TRACKS[m[1]] || m[1]) + ' · Zeit', value: raw, better: 'low' };
+  if (key === 'mampf_best') return { game: 'mampf', variant: 'best', label: 'Highscore', sub: 'Arcade', value: raw, better: 'high' };
+  m = key.match(/^lem_best_(\d+)$/);
+  if (m) return { game: 'lem', variant: 'level' + m[1], label: 'Level ' + (parseInt(m[1], 10) + 1), sub: 'Gerettet', value: raw, better: 'high' };
   return null;
 }
 
-const GAME_TITLES = { sail: '⛵ Segeln', auto: '🏎 Autorennen', mtb: '🚵 Mountainbike' };
+const GAME_TITLES = { sail: '⛵ Segeln', auto: '🏎 Autorennen', mtb: '🚵 Mountainbike', mampf: '🟡 Mampf', lem: '🐭 Lemminge' };
 
 export const Scores = {
   // Alle lokalen Bestwerte als flache Liste.
@@ -182,9 +185,11 @@ export const Scores = {
 
   // Nach Spiel gruppiert (für die eigene Highscore-Anzeige).
   summary() {
-    const games = { sail: { title: GAME_TITLES.sail, entries: [] }, auto: { title: GAME_TITLES.auto, entries: [] }, mtb: { title: GAME_TITLES.mtb, entries: [] } };
+    const games = {};
+    for (const key of Object.keys(GAME_TITLES)) games[key] = { title: GAME_TITLES[key], entries: [] };
     for (const s of this.localList()) {
-      games[s.game].entries.push({ label: s.label, sub: s.sub, value: fmtValue(s.value, s.better), sort: s.better === 'high' ? -s.value : s.value });
+      (games[s.game] ||= { title: s.game, entries: [] }).entries
+        .push({ label: s.label, sub: s.sub, value: fmtValue(s.value, s.better), sort: s.better === 'high' ? -s.value : s.value });
     }
     for (const g of Object.values(games)) g.entries.sort((a, b) => a.sort - b.sort);
     return games;

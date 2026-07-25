@@ -97,11 +97,12 @@ html, body {
 
 .game-nav {
   display: flex;
+  flex-wrap: wrap;   /* bei vielen Spielen zweizeilig */
   gap: 6px;
 }
 
 .game-link {
-  flex: 1;
+  flex: 1 0 calc(25% - 6px);
   text-align: center;
   text-decoration: none;
   padding: 10px 0;

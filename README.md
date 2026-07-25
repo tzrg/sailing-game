@@ -35,6 +35,16 @@ Docker-Container deployt.
   (Kletterer, Schirm, Sprenger, Blocker, Bauer, Graben, Schräg-Graben,
   Buddler) lotst man genug von ihnen zum Ausgang. Zerstörbares Pixel-Gelände,
   vier Level.
+- **`gorilla.html` – 🦍 Gorillas**: Bananen-Artillerie über einer
+  zerstörbaren Skyline (Hommage an den QBasic-Urahn, eigenständig gebaut).
+  Steinschleuder-Steuerung (ziehen &amp; loslassen), Wind, erschrockene
+  Sonne; Hotseat oder gegen den Computer, der mit jedem Wurf besser zielt.
+  3 Punkte gewinnen, nach jedem Treffer gibt es eine neue Stadt.
+- **`mampf.html` – 🟡 Mampf**: Labyrinth-Fresser im Stil des
+  Arcade-Urgesteins. Vier Geister mit eigenen Persönlichkeiten (Rufus, Rosa,
+  Ziggy, Otto), Kraftpillen mit Geister-Kettenbonus, Tunnel, Level mit
+  steigendem Tempo; Highscore zählt für die Bestenliste. Wisch-Steuerung
+  auf dem Handy.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
@@ -181,6 +191,8 @@ public/            statische Spielesammlung
   mtb.html         🚵 Mountainbike
   wurm.html        🐛 Raupen · Caterpillars (inkl. Online-Lobby)
   lemminge.html    🐭 Lemminge (Puzzle)
+  gorilla.html     🦍 Gorillas (Bananen-Artillerie)
+  mampf.html       🟡 Mampf (Labyrinth-Arcade)
   style.css
   js/
     lib.js         Auth + Scores (Server mit localStorage-Fallback)
@@ -196,6 +208,8 @@ public/            statische Spielesammlung
     mtb.js         Mountainbike (komplett in einer Datei)
     wurm.js        Raupen · Caterpillars + Online-Netzcode
     lemminge.js    Lemminge (Pixel-Gelände, Lauf-KI, Fähigkeiten, Level)
+    gorilla.js     Gorillas (Skyline-Maske, Wurfphysik, Computer-Gegner)
+    mampf.js       Mampf (Labyrinth, Geister-KI, Highscore)
 Dockerfile
 railway.json
 ```
