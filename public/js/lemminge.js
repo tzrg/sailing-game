@@ -225,7 +225,13 @@ function update(dt) {
       case 'bash': tickBash(l, dt); break;
       case 'mine': tickMine(l, dt); break;
       case 'build': tickBuild(l, dt); break;
-      case 'block': break;
+      case 'block': {
+        // Klassisch: Boden unter dem Blocker weggraben/-sprengen -> er fällt
+        // und wird wieder ein normaler Läufer.
+        const fx = l.x | 0, fy = l.y | 0;
+        if (!solid(fx, fy + 1) && !solid(fx, fy + 2)) { l.state = 'fall'; l.fall = 0; }
+        break;
+      }
       case 'splat': l.t += dt; if (l.t > 0.6) killLem(l, true); break;
     }
     // Ausgang?
@@ -325,7 +331,6 @@ function nuke() {
 // ---- Fähigkeit zuweisen ----------------------------------------------------
 function assignSkill(worldX, worldY) {
   if (!game.skill || game.over) return;
-  if ((game.supply[game.skill] || 0) <= 0) return;
   // nächsten passenden Lemming in Reichweite finden (Tap-Toleranz ~28 Bildschirm-px)
   const R = 28 / S;
   let best = null, bestD = R * R;
@@ -336,12 +341,17 @@ function assignSkill(worldX, worldY) {
     if (d < bestD) { bestD = d; best = l; }
   }
   if (!best) return;
+  // Blocker-Fähigkeit auf einen Blocker = freilassen (kostenlos, auch bei leerem Vorrat)
+  if (game.skill === 'blocker' && best.state === 'block') {
+    best.state = 'walk';
+    refreshSkillbar();
+    return;
+  }
+  if ((game.supply[game.skill] || 0) <= 0) return;
   if (!applySkill(best, game.skill)) return;
   game.supply[game.skill]--;
-  if (game.supply[game.skill] <= 0 && !firstSupplyHas(game.skill)) { /* leer */ }
   refreshSkillbar();
 }
-function firstSupplyHas(k) { return (game.supply[k] || 0) > 0; }
 
 function applySkill(l, key) {
   switch (key) {
