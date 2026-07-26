@@ -23,6 +23,7 @@
   <!-- Upgrade-Panel (erscheint, wenn ein Turm gewählt ist) -->
   <div id="upgpanel" class="hidden">
     <div id="upg-info"></div>
+    <div id="upg-ammo" class="hidden"></div>
     <div id="upg-btns">
       <button id="upg-up" class="btn primary">⬆ Upgrade</button>
       <button id="upg-sell" class="btn">💰 Verkaufen</button>
@@ -54,6 +55,15 @@
         </div>
       </div>
 
+      <div class="menu-group">
+        <div class="group-title">Schwierigkeit</div>
+        <div class="seg">
+          <button id="diff-leicht">Leicht</button>
+          <button id="diff-normal" class="active">Normal</button>
+          <button id="diff-schwer">Schwer</button>
+        </div>
+      </div>
+
       <button class="menu-btn" id="btn-restart">🔄 Neues Spiel</button>
       <button class="menu-btn" id="btn-help">❓ Hilfe</button>
     </div>
@@ -67,8 +77,11 @@
         <li><b>Freies Feld antippen</b> → Turm bauen. <b>Turm antippen</b> → Upgrade (2×) oder Verkaufen (70 %).</li>
         <li><b>🔫 MG</b> – billig, schnell, Einzelziel · <b>💣 Granatkanone</b> – Flächenschaden · <b>📡 Laser</b> – durchbohrt alle in einer Linie</li>
         <li><b>🔥 Flammenwerfer</b> – kurze Reichweite, trifft alle im Umkreis + Brennschaden · <b>🚀 Raketen</b> – zielsuchend, dicker Schaden · <b>❄️ Vereiser</b> – verlangsamt alle im Umkreis</li>
-        <li><b>⚡ Blitzturm</b> – Kettenblitz springt von Gegner zu Gegner · <b>🧪 Giftschleuder</b> – wirft ätzende Giftpfützen auf den Weg · <b>🌪️ Windmaschine</b> – pustet Gegner den Parcours <b>zurück</b> · <b>💰 Goldmine</b> – schürft stetig Gold (macht keinen Schaden)</li>
+        <li><b>⚡ Blitzturm</b> – Kettenblitz springt von Gegner zu Gegner · <b>🧪 Giftschleuder</b> – wirft ätzende Giftpfützen auf den Weg · <b>🌪️ Windmaschine</b> – pustet Gegner den Parcours <b>zurück</b> (danach kurz windfest) · <b>💰 Goldmine</b> – schürft stetig Gold · <b>🎯 Kanone</b> – kinetisches Geschoss: viel Schaden, lange Reichweite, kein Splash</li>
+        <li><b>Panzerung:</b> Panzer und späte Bosse tragen graue <b>Rüstung</b> (eigener Balken). Sie schluckt Feuer, Blitz, Explosion und Gift fast komplett – <b>Kinetik (MG/Kanone) und Laser</b> zerlegen sie. Erst wenn sie zerspringt, wirkt alles voll.</li>
+        <li><b>MG-Spezialmunition</b> (im Upgrade-Panel, einmalig): <b>🔥 Brandmarkierer</b> – Getroffene nehmen 4 s lang 50 % mehr Feuerschaden · <b>⚡ Ionisiert</b> – 50 % mehr Blitzschaden · <b>🔩 Wolframkern</b> – das MG selbst macht 60 % mehr Schaden und ist extrem panzerbrechend</li>
         <li>In die <b>Teiche</b> kann nicht gebaut werden.</li>
+        <li><b>Schwierigkeit</b> im ☰-Menü: Leicht (20 ❤️, sanfter Anstieg), Normal (15 ❤️) oder Schwer (10 ❤️, steiler Anstieg).</li>
         <li><b>Geld</b> gibt's pro Abschuss und als Wellen-Bonus. Jede Welle wird härter: Renner (schnell), Panzer (zäh), Regenerierer und alle 8 Wellen <b>Bosse</b> (später im Rudel!).</li>
         <li><b>▶</b> startet die nächste Welle sofort (Bonus fürs Frühstarten!), <b>⏩</b> schaltet das Tempo 1×/2×/3×/5× um.</li>
         <li>Highscore = höchste erreichte Welle, zählt für die Bestenliste.</li>

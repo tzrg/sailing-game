@@ -35,31 +35,36 @@ function tileHash(x, y) { return ((x * 73856093) ^ (y * 19349663)) >>> 0; }
 // levels[i]: cost = Kosten für Bau (i=0) bzw. Upgrade. dmg/rate für Schüsse,
 // dps für Dauerstrahler, slow für Aura. range in Kacheln.
 const TOWERS = {
-  mg: { name: 'MG', icon: '🔫', color: '#8fa3b8', desc: 'schnell, Einzelziel',
+  mg: { name: 'MG', icon: '🔫', color: '#8fa3b8', desc: 'schnell, Einzelziel; Spezialmunition wählbar',
     levels: [
-      { cost: 45, dmg: 7, rate: 4.5, range: 2.4 },
-      { cost: 55, dmg: 13, rate: 5.5, range: 2.6 },
-      { cost: 100, dmg: 24, rate: 6.5, range: 2.9 }] },
-  grenade: { name: 'Granatkanone', icon: '💣', color: '#c9a15a', desc: 'Flächenschaden',
+      { cost: 45, dmg: 6, rate: 4.5, range: 2.4 },
+      { cost: 55, dmg: 11, rate: 5.5, range: 2.6 },
+      { cost: 100, dmg: 19, rate: 6.5, range: 2.9 }] },
+  cannon: { name: 'Kanone', icon: '🎯', color: '#7a8a6a', desc: 'Kinetik: viel Schaden, weit, knackt Panzerung',
     levels: [
-      { cost: 80, dmg: 26, rate: 0.9, range: 2.6, splash: 1.15 },
-      { cost: 90, dmg: 48, rate: 1.0, range: 2.9, splash: 1.3 },
-      { cost: 160, dmg: 90, rate: 1.15, range: 3.2, splash: 1.5 }] },
-  laser: { name: 'Laser', icon: '📡', color: '#e06fd8', desc: 'durchbohrt alles in einer Linie',
+      { cost: 125, dmg: 85, rate: 0.5, range: 4.2 },
+      { cost: 135, dmg: 160, rate: 0.55, range: 4.5 },
+      { cost: 245, dmg: 300, rate: 0.6, range: 4.8 }] },
+  grenade: { name: 'Granatkanone', icon: '💣', color: '#c9a15a', desc: 'Flächenschaden (prallt an Panzerung ab)',
     levels: [
-      { cost: 110, dps: 24, range: 3.4 },
-      { cost: 120, dps: 46, range: 3.7 },
-      { cost: 210, dps: 85, range: 4.0 }] },
+      { cost: 80, dmg: 22, rate: 0.9, range: 2.6, splash: 1.15 },
+      { cost: 90, dmg: 40, rate: 1.0, range: 2.9, splash: 1.3 },
+      { cost: 160, dmg: 75, rate: 1.15, range: 3.2, splash: 1.5 }] },
+  laser: { name: 'Laser', icon: '📡', color: '#e06fd8', desc: 'durchbohrt Linie UND Panzerung',
+    levels: [
+      { cost: 110, dps: 20, range: 3.4 },
+      { cost: 120, dps: 38, range: 3.7 },
+      { cost: 210, dps: 70, range: 4.0 }] },
   flame: { name: 'Flammenwerfer', icon: '🔥', color: '#e0703a', desc: 'Umkreis + Brennschaden',
     levels: [
-      { cost: 85, dps: 24, range: 1.9, burn: 7 },
-      { cost: 95, dps: 44, range: 2.1, burn: 13 },
-      { cost: 170, dps: 80, range: 2.3, burn: 24 }] },
+      { cost: 85, dps: 16, range: 1.9, burn: 5 },
+      { cost: 95, dps: 30, range: 2.1, burn: 10 },
+      { cost: 170, dps: 55, range: 2.3, burn: 18 }] },
   rocket: { name: 'Raketenturm', icon: '🚀', color: '#b04a4a', desc: 'zielsuchend, hoher Schaden',
     levels: [
-      { cost: 130, dmg: 60, rate: 0.55, range: 3.6, splash: 0.9 },
-      { cost: 140, dmg: 110, rate: 0.62, range: 3.9, splash: 1.05 },
-      { cost: 240, dmg: 200, rate: 0.7, range: 4.2, splash: 1.2 }] },
+      { cost: 130, dmg: 50, rate: 0.55, range: 3.6, splash: 0.9 },
+      { cost: 140, dmg: 95, rate: 0.62, range: 3.9, splash: 1.05 },
+      { cost: 240, dmg: 170, rate: 0.7, range: 4.2, splash: 1.2 }] },
   ice: { name: 'Vereiser', icon: '❄️', color: '#6fc4e0', desc: 'verlangsamt im Umkreis',
     levels: [
       { cost: 55, slow: 0.35, range: 2.1 },
@@ -67,25 +72,33 @@ const TOWERS = {
       { cost: 110, slow: 0.55, range: 2.8 }] },
   tesla: { name: 'Blitzturm', icon: '⚡', color: '#ffe66e', desc: 'Kettenblitz springt von Gegner zu Gegner',
     levels: [
-      { cost: 120, dmg: 34, rate: 1.1, range: 2.7, chain: 3 },
-      { cost: 130, dmg: 60, rate: 1.25, range: 3.0, chain: 4 },
-      { cost: 230, dmg: 110, rate: 1.4, range: 3.3, chain: 6 }] },
+      { cost: 120, dmg: 28, rate: 1.1, range: 2.7, chain: 3 },
+      { cost: 130, dmg: 50, rate: 1.25, range: 3.0, chain: 4 },
+      { cost: 230, dmg: 92, rate: 1.4, range: 3.3, chain: 6 }] },
   gift: { name: 'Giftschleuder', icon: '🧪', color: '#8ad84a', desc: 'hinterlässt ätzende Giftpfützen',
     levels: [
-      { cost: 95, dps: 16, rate: 0.45, range: 3.0, pool: 0.95, dur: 4 },
-      { cost: 105, dps: 30, rate: 0.5, range: 3.3, pool: 1.1, dur: 4.5 },
-      { cost: 185, dps: 55, rate: 0.55, range: 3.6, pool: 1.25, dur: 5 }] },
-  wind: { name: 'Windmaschine', icon: '🌪️', color: '#9fd8d0', desc: 'pustet Gegner den Weg zurück!',
+      { cost: 95, dps: 13, rate: 0.45, range: 3.0, pool: 0.95, dur: 4 },
+      { cost: 105, dps: 25, rate: 0.5, range: 3.3, pool: 1.1, dur: 4.5 },
+      { cost: 185, dps: 45, rate: 0.55, range: 3.6, pool: 1.25, dur: 5 }] },
+  wind: { name: 'Windmaschine', icon: '🌪️', color: '#9fd8d0', desc: 'pustet Gegner zurück (danach kurz windfest)',
     levels: [
-      { cost: 100, push: 1.5, rate: 0.22, range: 2.6 },
-      { cost: 110, push: 2.3, rate: 0.26, range: 2.9 },
-      { cost: 200, push: 3.2, rate: 0.3, range: 3.2 }] },
+      { cost: 100, push: 0.9, rate: 0.18, range: 2.6 },
+      { cost: 110, push: 1.4, rate: 0.2, range: 2.9 },
+      { cost: 200, push: 2.0, rate: 0.22, range: 3.2 }] },
   gold: { name: 'Goldmine', icon: '💰', color: '#d8b84a', desc: 'schürft stetig Gold (kein Schaden)',
     levels: [
       { cost: 100, gold: 2, interval: 3 },
-      { cost: 120, gold: 5, interval: 3.1 },
-      { cost: 220, gold: 8, interval: 3.2 }] },
+      { cost: 120, gold: 4, interval: 3.1 },
+      { cost: 220, gold: 7, interval: 3.2 }] },
 };
+
+// ---- Schwierigkeitsgrade ---------------------------------------------------
+const DIFFS = {
+  leicht: { label: 'Leicht', hpMul: 0.8, growth: 1.16, lives: 20, money: 140 },
+  normal: { label: 'Normal', hpMul: 1.0, growth: 1.18, lives: 15, money: 120 },
+  schwer: { label: 'Schwer', hpMul: 1.3, growth: 1.2, lives: 10, money: 100 },
+};
+let DIFF = DIFFS.normal;
 
 // ---- Zustand ---------------------------------------------------------------
 const game = {
@@ -105,7 +118,7 @@ const MAX_PARTS = 520;
 function spawnPart(p) { if (parts.length < MAX_PARTS) { p.t = 0; parts.push(p); } }
 
 function newGame() {
-  game.money = 120; game.lives = 15; game.wave = 0;
+  game.money = DIFF.money; game.lives = DIFF.lives; game.wave = 0;
   game.state = 'build'; game.speed = 1; game.nextT = 0;
   game.toSpawn = []; game.sel = null; game.banner = ''; game.bannerT = 0;
   towers = []; enemies = []; shots = []; towerAt = {}; parts = [];
@@ -114,7 +127,7 @@ function newGame() {
 }
 
 // ---- Wellen ----------------------------------------------------------------
-function baseHp(w) { return 30 * Math.pow(1.18, w - 1) + 10 * (w - 1); }
+function baseHp(w) { return (30 * Math.pow(DIFF.growth, w - 1) + 10 * (w - 1)) * DIFF.hpMul; }
 function bounty(w, mult) { return Math.round((3 + w * 0.55) * mult); }
 
 function buildWave(w) {
@@ -135,9 +148,9 @@ function buildWave(w) {
 const ETYPES = {
   blob: { hp: 1.0, speed: 1.5, mult: 1.0, color: '#7dc95e', r: 0.28 },
   runner: { hp: 0.6, speed: 2.6, mult: 1.1, color: '#e0d05a', r: 0.24 },
-  tank: { hp: 3.2, speed: 0.95, mult: 2.5, color: '#8a6fb8', r: 0.34 },
+  tank: { hp: 2.6, speed: 0.95, mult: 2.5, color: '#8a6fb8', r: 0.34, armor: 0.5 },
   regen: { hp: 1.7, speed: 1.2, mult: 1.8, color: '#5ac9a8', r: 0.3, regen: 0.02 },
-  boss: { hp: 15, speed: 0.55, mult: 12, color: '#d84a6a', r: 0.44, boss: true },
+  boss: { hp: 14, speed: 0.55, mult: 12, color: '#d84a6a', r: 0.44, boss: true, armor: 0.3 },
 };
 
 function startWave() {
@@ -160,6 +173,8 @@ function spawnEnemy(type) {
     type, hp, maxHp: hp, speed: t.speed, pathI: 0, frac: 0,
     x: sx + 0.5, y: sy + 0.5, slowT: 0, slowF: 0, burnT: 0, burnDps: 0,
     bounty: bounty(game.wave, t.mult), boss: !!t.boss, regen: t.regen || 0,
+    armorHp: t.armor ? hp * t.armor : 0, maxArmor: t.armor ? hp * t.armor : 0,
+    vulnFire: 0, vulnShock: 0, windCd: 0,
     r: t.r, color: t.color, wob: Math.random() * TAU,
   });
 }
@@ -169,7 +184,10 @@ function progress(e) { return e.pathI + e.frac; }
 
 function stepEnemy(e, dt) {
   if (e.slowT > 0) e.slowT -= dt; else e.slowF = 0;
-  if (e.burnT > 0) { e.burnT -= dt; e.hp -= e.burnDps * dt; }
+  if (e.vulnFire > 0) e.vulnFire -= dt;
+  if (e.vulnShock > 0) e.vulnShock -= dt;
+  if (e.windCd > 0) e.windCd -= dt;
+  if (e.burnT > 0) { e.burnT -= dt; damage(e, e.burnDps * dt, 'fire'); }
   if (e.regen) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * e.regen * dt);
   const spd = e.speed * (1 - e.slowF);
   e.frac += spd * dt;
@@ -182,8 +200,30 @@ function stepEnemy(e, dt) {
   e.y = ay + 0.5 + (by - ay) * e.frac;
 }
 
-function damage(e, amt) {
+// Schadenstypen: kinetic | laser | fire | shock | explosive | poison
+// Panzerung schluckt Feuer/Blitz/Explosion/Gift fast komplett, wird aber von
+// Kinetik (x1.5, Wolfram x2.2) und Laser (x1) effektiv zerlegt.
+function damage(e, amt, type = 'kinetic', ap = false) {
+  if (type === 'fire' && e.vulnFire > 0) amt *= 1.5;
+  if (type === 'shock' && e.vulnShock > 0) amt *= 1.5;
+  if (e.armorHp > 0) {
+    let mult = 0.25;
+    if (type === 'kinetic') mult = ap ? 2.2 : 1.5;
+    else if (type === 'laser') mult = 1.0;
+    e.armorHp -= amt * mult;
+    if (e.armorHp <= 0) { e.armorHp = 0; armorBreak(e); }
+    return;
+  }
   e.hp -= amt;
+}
+
+// Panzerung zerspringt: graue Scherben + Ring
+function armorBreak(e) {
+  spawnPart({ kind: 'pop', x: e.x, y: e.y, r: e.r * 2.0, ttl: 0.25, color: '#c8d2da' });
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * TAU, sp = 1.5 + Math.random() * 2.5;
+    spawnPart({ kind: 'shard', x: e.x, y: e.y - 0.1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.8, ttl: 0.5, rot: Math.random() * TAU });
+  }
 }
 
 // ---- Türme: Zielwahl & Feuern ----------------------------------------------
@@ -246,7 +286,7 @@ function stepTower(t, dt) {
     // Kettenblitz: springt zu den jeweils nächsten, noch nicht getroffenen Gegnern
     const hit = [target];
     let cur = target, dmg = s.dmg;
-    damage(cur, dmg);
+    damage(cur, dmg, 'shock');
     for (let j = 1; j < s.chain; j++) {
       let next = null, nd = 2.3;
       for (const e of enemies) {
@@ -256,7 +296,7 @@ function stepTower(t, dt) {
       }
       if (!next) break;
       dmg *= 0.75;
-      damage(next, dmg);
+      damage(next, dmg, 'shock');
       hit.push(next);
       cur = next;
     }
@@ -284,8 +324,8 @@ function stepTower(t, dt) {
     if (t.cd > 0) return;
     let any = false;
     for (const e of enemies) {
-      if (e.dead || e.escaped) continue;
-      if (Math.hypot(e.x - cx, e.y - cy) <= s.range) { pushBack(e, s.push); any = true; }
+      if (e.dead || e.escaped || e.windCd > 0) continue;
+      if (Math.hypot(e.x - cx, e.y - cy) <= s.range) { pushBack(e, s.push); e.windCd = 2.5; any = true; }
     }
     if (any) {
       t.cd = 1 / s.rate;
@@ -328,7 +368,7 @@ function stepTower(t, dt) {
       if (along < 0 || along > len) continue;
       const dist = Math.abs(px * dy - py * dx);
       if (dist < 0.38 + e.r * 0.5) {
-        damage(e, s.dps * dt);
+        damage(e, s.dps * dt, 'laser');
         // Brutzel-Funken am Auftreffpunkt
         if (Math.random() < dt * 9) spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.1, vx: (Math.random() - 0.5) * 2, vy: -1 - Math.random(), ttl: 0.25, color: '#ff9ef0' });
       }
@@ -342,7 +382,7 @@ function stepTower(t, dt) {
       if (e.dead || e.escaped) continue;
       const d = Math.hypot(e.x - cx, e.y - cy);
       if (d <= s.range) {
-        damage(e, s.dps * dt);
+        damage(e, s.dps * dt, 'fire');
         e.burnT = Math.max(e.burnT, 2.5); e.burnDps = Math.max(e.burnDps, s.burn);
         any = true;
         if (d < nd) { nd = d; nearest = e; }
@@ -372,13 +412,27 @@ function stepTower(t, dt) {
   t.kick = 1;   // Rückstoß-Animation
 
   if (t.type === 'mg') {
-    damage(target, s.dmg);
-    shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.07 });
+    let dmg = s.dmg;
+    if (t.ammo === 'tungsten') dmg *= 1.6;
+    damage(target, dmg, 'kinetic', t.ammo === 'tungsten');
+    if (t.ammo === 'fire') target.vulnFire = 4;      // Brandmarkierer: nimmt 4s mehr Feuerschaden
+    if (t.ammo === 'shock') target.vulnShock = 4;    // Ionisiert: nimmt 4s mehr Blitzschaden
+    const tcol = t.ammo === 'fire' ? 'rgba(255,150,60,0.95)' : t.ammo === 'shock' ? 'rgba(140,190,255,0.95)' : t.ammo === 'tungsten' ? 'rgba(240,248,255,1)' : 'rgba(255,240,180,0.9)';
+    shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.07, color: tcol });
     // Mündungsfeuer + Einschlagsfunken
     spawnPart({ kind: 'muzzle', x: cx + Math.cos(t.angle) * 0.45, y: cy + Math.sin(t.angle) * 0.45, a: t.angle, ttl: 0.06, size: 0.2 });
     for (let i = 0; i < 3; i++) {
       const a = t.angle + Math.PI + (Math.random() - 0.5) * 1.6;
       spawnPart({ kind: 'spark', x: target.x, y: target.y - 0.1, vx: Math.cos(a) * (1 + Math.random() * 2), vy: Math.sin(a) * 2 - 1.2, ttl: 0.3, color: '#ffd27f' });
+    }
+  } else if (t.type === 'cannon') {
+    damage(target, s.dmg, 'kinetic');
+    shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.1, color: 'rgba(255,255,255,0.95)', w: 3 });
+    spawnPart({ kind: 'muzzle', x: cx + Math.cos(t.angle) * 0.5, y: cy + Math.sin(t.angle) * 0.5, a: t.angle, ttl: 0.09, size: 0.3 });
+    spawnPart({ kind: 'smoke', x: cx + Math.cos(t.angle) * 0.55, y: cy + Math.sin(t.angle) * 0.55, vx: Math.cos(t.angle) * 0.8, vy: -0.3, ttl: 0.6, size: 0.15 });
+    for (let i = 0; i < 5; i++) {
+      const a = t.angle + Math.PI + (Math.random() - 0.5) * 1.2;
+      spawnPart({ kind: 'spark', x: target.x, y: target.y - 0.1, vx: Math.cos(a) * (1.5 + Math.random() * 2.5), vy: Math.sin(a) * 2.5 - 1.5, ttl: 0.35, color: '#fff0c0' });
     }
   } else if (t.type === 'grenade') {
     shots.push({ kind: 'lob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.45, dmg: s.dmg, splash: s.splash });
@@ -392,7 +446,7 @@ function splashDamage(x, y, radius, dmg) {
   for (const e of enemies) {
     if (e.dead || e.escaped) continue;
     const d = Math.hypot(e.x - x, e.y - y);
-    if (d <= radius + e.r) damage(e, dmg * clamp(1 - d / (radius + e.r) * 0.5, 0.5, 1));
+    if (d <= radius + e.r) damage(e, dmg * clamp(1 - d / (radius + e.r) * 0.5, 0.5, 1), 'explosive');
   }
   shots.push({ kind: 'boom', x, y, r: radius, t: 0, ttl: 0.3 });
   // Druckwelle, Splitter und Rauch
@@ -413,7 +467,7 @@ function stepShot(sh, dt) {
     // Giftpfütze: ätzt alle, die drin stehen
     for (const e of enemies) {
       if (e.dead || e.escaped) continue;
-      if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.r + e.r * 0.5) damage(e, sh.dps * dt);
+      if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.r + e.r * 0.5) damage(e, sh.dps * dt, 'poison');
     }
     if (Math.random() < dt * 8) spawnPart({ kind: 'bubble', x: sh.x + (Math.random() - 0.5) * sh.r * 1.4, y: sh.y + (Math.random() - 0.5) * sh.r * 1.0, vx: 0, vy: -0.4, ttl: 0.5 });
     return sh.t >= sh.ttl;
@@ -517,7 +571,7 @@ function update(dt) {
     if (p.t >= p.ttl) { parts.splice(i, 1); continue; }
     if (p.vx !== undefined) { p.x += p.vx * dt; p.y += p.vy * dt; }
     if (p.kind === 'flame') { p.vy -= 1.4 * dt; p.vx *= 1 - dt * 1.5; }        // Flammen steigen auf
-    else if (p.kind === 'spark' || p.kind === 'debris') p.vy += 7 * dt;        // Funken/Splitter fallen
+    else if (p.kind === 'spark' || p.kind === 'debris' || p.kind === 'shard') p.vy += 7 * dt;   // Funken/Splitter/Scherben fallen
     else if (p.kind === 'smoke') p.vy -= 0.4 * dt;                             // Rauch steigt
     else if (p.kind === 'snow') p.x += Math.sin(p.t * 4 + p.ph) * dt * 0.5;    // Schnee taumelt
     else if (p.kind === 'leaf') { p.vx *= 1 - dt * 2; p.vy = p.vy * (1 - dt * 2) + 1.2 * dt; }   // Blätter verwirbeln
@@ -757,6 +811,12 @@ function drawParts() {
       ctx.globalAlpha = 1 - f;
       ctx.fillStyle = p.color || '#ffd27f';
       ctx.fillRect(p.x * T - 1.6, p.y * T - 1.6, 3.2, 3.2);
+    } else if (p.kind === 'shard') {
+      ctx.globalAlpha = 1 - f;
+      ctx.save(); ctx.translate(p.x * T, p.y * T); ctx.rotate(p.rot || 0);
+      ctx.fillStyle = '#aab6c0';
+      ctx.beginPath(); ctx.moveTo(0, -2.6); ctx.lineTo(2.2, 1.8); ctx.lineTo(-2.2, 1.8); ctx.closePath(); ctx.fill();
+      ctx.restore();
     } else if (p.kind === 'debris') {
       ctx.globalAlpha = 1 - f;
       ctx.save(); ctx.translate(p.x * T, p.y * T); ctx.rotate(p.rot || 0);
@@ -821,6 +881,19 @@ function drawEnemy(e, time) {
   ctx.beginPath(); ctx.arc(-e.r * T * 0.3, -e.r * T * 0.35, e.r * T * 0.32, 0, TAU); ctx.fill();
   if (e.slowF > 0) { ctx.strokeStyle = 'rgba(140,220,255,0.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, e.r * T, 0, TAU); ctx.stroke(); }
   ctx.restore();
+  // Panzerplatten (solange Rüstung intakt)
+  if (e.armorHp > 0) {
+    ctx.strokeStyle = '#b8c4cc'; ctx.lineWidth = Math.max(2, T * 0.09);
+    ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.05, 0, TAU); ctx.stroke();
+    ctx.fillStyle = '#98a6b0';
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * TAU + 0.4;
+      ctx.beginPath(); ctx.arc(cx + Math.cos(a) * e.r * T * 1.05, cy + wob + Math.sin(a) * e.r * T * 1.05, T * 0.045, 0, TAU); ctx.fill();
+    }
+  }
+  // Verwundbarkeits-Markierungen (Spezialmunition)
+  if (e.vulnFire > 0) { ctx.strokeStyle = 'rgba(255,140,50,0.9)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.35, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
+  if (e.vulnShock > 0) { ctx.strokeStyle = 'rgba(120,180,255,0.9)'; ctx.setLineDash([2, 4]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.5, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText('🔥', cx, cy - e.r * T - T * 0.12); }
   // Augen blicken in Laufrichtung
   const [pax, pay] = PATH[e.pathI], [pbx, pby] = PATH[Math.min(e.pathI + 1, PATH.length - 1)];
@@ -841,30 +914,57 @@ function drawEnemy(e, time) {
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(cx - w / 2, cy - e.r * T - T * 0.16, w, T * 0.09);
   ctx.fillStyle = e.hp / e.maxHp > 0.4 ? '#7dc95e' : '#e05a4a';
   ctx.fillRect(cx - w / 2, cy - e.r * T - T * 0.16, w * clamp(e.hp / e.maxHp, 0, 1), T * 0.09);
+  if (e.maxArmor > 0 && e.armorHp > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(cx - w / 2, cy - e.r * T - T * 0.28, w, T * 0.07);
+    ctx.fillStyle = '#c8d2da';
+    ctx.fillRect(cx - w / 2, cy - e.r * T - T * 0.28, w * clamp(e.armorHp / e.maxArmor, 0, 1), T * 0.07);
+  }
 }
 
 function drawShot(sh) {
   if (sh.kind === 'tracer') {
-    ctx.strokeStyle = 'rgba(255,240,180,0.9)'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = sh.color || 'rgba(255,240,180,0.9)'; ctx.lineWidth = sh.w || 1.5;
     ctx.beginPath(); ctx.moveTo(sh.x1 * T, sh.y1 * T); ctx.lineTo(sh.x2 * T, sh.y2 * T); ctx.stroke();
   } else if (sh.kind === 'zap') {
-    // Kettenblitz: gezackte Segmente, die pro Frame neu zittern
-    ctx.globalAlpha = 1 - sh.t / sh.ttl;
-    for (const w of [[4.5, 'rgba(150,190,255,0.5)'], [2, '#fff']]) {
+    // Kettenblitz: dreifacher Strahl (Glow, Kern, Weißglut), wildes Zittern,
+    // kleine Verästelungen und grelle Blitzlichter an jedem Treffer
+    const flick = Math.random() < 0.25 ? 0.4 : 1;   // Flackern
+    ctx.globalAlpha = (1 - sh.t / sh.ttl) * flick;
+    for (const w of [[8, 'rgba(120,170,255,0.28)'], [3.4, 'rgba(170,210,255,0.85)'], [1.4, '#ffffff']]) {
       ctx.strokeStyle = w[1]; ctx.lineWidth = w[0];
       ctx.beginPath();
       for (let i = 0; i < sh.pts.length - 1; i++) {
         const [x1, y1] = sh.pts[i], [x2, y2] = sh.pts[i + 1];
         ctx.moveTo(x1 * T, y1 * T);
-        const segs = 4;
+        const segs = 6;
         for (let sgi = 1; sgi <= segs; sgi++) {
           const f = sgi / segs;
-          const jx = sgi < segs ? (Math.random() - 0.5) * 0.24 : 0;
-          const jy = sgi < segs ? (Math.random() - 0.5) * 0.24 : 0;
+          const jx = sgi < segs ? (Math.random() - 0.5) * 0.34 : 0;
+          const jy = sgi < segs ? (Math.random() - 0.5) * 0.34 : 0;
           ctx.lineTo((x1 + (x2 - x1) * f + jx) * T, (y1 + (y2 - y1) * f + jy) * T);
         }
       }
       ctx.stroke();
+    }
+    // Verästelungen: kurze Seitenblitze
+    ctx.strokeStyle = 'rgba(190,220,255,0.7)'; ctx.lineWidth = 1;
+    for (let i = 0; i < sh.pts.length - 1; i++) {
+      if (Math.random() < 0.6) {
+        const [x1, y1] = sh.pts[i], [x2, y2] = sh.pts[i + 1];
+        const f = Math.random();
+        const bx = (x1 + (x2 - x1) * f) * T, by = (y1 + (y2 - y1) * f) * T;
+        const a = Math.random() * TAU;
+        ctx.beginPath(); ctx.moveTo(bx, by);
+        ctx.lineTo(bx + Math.cos(a) * T * 0.35, by + Math.sin(a) * T * 0.35);
+        ctx.lineTo(bx + Math.cos(a + 0.5) * T * 0.55, by + Math.sin(a + 0.5) * T * 0.55);
+        ctx.stroke();
+      }
+    }
+    // Blitzlicht an jedem getroffenen Gegner
+    for (let i = 1; i < sh.pts.length; i++) {
+      const [hx, hy] = sh.pts[i];
+      ctx.fillStyle = 'rgba(220,240,255,0.8)';
+      ctx.beginPath(); ctx.arc(hx * T, hy * T, T * 0.2 * (1 - sh.t / sh.ttl), 0, TAU); ctx.fill();
     }
     ctx.globalAlpha = 1;
   } else if (sh.kind === 'pool') {
@@ -1055,9 +1155,54 @@ function showUpgpanel(t) {
     delete towerAt[t.x + ',' + t.y];
     hidePanels();
   };
+  renderAmmo(t);
   upgpanel.classList.remove('hidden');
 }
+// MG-Spezialmunition: einmalige, exklusive Wahl pro MG-Turm
+const AMMO = {
+  fire: { name: 'Brandmarkierer', icon: '🔥', cost: 90, desc: '+50% Feuerschaden auf Getroffene (4s)' },
+  shock: { name: 'Ionisiert', icon: '⚡', cost: 90, desc: '+50% Blitzschaden auf Getroffene (4s)' },
+  tungsten: { name: 'Wolframkern', icon: '🔩', cost: 90, desc: '+60% Schaden, extrem panzerbrechend' },
+};
+function renderAmmo(t) {
+  const box = document.getElementById('upg-ammo');
+  if (t.type !== 'mg') { box.classList.add('hidden'); return; }
+  box.innerHTML = '';
+  if (t.ammo) {
+    const a = AMMO[t.ammo];
+    const div = document.createElement('div');
+    div.className = 'ammo-chosen';
+    div.textContent = `${a.icon} ${a.name} geladen – ${a.desc}`;
+    box.appendChild(div);
+  } else {
+    for (const [key, a] of Object.entries(AMMO)) {
+      const b = document.createElement('button');
+      b.className = 'ammo-btn';
+      b.textContent = `${a.icon} ${a.name} (${a.cost} 💰)`;
+      b.title = a.desc;
+      b.disabled = game.money < a.cost;
+      b.addEventListener('click', () => {
+        if (game.money < a.cost || t.ammo) return;
+        game.money -= a.cost;
+        t.ammo = key;
+        renderAmmo(t);
+      });
+      box.appendChild(b);
+    }
+  }
+  box.classList.remove('hidden');
+}
 document.getElementById('upg-close').addEventListener('click', hidePanels);
+
+// Schwierigkeit umschalten (startet neues Spiel)
+for (const key of ['leicht', 'normal', 'schwer']) {
+  document.getElementById('diff-' + key).addEventListener('click', () => {
+    DIFF = DIFFS[key];
+    for (const k2 of ['leicht', 'normal', 'schwer']) document.getElementById('diff-' + k2).classList.toggle('active', k2 === key);
+    menuEl.classList.add('hidden');
+    newGame();
+  });
+}
 
 canvas.addEventListener('pointerdown', (e) => {
   if (game.state === 'over') { newGame(); return; }
