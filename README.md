@@ -52,6 +52,15 @@ Docker-Container deployt.
 - **`snake.html` – 🐍 Snake**: der Handy-Klassiker. Äpfel fressen, wachsen,
   immer schneller; Bonus-Kirsche alle 5 Äpfel; Modi „Wände tödlich" oder
   „Durchgang" (Wrap). Highscore für die Bestenliste.
+- **`td.html` – 🏰 Tower Defense**: endlose Wellen auf einem
+  Schlangenlinien-Parcours, drei Schwierigkeitsgrade, zwölf Turmtypen
+  (MG, Kanone, Granatkanone, Laser, Flammenwerfer mit Feuerkegel, Raketen,
+  Vereiser, Blitzturm, Giftschleuder, Windmaschine, Goldmine,
+  Kommandozentrale). Schadensarten + **Panzerung** (Kinetik/Laser knacken
+  sie), pro Turm einmalige **Spezialisierungen** (Spezialmunition,
+  Schaden-oder-Reichweite, mehr Kettenziele, breiterer Feuerkegel) und die
+  Kommandozentrale schaltet **☢️ Nuke** und **🛰️ Orbital-Laser** frei
+  (je 1× pro Welle). Höchste Welle zählt für die Bestenliste.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation

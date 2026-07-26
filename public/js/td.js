@@ -1,5 +1,6 @@
 // Tower Defense – Monster laufen den Parcours entlang, Türme halten sie auf.
-// Sechs Turmtypen mit je drei Stufen, Geld pro Abschuss, endlose Wellen.
+// Zwölf Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
+// endlose Wellen. Die Kommandozentrale schaltet Nuke + Orbital-Laser frei.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const TAU = Math.PI * 2;
@@ -90,7 +91,45 @@ const TOWERS = {
       { cost: 100, gold: 2, interval: 3 },
       { cost: 120, gold: 4, interval: 3.1 },
       { cost: 220, gold: 7, interval: 3.2 }] },
+  command: { name: 'Kommandozentrale', icon: '🛰️', color: '#c0c8e8', desc: 'schaltet ☢️ Nuke + 🛰️ Orbital-Laser frei (je 1× pro Welle)',
+    levels: [
+      { cost: 400 }] },
 };
+
+// ---- Spezialisierungen: exklusive Entweder-oder-Wahl pro Turm --------------
+const AMMO_SPECS = [
+  { key: 'fire', icon: '🔥', name: 'Brandmarkierer', cost: 90, desc: '+50% Feuerschaden auf Getroffene (4s)' },
+  { key: 'shock', icon: '⚡', name: 'Ionisiert', cost: 90, desc: '+50% Blitzschaden auf Getroffene (4s)' },
+  { key: 'tungsten', icon: '🔩', name: 'Wolframkern', cost: 90, desc: '+60% Schaden, extrem panzerbrechend' },
+];
+const SPECS = {
+  mg: AMMO_SPECS,
+  cannon: AMMO_SPECS.map((a) => ({ ...a, cost: 110 })),
+  grenade: [
+    { key: 'dmg', icon: '💥', name: 'Sprengkraft', cost: 110, desc: '+50% Schaden', mod: (s) => { s.dmg *= 1.5; } },
+    { key: 'range', icon: '🔭', name: 'Langrohr', cost: 110, desc: '+1,0 Reichweite', mod: (s) => { s.range += 1.0; } },
+  ],
+  rocket: [
+    { key: 'dmg', icon: '💥', name: 'Gefechtskopf', cost: 130, desc: '+50% Schaden', mod: (s) => { s.dmg *= 1.5; } },
+    { key: 'range', icon: '🔭', name: 'Booster', cost: 130, desc: '+1,0 Reichweite', mod: (s) => { s.range += 1.0; } },
+  ],
+  tesla: [
+    { key: 'chain', icon: '🕸️', name: 'Mehr Ziele', cost: 120, desc: '+2 Kettenziele', mod: (s) => { s.chain += 2; } },
+    { key: 'range', icon: '📡', name: 'Fernfunken', cost: 120, desc: '+0,9 Reichweite', mod: (s) => { s.range += 0.9; } },
+  ],
+  flame: [
+    { key: 'wide', icon: '🌊', name: 'Breitmaul', cost: 100, desc: 'fast doppelt so breiter Feuerkegel', mod: (s) => { s.cone = 1.75; } },
+    { key: 'range', icon: '🗼', name: 'Feuerlanze', cost: 100, desc: '+0,8 Reichweite', mod: (s) => { s.range += 0.8; } },
+  ],
+};
+// Effektive Werte inkl. gewählter Spezialisierung
+function effStats(t) {
+  const s = { ...towerStats(t) };
+  if (t.type === 'flame') s.cone = 0.95;   // Grundkegel (~110°)
+  const spec = t.spec && (SPECS[t.type] || []).find((o) => o.key === t.spec);
+  if (spec && spec.mod) spec.mod(s);
+  return s;
+}
 
 // ---- Schwierigkeitsgrade ---------------------------------------------------
 const DIFFS = {
@@ -108,6 +147,8 @@ const game = {
   toSpawn: [], spawnT: 0,
   sel: null,            // gewählte Kachel {x,y}
   banner: '', bannerT: 0,
+  nukeUsed: false, laserUsed: false,   // Superwaffen: je 1x pro Welle
+  targeting: null,      // 'slaser' = nächster Tap aufs Feld feuert den Orbital-Laser
 };
 let towers = [];        // {type,lvl,x,y,cd,angle,target}
 let enemies = [];       // {type,hp,maxHp,speed,pathI,frac,x,y,slowT,slowF,burnT,burnDps,bounty,boss}
@@ -121,8 +162,10 @@ function newGame() {
   game.money = DIFF.money; game.lives = DIFF.lives; game.wave = 0;
   game.state = 'build'; game.speed = 1; game.nextT = 0;
   game.toSpawn = []; game.sel = null; game.banner = ''; game.bannerT = 0;
+  game.nukeUsed = false; game.laserUsed = false; game.targeting = null;
   towers = []; enemies = []; shots = []; towerAt = {}; parts = [];
   updateSpeedBtn();
+  updateSupers();
   hidePanels();
 }
 
@@ -162,6 +205,8 @@ function startWave() {
   game.toSpawn = buildWave(game.wave);
   game.spawnT = 0;
   game.state = 'wave';
+  game.nukeUsed = false; game.laserUsed = false;
+  updateSupers();
   game.banner = 'Welle ' + game.wave; game.bannerT = 1.4;
 }
 
@@ -259,7 +304,8 @@ function pushBack(e, dist) {
 }
 
 function stepTower(t, dt) {
-  const s = towerStats(t);
+  if (t.type === 'command') { t.pulse = (t.pulse || 0) + dt; return; }
+  const s = effStats(t);
   const cx = t.x + 0.5, cy = t.y + 0.5;
   t.born = (t.born ?? 1) + dt;
   if (t.kick > 0) t.kick = Math.max(0, t.kick - dt * 9);
@@ -377,24 +423,35 @@ function stepTower(t, dt) {
   }
 
   if (t.type === 'flame') {
-    let any = false, nearest = null, nd = 1e9;
+    // Feuerkegel: Turm schwenkt zum nächsten Gegner, geröstet wird nur, wer im
+    // Kegel (halber Öffnungswinkel s.cone) steht. 'Breitmaul' macht ihn breiter.
+    let nearest = null, nd = 1e9;
     for (const e of enemies) {
       if (e.dead || e.escaped) continue;
       const d = Math.hypot(e.x - cx, e.y - cy);
-      if (d <= s.range) {
+      if (d <= s.range && d < nd) { nd = d; nearest = e; }
+    }
+    let any = false;
+    if (nearest) {
+      aimAt(t, nearest.x, nearest.y, dt);
+      for (const e of enemies) {
+        if (e.dead || e.escaped) continue;
+        if (Math.hypot(e.x - cx, e.y - cy) > s.range) continue;
+        let da = Math.atan2(e.y - cy, e.x - cx) - t.angle;
+        while (da > Math.PI) da -= TAU;
+        while (da < -Math.PI) da += TAU;
+        if (Math.abs(da) > s.cone) continue;
         damage(e, s.dps * dt, 'fire');
         e.burnT = Math.max(e.burnT, 2.5); e.burnDps = Math.max(e.burnDps, s.burn);
         any = true;
-        if (d < nd) { nd = d; nearest = e; }
       }
     }
     t.firing = any;
     t.pulse = (t.pulse || 0) + dt;
-    if (any && nearest) {
-      // Flammenzungen Richtung nächster Gegner, mit Streuung und Aufsteigen
-      t.angle = Math.atan2(nearest.y - cy, nearest.x - cx);
+    if (any) {
+      // Flammenzungen über die ganze Kegelbreite, mit Streuung und Aufsteigen
       for (let i = 0; i < 3; i++) {
-        const a = t.angle + (Math.random() - 0.5) * 1.0;
+        const a = t.angle + (Math.random() - 0.5) * s.cone * 1.8;
         const sp = 2.0 + Math.random() * 1.8;
         spawnPart({ kind: 'flame', x: cx + Math.cos(a) * 0.3, y: cy + Math.sin(a) * 0.3,
           vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, ttl: 0.3 + Math.random() * 0.22, size: 0.13 + Math.random() * 0.1 });
@@ -413,11 +470,11 @@ function stepTower(t, dt) {
 
   if (t.type === 'mg') {
     let dmg = s.dmg;
-    if (t.ammo === 'tungsten') dmg *= 1.6;
-    damage(target, dmg, 'kinetic', t.ammo === 'tungsten');
-    if (t.ammo === 'fire') target.vulnFire = 4;      // Brandmarkierer: nimmt 4s mehr Feuerschaden
-    if (t.ammo === 'shock') target.vulnShock = 4;    // Ionisiert: nimmt 4s mehr Blitzschaden
-    const tcol = t.ammo === 'fire' ? 'rgba(255,150,60,0.95)' : t.ammo === 'shock' ? 'rgba(140,190,255,0.95)' : t.ammo === 'tungsten' ? 'rgba(240,248,255,1)' : 'rgba(255,240,180,0.9)';
+    if (t.spec === 'tungsten') dmg *= 1.6;
+    damage(target, dmg, 'kinetic', t.spec === 'tungsten');
+    if (t.spec === 'fire') target.vulnFire = 4;      // Brandmarkierer: nimmt 4s mehr Feuerschaden
+    if (t.spec === 'shock') target.vulnShock = 4;    // Ionisiert: nimmt 4s mehr Blitzschaden
+    const tcol = t.spec === 'fire' ? 'rgba(255,150,60,0.95)' : t.spec === 'shock' ? 'rgba(140,190,255,0.95)' : t.spec === 'tungsten' ? 'rgba(240,248,255,1)' : 'rgba(255,240,180,0.9)';
     shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.07, color: tcol });
     // Mündungsfeuer + Einschlagsfunken
     spawnPart({ kind: 'muzzle', x: cx + Math.cos(t.angle) * 0.45, y: cy + Math.sin(t.angle) * 0.45, a: t.angle, ttl: 0.06, size: 0.2 });
@@ -426,7 +483,11 @@ function stepTower(t, dt) {
       spawnPart({ kind: 'spark', x: target.x, y: target.y - 0.1, vx: Math.cos(a) * (1 + Math.random() * 2), vy: Math.sin(a) * 2 - 1.2, ttl: 0.3, color: '#ffd27f' });
     }
   } else if (t.type === 'cannon') {
-    damage(target, s.dmg, 'kinetic');
+    let cdmg = s.dmg;
+    if (t.spec === 'tungsten') cdmg *= 1.6;
+    damage(target, cdmg, 'kinetic', t.spec === 'tungsten');
+    if (t.spec === 'fire') target.vulnFire = 4;
+    if (t.spec === 'shock') target.vulnShock = 4;
     shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.1, color: 'rgba(255,255,255,0.95)', w: 3 });
     spawnPart({ kind: 'muzzle', x: cx + Math.cos(t.angle) * 0.5, y: cy + Math.sin(t.angle) * 0.5, a: t.angle, ttl: 0.09, size: 0.3 });
     spawnPart({ kind: 'smoke', x: cx + Math.cos(t.angle) * 0.55, y: cy + Math.sin(t.angle) * 0.55, vx: Math.cos(t.angle) * 0.8, vy: -0.3, ttl: 0.6, size: 0.15 });
@@ -462,7 +523,23 @@ function splashDamage(x, y, radius, dmg) {
 
 function stepShot(sh, dt) {
   sh.t = (sh.t || 0) + dt;
-  if (sh.kind === 'tracer' || sh.kind === 'boom' || sh.kind === 'zap' || sh.kind === 'gust') return sh.t >= sh.ttl;
+  if (sh.kind === 'tracer' || sh.kind === 'boom' || sh.kind === 'zap' || sh.kind === 'gust' || sh.kind === 'nuke') return sh.t >= sh.ttl;
+  if (sh.kind === 'sbeam') {
+    // Orbital-Laser: erst Zielmarkierung, nach 0,35s kracht der Strahl runter
+    if (!sh.hit && sh.t >= 0.35) {
+      sh.hit = true;
+      for (const e of enemies) {
+        if (e.dead || e.escaped) continue;
+        if (Math.hypot(e.x - sh.x, e.y - sh.y) <= 1.2 + e.r) damage(e, 420, 'laser');
+      }
+      spawnPart({ kind: 'shock', x: sh.x, y: sh.y, r: 1.6, ttl: 0.35, color: '#cfe8ff' });
+      for (let i = 0; i < 10; i++) {
+        const a = Math.random() * TAU, sp = 2 + Math.random() * 3;
+        spawnPart({ kind: 'spark', x: sh.x, y: sh.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, ttl: 0.4, color: '#dff0ff' });
+      }
+    }
+    return sh.t >= sh.ttl;
+  }
   if (sh.kind === 'pool') {
     // Giftpfütze: ätzt alle, die drin stehen
     for (const e of enemies) {
@@ -605,6 +682,35 @@ function saveBest() {
   }
 }
 
+// ---- Superwaffen (Kommandozentrale) ----------------------------------------
+function hasCommand() { return towers.some((t) => t.type === 'command'); }
+
+function fireNuke() {
+  game.nukeUsed = true;
+  // Riesen-Flächenschlag auf ALLES, was gerade unterwegs ist. Panzerung
+  // schluckt davon wie üblich das meiste – Bosse überleben den Blitz.
+  shots.push({ kind: 'nuke', x: GC / 2, y: GR / 2, t: 0, ttl: 0.9 });
+  for (const e of enemies) {
+    if (e.dead || e.escaped) continue;
+    damage(e, 260, 'explosive');
+    spawnPart({ kind: 'shock', x: e.x, y: e.y, r: 1.0, ttl: 0.4, color: '#ffd8a0' });
+  }
+  // Pilzwolke über der Feldmitte
+  for (let i = 0; i < 12; i++) {
+    spawnPart({ kind: 'smoke', x: GC / 2 + (Math.random() - 0.5) * 3, y: GR / 2 + (Math.random() - 0.5) * 2,
+      vx: (Math.random() - 0.5) * 0.5, vy: -0.9 - Math.random() * 0.7, ttl: 1.2 + Math.random() * 0.6, size: 0.3 + Math.random() * 0.25 });
+  }
+  game.banner = '☢️ NUKE!'; game.bannerT = 1.2;
+  updateSupers();
+}
+
+function fireSlaser(x, y) {
+  game.laserUsed = true;
+  game.targeting = null;
+  shots.push({ kind: 'sbeam', x, y, t: 0, ttl: 0.85, hit: false });
+  updateSupers();
+}
+
 // ---- Rendering -------------------------------------------------------------
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -705,7 +811,7 @@ function draw(time) {
     const t = towerAt[game.sel.x + ',' + game.sel.y];
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
     ctx.fillRect(game.sel.x * T, game.sel.y * T, T, T);
-    const range = t ? towerStats(t).range : null;
+    const range = t ? effStats(t).range : null;
     if (range) {
       ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.setLineDash([4, 4]);
       ctx.beginPath(); ctx.arc((game.sel.x + 0.5) * T, (game.sel.y + 0.5) * T, range * T, 0, TAU); ctx.stroke();
@@ -726,7 +832,7 @@ function draw(time) {
 }
 
 function drawTower(t, time) {
-  const def = TOWERS[t.type], s = towerStats(t);
+  const def = TOWERS[t.type], s = effStats(t);
   const cx = (t.x + 0.5) * T, cy = (t.y + 0.5) * T;
   // Aufbau-Animation: kurz überschwingen, dann setzen
   const b = clamp((t.born ?? 1) / 0.35, 0, 1);
@@ -742,12 +848,25 @@ function drawTower(t, time) {
   ctx.fillStyle = def.color;
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.3, 0, TAU); ctx.fill();
   // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
-  if (!['ice', 'flame', 'wind', 'gold'].includes(t.type)) {
+  if (!['ice', 'flame', 'wind', 'gold', 'command'].includes(t.type)) {
     const kick = (t.kick || 0) * T * 0.1;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
     ctx.fillStyle = '#22303a';
     ctx.fillRect(-kick, -T * 0.08, T * 0.42, T * 0.16);
     ctx.restore();
+  }
+  // Kommandozentrale: Radar-Sweep + blinkendes Bereitschaftslicht
+  if (t.type === 'command') {
+    const ready = !game.nukeUsed || !game.laserUsed;
+    ctx.save(); ctx.translate(cx, cy);
+    ctx.strokeStyle = 'rgba(180,200,255,0.55)'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(0, 0, T * 0.34, 0, TAU); ctx.stroke();
+    ctx.rotate((t.pulse || 0) * 2.2);
+    ctx.strokeStyle = 'rgba(140,220,120,0.8)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(T * 0.34, 0); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = ready && Math.sin(time * 6) > 0 ? '#7dff8a' : '#2a5a34';
+    ctx.beginPath(); ctx.arc(cx + T * 0.26, cy - T * 0.26, T * 0.05, 0, TAU); ctx.fill();
   }
   // Windmaschine: rotierender Propeller
   if (t.type === 'wind') {
@@ -769,11 +888,15 @@ function drawTower(t, time) {
     ctx.beginPath(); ctx.moveTo(T * 0.3, 0); ctx.lineTo(len, 0); ctx.stroke();
     ctx.restore();
   }
-  // Flammenring
+  // Feuerkegel-Bogen in Zielrichtung
   if (t.type === 'flame' && t.firing) {
     ctx.strokeStyle = `rgba(255,${120 + Math.sin(time * 20) * 60 | 0},40,0.5)`;
     ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.arc(cx, cy, s.range * T * (0.75 + Math.sin(time * 9) * 0.08), 0, TAU); ctx.stroke();
+    const fr = s.range * T * (0.75 + Math.sin(time * 9) * 0.08);
+    ctx.beginPath(); ctx.arc(cx, cy, fr, (t.angle || 0) - s.cone, (t.angle || 0) + s.cone); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,150,60,0.25)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos((t.angle || 0) - s.cone) * fr, cy + Math.sin((t.angle || 0) - s.cone) * fr);
+    ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos((t.angle || 0) + s.cone) * fr, cy + Math.sin((t.angle || 0) + s.cone) * fr); ctx.stroke();
   }
   // Eis-Puls
   if (t.type === 'ice') {
@@ -1018,6 +1141,37 @@ function drawShot(sh) {
     ctx.fillStyle = '#ffb24d';
     ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, sh.r * T * (0.4 + f * 0.8), 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
+  } else if (sh.kind === 'nuke') {
+    // Nuke: greller Blitz übers ganze Feld + Druckwellenring
+    const f = sh.t / sh.ttl;
+    ctx.fillStyle = `rgba(255,240,200,${0.7 * (1 - f)})`;
+    ctx.fillRect(-OX, -OY, CW, CH);
+    ctx.globalAlpha = 1 - f;
+    ctx.strokeStyle = '#ffb24d'; ctx.lineWidth = 3 + 8 * (1 - f);
+    ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, f * GC * T * 0.75, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (sh.kind === 'sbeam') {
+    const x = sh.x * T, y = sh.y * T;
+    if (sh.t < 0.35) {
+      // rotes Zielkreuz zieht sich zusammen
+      const g = sh.t / 0.35;
+      ctx.strokeStyle = `rgba(255,90,60,${0.45 + g * 0.5})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, T * (1.3 - g * 0.75), 0, TAU); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - T * 0.5, y); ctx.lineTo(x + T * 0.5, y);
+      ctx.moveTo(x, y - T * 0.5); ctx.lineTo(x, y + T * 0.5);
+      ctx.stroke();
+    } else {
+      // Strahl aus dem Orbit: breite Säule + weißglühender Kern + Aufschlag
+      const b = 1 - (sh.t - 0.35) / (sh.ttl - 0.35);
+      ctx.globalAlpha = Math.min(1, b * 1.4);
+      ctx.fillStyle = 'rgba(150,215,255,0.55)';
+      ctx.fillRect(x - T * 0.55 * b, -OY, T * 1.1 * b, y + OY);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - T * 0.16 * b, -OY, T * 0.32 * b, y + OY);
+      ctx.beginPath(); ctx.arc(x, y, T * 0.95 * b, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
   } else if (sh.kind === 'coin') {
     ctx.globalAlpha = 1 - sh.t / sh.ttl;
     ctx.fillStyle = '#ffd166'; ctx.font = (T * 0.36) + 'px system-ui'; ctx.textAlign = 'center';
@@ -1036,6 +1190,11 @@ function drawHUD() {
   ctx.textAlign = 'right'; ctx.fillStyle = '#9fc0d8'; ctx.font = '13px system-ui';
   ctx.fillText('Welle ' + game.wave + ' · Best ' + game.best, CW - 14, 28);
   ctx.textBaseline = 'alphabetic';
+
+  if (game.targeting === 'slaser') {
+    ctx.fillStyle = '#ff8a6a'; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('🛰️ Ziel fürs Orbital-Laser antippen!', CW / 2, OY - 10);
+  }
 
   // Countdown zur nächsten Welle
   if (game.state === 'build' && game.wave > 0 && game.nextT > 0) {
@@ -1102,6 +1261,7 @@ function buildTower(type) {
   towers.push(t);
   towerAt[k] = t;
   buildDust(t);
+  updateSupers();
   showUpgpanel(t);
 }
 
@@ -1121,17 +1281,21 @@ function sellValue(t) {
 
 function showUpgpanel(t) {
   buildbar.classList.add('hidden');
-  const def = TOWERS[t.type], s = towerStats(t);
+  const def = TOWERS[t.type], s = effStats(t);
   const next = def.levels[t.lvl + 1];
   const info = document.getElementById('upg-info');
   const statBits = [];
-  if (s.dmg) statBits.push('Schaden ' + s.dmg);
+  if (s.dmg) statBits.push('Schaden ' + Math.round(s.dmg));
   if (s.dps) statBits.push('Schaden ' + s.dps + '/s');
-  if (s.rate) statBits.push(s.rate + ' Schuss/s');
+  if (s.rate && t.type !== 'gift') statBits.push(s.rate + ' Schuss/s');
   if (s.slow) statBits.push('-' + Math.round(s.slow * 100) + '% Tempo');
   if (s.splash) statBits.push('Fläche ' + s.splash);
   if (s.burn) statBits.push('+' + s.burn + '/s Brand');
-  statBits.push('Reichweite ' + s.range);
+  if (s.chain) statBits.push(s.chain + ' Kettenziele');
+  if (s.cone) statBits.push('Kegel ' + Math.round(s.cone * 2 * 180 / Math.PI) + '°');
+  if (s.gold) statBits.push('+' + s.gold + ' 💰 alle ' + s.interval + ' s');
+  if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
+  if (t.type === 'command') statBits.push('☢️ + 🛰️ freigeschaltet');
   info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${'⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
   if (next) {
@@ -1153,39 +1317,36 @@ function showUpgpanel(t) {
     game.money += sellValue(t);
     towers = towers.filter((x) => x !== t);
     delete towerAt[t.x + ',' + t.y];
+    updateSupers();
     hidePanels();
   };
-  renderAmmo(t);
+  renderSpecs(t);
   upgpanel.classList.remove('hidden');
 }
-// MG-Spezialmunition: einmalige, exklusive Wahl pro MG-Turm
-const AMMO = {
-  fire: { name: 'Brandmarkierer', icon: '🔥', cost: 90, desc: '+50% Feuerschaden auf Getroffene (4s)' },
-  shock: { name: 'Ionisiert', icon: '⚡', cost: 90, desc: '+50% Blitzschaden auf Getroffene (4s)' },
-  tungsten: { name: 'Wolframkern', icon: '🔩', cost: 90, desc: '+60% Schaden, extrem panzerbrechend' },
-};
-function renderAmmo(t) {
+// Spezialisierung: einmalige, exklusive Entweder-oder-Wahl pro Turm
+function renderSpecs(t) {
   const box = document.getElementById('upg-ammo');
-  if (t.type !== 'mg') { box.classList.add('hidden'); return; }
+  const list = SPECS[t.type];
+  if (!list) { box.classList.add('hidden'); return; }
   box.innerHTML = '';
-  if (t.ammo) {
-    const a = AMMO[t.ammo];
+  if (t.spec) {
+    const a = list.find((o) => o.key === t.spec);
     const div = document.createElement('div');
     div.className = 'ammo-chosen';
-    div.textContent = `${a.icon} ${a.name} geladen – ${a.desc}`;
+    div.textContent = `${a.icon} ${a.name} gewählt – ${a.desc}`;
     box.appendChild(div);
   } else {
-    for (const [key, a] of Object.entries(AMMO)) {
+    for (const a of list) {
       const b = document.createElement('button');
       b.className = 'ammo-btn';
       b.textContent = `${a.icon} ${a.name} (${a.cost} 💰)`;
       b.title = a.desc;
       b.disabled = game.money < a.cost;
       b.addEventListener('click', () => {
-        if (game.money < a.cost || t.ammo) return;
+        if (game.money < a.cost || t.spec) return;
         game.money -= a.cost;
-        t.ammo = key;
-        renderAmmo(t);
+        t.spec = a.key;
+        showUpgpanel(t);   // Stats & Anzeige auffrischen
       });
       box.appendChild(b);
     }
@@ -1206,6 +1367,13 @@ for (const key of ['leicht', 'normal', 'schwer']) {
 
 canvas.addEventListener('pointerdown', (e) => {
   if (game.state === 'over') { newGame(); return; }
+  if (game.targeting === 'slaser') {
+    const rr = canvas.getBoundingClientRect();
+    const wx = (e.clientX - rr.left - OX) / T, wy = (e.clientY - rr.top - OY) / T;
+    if (wx >= 0 && wx < GC && wy >= 0 && wy < GR) fireSlaser(wx, wy);
+    else { game.targeting = null; updateSupers(); }
+    return;
+  }
   const r = canvas.getBoundingClientRect();
   const gx = Math.floor((e.clientX - r.left - OX) / T);
   const gy = Math.floor((e.clientY - r.top - OY) / T);
@@ -1226,6 +1394,25 @@ speedBtn.addEventListener('click', () => {
 });
 document.getElementById('btn-wave').addEventListener('click', () => { if (game.state === 'build') startWave(); });
 
+const nukeBtn = document.getElementById('btn-nuke');
+const slaserBtn = document.getElementById('btn-slaser');
+function updateSupers() {
+  const has = hasCommand();
+  nukeBtn.classList.toggle('hidden', !has);
+  slaserBtn.classList.toggle('hidden', !has);
+  nukeBtn.disabled = game.nukeUsed;
+  slaserBtn.disabled = game.laserUsed || game.targeting === 'slaser';
+}
+nukeBtn.addEventListener('click', () => {
+  if (!hasCommand() || game.nukeUsed || game.state === 'over') return;
+  fireNuke();
+});
+slaserBtn.addEventListener('click', () => {
+  if (!hasCommand() || game.laserUsed || game.state === 'over') return;
+  game.targeting = 'slaser';
+  updateSupers();
+});
+
 const menuEl = document.getElementById('menu');
 const helpEl = document.getElementById('help');
 document.getElementById('btn-menu').addEventListener('click', () => menuEl.classList.remove('hidden'));
@@ -1245,7 +1432,8 @@ function frame(now) {
 }
 
 window.__td = { game, get towers() { return towers; }, get enemies() { return enemies; },
-  TOWERS, PATH, isPath, startWave, newGame, update,
+  TOWERS, SPECS, PATH, isPath, startWave, newGame, update, effStats, fireNuke, fireSlaser,
+  get shots() { return shots; },
   place(type, x, y) {
     const k = x + ',' + y;
     if (towerAt[k] || isPath(x, y) || isPond(x, y)) return null;
@@ -1255,6 +1443,7 @@ window.__td = { game, get towers() { return towers; }, get enemies() { return en
     const t = { type, lvl: 0, x, y, cd: 0, angle: 0, born: 0 };
     towers.push(t); towerAt[k] = t;
     buildDust(t);
+    updateSupers();
     return t;
   },
   upgrade(t) {

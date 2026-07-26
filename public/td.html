@@ -17,6 +17,12 @@
     <button id="btn-wave" title="Nächste Welle">▶</button>
   </div>
 
+  <!-- Superwaffen (freigeschaltet durch die Kommandozentrale) -->
+  <div id="superbar">
+    <button id="btn-nuke" class="hidden" title="Nuke – 1× pro Welle">☢️</button>
+    <button id="btn-slaser" class="hidden" title="Orbital-Laser – 1× pro Welle">🛰️</button>
+  </div>
+
   <!-- Bau-Leiste (erscheint, wenn ein freies Feld gewählt ist) -->
   <div id="buildbar" class="hidden"></div>
 
@@ -79,7 +85,9 @@
         <li><b>🔥 Flammenwerfer</b> – kurze Reichweite, trifft alle im Umkreis + Brennschaden · <b>🚀 Raketen</b> – zielsuchend, dicker Schaden · <b>❄️ Vereiser</b> – verlangsamt alle im Umkreis</li>
         <li><b>⚡ Blitzturm</b> – Kettenblitz springt von Gegner zu Gegner · <b>🧪 Giftschleuder</b> – wirft ätzende Giftpfützen auf den Weg · <b>🌪️ Windmaschine</b> – pustet Gegner den Parcours <b>zurück</b> (danach kurz windfest) · <b>💰 Goldmine</b> – schürft stetig Gold · <b>🎯 Kanone</b> – kinetisches Geschoss: viel Schaden, lange Reichweite, kein Splash</li>
         <li><b>Panzerung:</b> Panzer und späte Bosse tragen graue <b>Rüstung</b> (eigener Balken). Sie schluckt Feuer, Blitz, Explosion und Gift fast komplett – <b>Kinetik (MG/Kanone) und Laser</b> zerlegen sie. Erst wenn sie zerspringt, wirkt alles voll.</li>
-        <li><b>MG-Spezialmunition</b> (im Upgrade-Panel, einmalig): <b>🔥 Brandmarkierer</b> – Getroffene nehmen 4 s lang 50 % mehr Feuerschaden · <b>⚡ Ionisiert</b> – 50 % mehr Blitzschaden · <b>🔩 Wolframkern</b> – das MG selbst macht 60 % mehr Schaden und ist extrem panzerbrechend</li>
+        <li><b>Spezialisierungen</b> (im Upgrade-Panel, einmalig &amp; exklusiv – entweder/oder!): <b>🔫 MG &amp; 🎯 Kanone</b> wählen Spezialmunition: <b>🔥 Brandmarkierer</b> (Getroffene nehmen 4 s lang 50 % mehr Feuerschaden), <b>⚡ Ionisiert</b> (50 % mehr Blitzschaden) oder <b>🔩 Wolframkern</b> (+60 % Schaden, extrem panzerbrechend)</li>
+        <li><b>💣 Granatkanone &amp; 🚀 Raketen</b>: mehr Schaden <i>oder</i> mehr Reichweite · <b>⚡ Blitzturm</b>: mehr Kettenziele <i>oder</i> mehr Reichweite · <b>🔥 Flammenwerfer</b> feuert jetzt in einem <b>Kegel</b> und wählt: breiterer Feuerkegel <i>oder</i> mehr Reichweite</li>
+        <li><b>🛰️ Kommandozentrale</b> (teuer!) schaltet zwei Superwaffen in der Leiste frei, je <b>1× pro Welle</b>: <b>☢️ Nuke</b> – Riesen-Flächenschaden auf alle Monster (Panzerung schluckt viel) · <b>🛰️ Orbital-Laser</b> – Button drücken, Stelle antippen, Strahl aus dem All (durchschlägt Panzerung)</li>
         <li>In die <b>Teiche</b> kann nicht gebaut werden.</li>
         <li><b>Schwierigkeit</b> im ☰-Menü: Leicht (20 ❤️, sanfter Anstieg), Normal (15 ❤️) oder Schwer (10 ❤️, steiler Anstieg).</li>
         <li><b>Geld</b> gibt's pro Abschuss und als Wellen-Bonus. Jede Welle wird härter: Renner (schnell), Panzer (zäh), Regenerierer und alle 8 Wellen <b>Bosse</b> (später im Rudel!).</li>

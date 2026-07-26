@@ -497,7 +497,8 @@ html, body {
 }
 #wzoom button:active { background: rgba(8, 25, 42, 0.85); }
 
-#toolbar button {
+#toolbar button,
+#superbar button {
   background: rgba(8, 25, 42, 0.55);
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -508,14 +509,30 @@ html, body {
   backdrop-filter: blur(4px);
 }
 
-#toolbar button:active {
+#toolbar button:active,
+#superbar button:active {
   background: rgba(8, 25, 42, 0.8);
 }
 
-#toolbar button:disabled {
+#toolbar button:disabled,
+#superbar button:disabled {
   opacity: 0.45;
   cursor: default;
 }
+
+/* Superwaffen-Leiste (Tower Defense): Spalte am linken Rand unter der Toolbar */
+#superbar {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  left: 0;
+  padding: 0 10px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+#superbar button { border-color: rgba(255, 200, 120, 0.55); }
 
 #zoombar {
   position: fixed;
