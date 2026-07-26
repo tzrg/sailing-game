@@ -73,12 +73,15 @@ let towers = [];        // {type,lvl,x,y,cd,angle,target}
 let enemies = [];       // {type,hp,maxHp,speed,pathI,frac,x,y,slowT,slowF,burnT,burnDps,bounty,boss}
 let shots = [];         // Projektile/Effekte
 let towerAt = {};       // "x,y" -> tower
+let parts = [];         // Deko-Partikel (Flammen, Funken, Rauch, Schnee, …)
+const MAX_PARTS = 520;
+function spawnPart(p) { if (parts.length < MAX_PARTS) { p.t = 0; parts.push(p); } }
 
 function newGame() {
   game.money = 120; game.lives = 20; game.wave = 0;
   game.state = 'build'; game.speed = 1; game.nextT = 0;
   game.toSpawn = []; game.sel = null; game.banner = ''; game.bannerT = 0;
-  towers = []; enemies = []; shots = []; towerAt = {};
+  towers = []; enemies = []; shots = []; towerAt = {}; parts = [];
   updateSpeedBtn();
   hidePanels();
 }
@@ -172,6 +175,7 @@ function towerStats(t) { return TOWERS[t.type].levels[t.lvl]; }
 function stepTower(t, dt) {
   const s = towerStats(t);
   const cx = t.x + 0.5, cy = t.y + 0.5;
+  t.born = (t.born ?? 1) + dt;
 
   if (t.type === 'ice') {
     // Aura: alle im Umkreis verlangsamen
@@ -180,6 +184,11 @@ function stepTower(t, dt) {
       if (Math.hypot(e.x - cx, e.y - cy) <= s.range) { e.slowF = Math.max(e.slowF, s.slow); e.slowT = 0.35; }
     }
     t.pulse = (t.pulse || 0) + dt;
+    // sanftes Schneegestöber im Wirkradius
+    if (Math.random() < dt * 5) {
+      const a = Math.random() * TAU, r = Math.random() * s.range;
+      spawnPart({ kind: 'snow', x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r - 0.3, vx: 0, vy: 0.45, ttl: 1.1, ph: Math.random() * TAU });
+    }
     return;
   }
 
@@ -197,23 +206,39 @@ function stepTower(t, dt) {
       const along = px * dx + py * dy;
       if (along < 0 || along > len) continue;
       const dist = Math.abs(px * dy - py * dx);
-      if (dist < 0.38 + e.r * 0.5) damage(e, s.dps * dt);
+      if (dist < 0.38 + e.r * 0.5) {
+        damage(e, s.dps * dt);
+        // Brutzel-Funken am Auftreffpunkt
+        if (Math.random() < dt * 9) spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.1, vx: (Math.random() - 0.5) * 2, vy: -1 - Math.random(), ttl: 0.25, color: '#ff9ef0' });
+      }
     }
     return;
   }
 
   if (t.type === 'flame') {
-    let any = false;
+    let any = false, nearest = null, nd = 1e9;
     for (const e of enemies) {
       if (e.dead || e.escaped) continue;
-      if (Math.hypot(e.x - cx, e.y - cy) <= s.range) {
+      const d = Math.hypot(e.x - cx, e.y - cy);
+      if (d <= s.range) {
         damage(e, s.dps * dt);
         e.burnT = Math.max(e.burnT, 2.5); e.burnDps = Math.max(e.burnDps, s.burn);
         any = true;
+        if (d < nd) { nd = d; nearest = e; }
       }
     }
     t.firing = any;
     t.pulse = (t.pulse || 0) + dt;
+    if (any && nearest) {
+      // Flammenzungen Richtung nächster Gegner, mit Streuung und Aufsteigen
+      t.angle = Math.atan2(nearest.y - cy, nearest.x - cx);
+      for (let i = 0; i < 3; i++) {
+        const a = t.angle + (Math.random() - 0.5) * 1.0;
+        const sp = 2.0 + Math.random() * 1.8;
+        spawnPart({ kind: 'flame', x: cx + Math.cos(a) * 0.3, y: cy + Math.sin(a) * 0.3,
+          vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, ttl: 0.3 + Math.random() * 0.22, size: 0.13 + Math.random() * 0.1 });
+      }
+    }
     return;
   }
 
@@ -227,8 +252,15 @@ function stepTower(t, dt) {
   if (t.type === 'mg') {
     damage(target, s.dmg);
     shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.07 });
+    // Mündungsfeuer + Einschlagsfunken
+    spawnPart({ kind: 'muzzle', x: cx + Math.cos(t.angle) * 0.45, y: cy + Math.sin(t.angle) * 0.45, a: t.angle, ttl: 0.06, size: 0.2 });
+    for (let i = 0; i < 3; i++) {
+      const a = t.angle + Math.PI + (Math.random() - 0.5) * 1.6;
+      spawnPart({ kind: 'spark', x: target.x, y: target.y - 0.1, vx: Math.cos(a) * (1 + Math.random() * 2), vy: Math.sin(a) * 2 - 1.2, ttl: 0.3, color: '#ffd27f' });
+    }
   } else if (t.type === 'grenade') {
     shots.push({ kind: 'lob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.45, dmg: s.dmg, splash: s.splash });
+    spawnPart({ kind: 'smoke', x: cx + Math.cos(t.angle) * 0.4, y: cy + Math.sin(t.angle) * 0.4, vx: 0, vy: -0.4, ttl: 0.5, size: 0.16 });
   } else if (t.type === 'rocket') {
     shots.push({ kind: 'rocket', x: cx, y: cy, target, speed: 7, dmg: s.dmg, splash: s.splash, angle: t.angle });
   }
@@ -241,6 +273,15 @@ function splashDamage(x, y, radius, dmg) {
     if (d <= radius + e.r) damage(e, dmg * clamp(1 - d / (radius + e.r) * 0.5, 0.5, 1));
   }
   shots.push({ kind: 'boom', x, y, r: radius, t: 0, ttl: 0.3 });
+  // Druckwelle, Splitter und Rauch
+  spawnPart({ kind: 'shock', x, y, r: radius * 1.25, ttl: 0.32 });
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * TAU, sp = 2 + Math.random() * 3.5;
+    spawnPart({ kind: 'debris', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2.2, ttl: 0.45 + Math.random() * 0.3, rot: Math.random() * TAU });
+  }
+  for (let i = 0; i < 4; i++) {
+    spawnPart({ kind: 'smoke', x: x + (Math.random() - 0.5) * radius, y: y + (Math.random() - 0.5) * radius, vx: (Math.random() - 0.5) * 0.4, vy: -0.5 - Math.random() * 0.4, ttl: 0.8 + Math.random() * 0.4, size: 0.2 + Math.random() * 0.14 });
+  }
 }
 
 function stepShot(sh, dt) {
@@ -265,6 +306,8 @@ function stepShot(sh, dt) {
     sh.angle = Math.atan2(tg.y - sh.y, tg.x - sh.x);
     sh.x += Math.cos(sh.angle) * sh.speed * dt;
     sh.y += Math.sin(sh.angle) * sh.speed * dt;
+    // Rauchspur hinter der Rakete
+    if (Math.random() < dt * 45) spawnPart({ kind: 'smoke', x: sh.x - Math.cos(sh.angle) * 0.2, y: sh.y - Math.sin(sh.angle) * 0.2, vx: 0, vy: -0.25, ttl: 0.55, size: 0.1 });
     if (Math.hypot(tg.x - sh.x, tg.y - sh.y) < 0.3) { splashDamage(tg.x, tg.y, sh.splash, sh.dmg); return true; }
     return false;
   }
@@ -299,13 +342,24 @@ function update(dt) {
   for (const e of enemies) {
     if (e.dead || e.escaped) continue;
     stepEnemy(e, dt);
+    // brennende Gegner züngeln
+    if (e.burnT > 0 && Math.random() < dt * 7) {
+      spawnPart({ kind: 'flame', x: e.x + (Math.random() - 0.5) * e.r, y: e.y - e.r, vx: (Math.random() - 0.5) * 0.5, vy: -1.2, ttl: 0.3, size: 0.09 });
+    }
     if (e.escaped) {
       game.lives -= e.boss ? 5 : 1;
+      spawnPart({ kind: 'shock', x: e.x, y: e.y, r: 0.8, ttl: 0.4, color: '#ff5548' });
       if (game.lives <= 0) { game.lives = 0; gameOver(); }
     } else if (e.hp <= 0) {
       e.dead = true;
       game.money += e.bounty;
       shots.push({ kind: 'coin', x: e.x, y: e.y, t: 0, ttl: 0.6, v: e.bounty });
+      // Todes-Pop: Ring + Konfetti in Gegnerfarbe
+      spawnPart({ kind: 'pop', x: e.x, y: e.y, r: e.r * 2.4, ttl: 0.3, color: e.color });
+      for (let i = 0; i < (e.boss ? 16 : 7); i++) {
+        const a = Math.random() * TAU, sp = 1.5 + Math.random() * 2.5;
+        spawnPart({ kind: 'spark', x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5, ttl: 0.4 + Math.random() * 0.25, color: e.color });
+      }
     }
   }
   enemies = enemies.filter((e) => !e.dead && !e.escaped);
@@ -313,6 +367,19 @@ function update(dt) {
   // Türme & Schüsse
   for (const t of towers) stepTower(t, dt);
   shots = shots.filter((sh) => !stepShot(sh, dt));
+
+  // Deko-Partikel bewegen
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.t += dt;
+    if (p.t >= p.ttl) { parts.splice(i, 1); continue; }
+    if (p.vx !== undefined) { p.x += p.vx * dt; p.y += p.vy * dt; }
+    if (p.kind === 'flame') { p.vy -= 1.4 * dt; p.vx *= 1 - dt * 1.5; }        // Flammen steigen auf
+    else if (p.kind === 'spark' || p.kind === 'debris') p.vy += 7 * dt;        // Funken/Splitter fallen
+    else if (p.kind === 'smoke') p.vy -= 0.4 * dt;                             // Rauch steigt
+    else if (p.kind === 'snow') p.x += Math.sin(p.t * 4 + p.ph) * dt * 0.5;    // Schnee taumelt
+    if (p.rot !== undefined) p.rot += dt * 9;
+  }
 
   // Welle fertig?
   if (game.state === 'wave' && !game.toSpawn.length && !enemies.length) {
@@ -393,6 +460,7 @@ function draw(time) {
   for (const e of enemies) drawEnemy(e, time);
   // Schüsse/Effekte
   for (const sh of shots) drawShot(sh);
+  drawParts();
   ctx.restore();
 
   drawHUD();
@@ -401,6 +469,10 @@ function draw(time) {
 function drawTower(t, time) {
   const def = TOWERS[t.type], s = towerStats(t);
   const cx = (t.x + 0.5) * T, cy = (t.y + 0.5) * T;
+  // Aufbau-Animation: kurz überschwingen, dann setzen
+  const b = clamp((t.born ?? 1) / 0.35, 0, 1);
+  const scale = b < 1 ? 0.2 + b * 1.0 - Math.sin(b * Math.PI) * -0.15 : 1;
+  if (scale !== 1) { ctx.save(); ctx.translate(cx, cy); ctx.scale(scale, scale); ctx.translate(-cx, -cy); }
   // Sockel
   ctx.fillStyle = '#3a4a55';
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.38, 0, TAU); ctx.fill();
@@ -441,11 +513,69 @@ function drawTower(t, time) {
   ctx.fillText(def.icon, cx, cy - T * 0.02);
   ctx.font = (T * 0.24) + 'px system-ui';
   ctx.fillText('⭐'.repeat(t.lvl), cx, cy + T * 0.34);
+  if (scale !== 1) ctx.restore();
+}
+
+// ---- Deko-Partikel zeichnen ----
+function drawParts() {
+  for (const p of parts) {
+    const f = p.t / p.ttl;
+    if (p.kind === 'flame') {
+      const c = f < 0.35 ? '#ffe66e' : f < 0.7 ? '#ff9a3c' : '#d84a2a';
+      ctx.globalAlpha = (1 - f) * 0.9;
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.arc(p.x * T, p.y * T, p.size * T * (1 + f * 1.2), 0, TAU); ctx.fill();
+    } else if (p.kind === 'muzzle') {
+      ctx.globalAlpha = 1 - f;
+      ctx.save(); ctx.translate(p.x * T, p.y * T); ctx.rotate(p.a);
+      ctx.fillStyle = '#ffe66e';
+      ctx.beginPath();
+      ctx.moveTo(0, -p.size * T * 0.5); ctx.lineTo(p.size * T * 1.6, 0); ctx.lineTo(0, p.size * T * 0.5);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    } else if (p.kind === 'spark') {
+      ctx.globalAlpha = 1 - f;
+      ctx.fillStyle = p.color || '#ffd27f';
+      ctx.fillRect(p.x * T - 1.6, p.y * T - 1.6, 3.2, 3.2);
+    } else if (p.kind === 'debris') {
+      ctx.globalAlpha = 1 - f;
+      ctx.save(); ctx.translate(p.x * T, p.y * T); ctx.rotate(p.rot || 0);
+      ctx.fillStyle = '#6a5238';
+      ctx.fillRect(-2.2, -1.4, 4.4, 2.8);
+      ctx.restore();
+    } else if (p.kind === 'smoke') {
+      ctx.globalAlpha = (1 - f) * (p.dust ? 0.4 : 0.32);
+      ctx.fillStyle = p.dust ? '#b8a888' : '#9aa5ad';
+      ctx.beginPath(); ctx.arc(p.x * T, p.y * T, (p.size || 0.14) * T * (1 + f * 1.6), 0, TAU); ctx.fill();
+    } else if (p.kind === 'snow') {
+      ctx.globalAlpha = (1 - f) * 0.85;
+      ctx.fillStyle = '#dff2ff';
+      ctx.beginPath(); ctx.arc(p.x * T, p.y * T, T * 0.05, 0, TAU); ctx.fill();
+    } else if (p.kind === 'shock') {
+      ctx.globalAlpha = 1 - f;
+      ctx.strokeStyle = p.color || '#ffe2b0';
+      ctx.lineWidth = Math.max(1, 4 * (1 - f));
+      ctx.beginPath(); ctx.arc(p.x * T, p.y * T, p.r * T * (0.25 + f * 0.75), 0, TAU); ctx.stroke();
+    } else if (p.kind === 'pop') {
+      ctx.globalAlpha = 1 - f;
+      ctx.strokeStyle = p.color || '#fff';
+      ctx.lineWidth = Math.max(1, 3 * (1 - f));
+      ctx.beginPath(); ctx.arc(p.x * T, p.y * T, p.r * T * (0.3 + f * 0.7), 0, TAU); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawEnemy(e, time) {
   const cx = e.x * T, cy = e.y * T;
   const wob = Math.sin(time * 8 + e.wob) * T * 0.03;
+  // Boss: pulsierende Bedrohungs-Aura
+  if (e.boss) {
+    ctx.globalAlpha = 0.25 + Math.sin(time * 5) * 0.12;
+    ctx.fillStyle = '#d84a6a';
+    ctx.beginPath(); ctx.arc(cx, cy, e.r * T * (1.5 + Math.sin(time * 5) * 0.18), 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   ctx.fillStyle = e.color;
   ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T, 0, TAU); ctx.fill();
   if (e.slowF > 0) { ctx.strokeStyle = 'rgba(140,220,255,0.9)'; ctx.lineWidth = 2; ctx.stroke(); }
@@ -562,10 +692,19 @@ function buildTower(type) {
   const k = game.sel.x + ',' + game.sel.y;
   if (towerAt[k] || isPath(game.sel.x, game.sel.y)) return;
   game.money -= cost;
-  const t = { type, lvl: 0, x: game.sel.x, y: game.sel.y, cd: 0, angle: 0 };
+  const t = { type, lvl: 0, x: game.sel.x, y: game.sel.y, cd: 0, angle: 0, born: 0 };
   towers.push(t);
   towerAt[k] = t;
+  buildDust(t);
   showUpgpanel(t);
+}
+
+// Staubwölkchen beim Bauen
+function buildDust(t) {
+  for (let i = 0; i < 7; i++) {
+    const a = Math.random() * TAU;
+    spawnPart({ kind: 'smoke', x: t.x + 0.5 + Math.cos(a) * 0.25, y: t.y + 0.75, vx: Math.cos(a) * 1.1, vy: -0.3 - Math.random() * 0.4, ttl: 0.5 + Math.random() * 0.25, size: 0.12 + Math.random() * 0.08, dust: true });
+  }
 }
 
 function sellValue(t) {
@@ -662,8 +801,9 @@ window.__td = { game, get towers() { return towers; }, get enemies() { return en
     const cost = TOWERS[type].levels[0].cost;
     if (game.money < cost) return null;
     game.money -= cost;
-    const t = { type, lvl: 0, x, y, cd: 0, angle: 0 };
+    const t = { type, lvl: 0, x, y, cd: 0, angle: 0, born: 0 };
     towers.push(t); towerAt[k] = t;
+    buildDust(t);
     return t;
   },
   upgrade(t) {
