@@ -24,6 +24,13 @@ const pathSet = new Set();
 })();
 const isPath = (x, y) => pathSet.has(x + ',' + y);
 
+// Teiche (hübsch anzusehen, nicht bebaubar)
+const POND = new Set(['0,0', '1,0', '0,1', '11,16', '10,16', '11,15', '11,0']);
+const isPond = (x, y) => POND.has(x + ',' + y);
+
+// deterministischer Hash pro Kachel für die Deko (Grasbüschel, Blumen, Steine …)
+function tileHash(x, y) { return ((x * 73856093) ^ (y * 19349663)) >>> 0; }
+
 // ---- Türme -----------------------------------------------------------------
 // levels[i]: cost = Kosten für Bau (i=0) bzw. Upgrade. dmg/rate für Schüsse,
 // dps für Dauerstrahler, slow für Aura. range in Kacheln.
@@ -58,11 +65,31 @@ const TOWERS = {
       { cost: 55, slow: 0.35, range: 2.1 },
       { cost: 60, slow: 0.45, range: 2.4 },
       { cost: 110, slow: 0.55, range: 2.8 }] },
+  tesla: { name: 'Blitzturm', icon: '⚡', color: '#ffe66e', desc: 'Kettenblitz springt von Gegner zu Gegner',
+    levels: [
+      { cost: 120, dmg: 34, rate: 1.1, range: 2.7, chain: 3 },
+      { cost: 130, dmg: 60, rate: 1.25, range: 3.0, chain: 4 },
+      { cost: 230, dmg: 110, rate: 1.4, range: 3.3, chain: 6 }] },
+  gift: { name: 'Giftschleuder', icon: '🧪', color: '#8ad84a', desc: 'hinterlässt ätzende Giftpfützen',
+    levels: [
+      { cost: 95, dps: 16, rate: 0.45, range: 3.0, pool: 0.95, dur: 4 },
+      { cost: 105, dps: 30, rate: 0.5, range: 3.3, pool: 1.1, dur: 4.5 },
+      { cost: 185, dps: 55, rate: 0.55, range: 3.6, pool: 1.25, dur: 5 }] },
+  wind: { name: 'Windmaschine', icon: '🌪️', color: '#9fd8d0', desc: 'pustet Gegner den Weg zurück!',
+    levels: [
+      { cost: 100, push: 1.5, rate: 0.22, range: 2.6 },
+      { cost: 110, push: 2.3, rate: 0.26, range: 2.9 },
+      { cost: 200, push: 3.2, rate: 0.3, range: 3.2 }] },
+  gold: { name: 'Goldmine', icon: '💰', color: '#d8b84a', desc: 'schürft stetig Gold (kein Schaden)',
+    levels: [
+      { cost: 100, gold: 2, interval: 3 },
+      { cost: 120, gold: 5, interval: 3.1 },
+      { cost: 220, gold: 8, interval: 3.2 }] },
 };
 
 // ---- Zustand ---------------------------------------------------------------
 const game = {
-  money: 120, lives: 20, wave: 0, best: 0,
+  money: 120, lives: 15, wave: 0, best: 0,
   state: 'build',       // build | wave | over
   speed: 1, nextT: 0,   // Countdown bis Auto-Start der nächsten Welle
   toSpawn: [], spawnT: 0,
@@ -78,7 +105,7 @@ const MAX_PARTS = 520;
 function spawnPart(p) { if (parts.length < MAX_PARTS) { p.t = 0; parts.push(p); } }
 
 function newGame() {
-  game.money = 120; game.lives = 20; game.wave = 0;
+  game.money = 120; game.lives = 15; game.wave = 0;
   game.state = 'build'; game.speed = 1; game.nextT = 0;
   game.toSpawn = []; game.sel = null; game.banner = ''; game.bannerT = 0;
   towers = []; enemies = []; shots = []; towerAt = {}; parts = [];
@@ -87,21 +114,21 @@ function newGame() {
 }
 
 // ---- Wellen ----------------------------------------------------------------
-function baseHp(w) { return 30 * Math.pow(1.16, w - 1) + 9 * (w - 1); }
+function baseHp(w) { return 30 * Math.pow(1.18, w - 1) + 10 * (w - 1); }
 function bounty(w, mult) { return Math.round((3 + w * 0.55) * mult); }
 
 function buildWave(w) {
   const list = [];
-  const n = Math.min(10 + Math.round(w * 1.6), 34);
-  const boss = w % 8 === 0;
+  const n = Math.min(10 + Math.round(w * 1.8), 40);
   for (let i = 0; i < n; i++) {
     let t = 'blob';
-    if (w >= 3 && i % 3 === 2) t = 'runner';
-    if (w >= 5 && i % 4 === 3) t = 'tank';
-    if (w >= 8 && i % 5 === 4) t = 'regen';
+    if (w >= 2 && i % 3 === 2) t = 'runner';
+    if (w >= 4 && i % 4 === 3) t = 'tank';
+    if (w >= 7 && i % 5 === 4) t = 'regen';
     list.push(t);
   }
-  if (boss) list.push('boss');
+  // Boss-Wellen: ab Welle 16 kommen sie im Rudel
+  if (w % 8 === 0) for (let b = 0; b <= (w / 16 | 0); b++) list.push('boss');
   return list;
 }
 
@@ -172,10 +199,104 @@ function firstInRange(t, range) {
 
 function towerStats(t) { return TOWERS[t.type].levels[t.lvl]; }
 
+// Turm dreht weich in Zielrichtung (statt zu springen)
+function aimAt(t, x, y, dt) {
+  const want = Math.atan2(y - (t.y + 0.5), x - (t.x + 0.5));
+  let d = want - (t.angle || 0);
+  while (d > Math.PI) d -= TAU;
+  while (d < -Math.PI) d += TAU;
+  t.angle = (t.angle || 0) + d * Math.min(1, dt * 14);
+}
+
+// Gegner ein Stück den Pfad ZURÜCK schieben (Windmaschine)
+function pushBack(e, dist) {
+  const d = e.boss ? dist * 0.3 : dist;
+  let p = Math.max(0, progress(e) - d);
+  e.pathI = Math.floor(p); e.frac = p - e.pathI;
+  const [ax, ay] = PATH[e.pathI], [bx, by] = PATH[Math.min(e.pathI + 1, PATH.length - 1)];
+  e.x = ax + 0.5 + (bx - ax) * e.frac;
+  e.y = ay + 0.5 + (by - ay) * e.frac;
+}
+
 function stepTower(t, dt) {
   const s = towerStats(t);
   const cx = t.x + 0.5, cy = t.y + 0.5;
   t.born = (t.born ?? 1) + dt;
+  if (t.kick > 0) t.kick = Math.max(0, t.kick - dt * 9);
+
+  if (t.type === 'gold') {
+    // Goldmine: schürft im Takt, egal was draußen los ist
+    t.goldT = (t.goldT || 0) + dt;
+    t.pulse = (t.pulse || 0) + dt;
+    if (t.goldT >= s.interval) {
+      t.goldT -= s.interval;
+      game.money += s.gold;
+      shots.push({ kind: 'coin', x: cx, y: cy - 0.3, t: 0, ttl: 0.7, v: s.gold });
+      for (let i = 0; i < 3; i++) spawnPart({ kind: 'spark', x: cx, y: cy, vx: (Math.random() - 0.5) * 1.4, vy: -1 - Math.random(), ttl: 0.35, color: '#ffd166' });
+    }
+    return;
+  }
+
+  if (t.type === 'tesla') {
+    t.cd -= dt;
+    const target = firstInRange(t, s.range);
+    if (target) aimAt(t, target.x, target.y, dt);
+    if (t.cd > 0 || !target) return;
+    t.cd = 1 / s.rate;
+    // Kettenblitz: springt zu den jeweils nächsten, noch nicht getroffenen Gegnern
+    const hit = [target];
+    let cur = target, dmg = s.dmg;
+    damage(cur, dmg);
+    for (let j = 1; j < s.chain; j++) {
+      let next = null, nd = 2.3;
+      for (const e of enemies) {
+        if (e.dead || e.escaped || hit.includes(e)) continue;
+        const d = Math.hypot(e.x - cur.x, e.y - cur.y);
+        if (d < nd) { nd = d; next = e; }
+      }
+      if (!next) break;
+      dmg *= 0.75;
+      damage(next, dmg);
+      hit.push(next);
+      cur = next;
+    }
+    shots.push({ kind: 'zap', pts: [[cx, cy], ...hit.map((e) => [e.x, e.y - 0.1])], t: 0, ttl: 0.16 });
+    for (const e of hit) spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.2, vx: (Math.random() - 0.5) * 2, vy: -1.5, ttl: 0.25, color: '#fff8b0' });
+    t.kick = 1;
+    return;
+  }
+
+  if (t.type === 'gift') {
+    t.cd -= dt;
+    const target = firstInRange(t, s.range);
+    if (target) aimAt(t, target.x, target.y, dt);
+    if (t.cd > 0 || !target) return;
+    t.cd = 1 / s.rate;
+    // Flasche fliegt dorthin, wo das Ziel gleich sein wird
+    shots.push({ kind: 'glob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.5, dps: s.dps, pool: s.pool, dur: s.dur });
+    t.kick = 1;
+    return;
+  }
+
+  if (t.type === 'wind') {
+    t.cd -= dt;
+    t.pulse = (t.pulse || 0) + dt;
+    if (t.cd > 0) return;
+    let any = false;
+    for (const e of enemies) {
+      if (e.dead || e.escaped) continue;
+      if (Math.hypot(e.x - cx, e.y - cy) <= s.range) { pushBack(e, s.push); any = true; }
+    }
+    if (any) {
+      t.cd = 1 / s.rate;
+      shots.push({ kind: 'gust', x: cx, y: cy, r: s.range, t: 0, ttl: 0.45 });
+      for (let i = 0; i < 8; i++) {
+        const a = Math.random() * TAU;
+        spawnPart({ kind: 'leaf', x: cx + Math.cos(a) * 0.3, y: cy + Math.sin(a) * 0.3, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, ttl: 0.5, rot: Math.random() * TAU });
+      }
+    }
+    return;
+  }
 
   if (t.type === 'ice') {
     // Aura: alle im Umkreis verlangsamen
@@ -245,9 +366,10 @@ function stepTower(t, dt) {
   // Schuss-Türme (mg, grenade, rocket)
   t.cd -= dt;
   const target = firstInRange(t, s.range);
-  if (target) t.angle = Math.atan2(target.y - cy, target.x - cx);
+  if (target) aimAt(t, target.x, target.y, dt);
   if (t.cd > 0 || !target) return;
   t.cd = 1 / s.rate;
+  t.kick = 1;   // Rückstoß-Animation
 
   if (t.type === 'mg') {
     damage(target, s.dmg);
@@ -286,7 +408,27 @@ function splashDamage(x, y, radius, dmg) {
 
 function stepShot(sh, dt) {
   sh.t = (sh.t || 0) + dt;
-  if (sh.kind === 'tracer' || sh.kind === 'boom') return sh.t >= sh.ttl;
+  if (sh.kind === 'tracer' || sh.kind === 'boom' || sh.kind === 'zap' || sh.kind === 'gust') return sh.t >= sh.ttl;
+  if (sh.kind === 'pool') {
+    // Giftpfütze: ätzt alle, die drin stehen
+    for (const e of enemies) {
+      if (e.dead || e.escaped) continue;
+      if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.r + e.r * 0.5) damage(e, sh.dps * dt);
+    }
+    if (Math.random() < dt * 8) spawnPart({ kind: 'bubble', x: sh.x + (Math.random() - 0.5) * sh.r * 1.4, y: sh.y + (Math.random() - 0.5) * sh.r * 1.0, vx: 0, vy: -0.4, ttl: 0.5 });
+    return sh.t >= sh.ttl;
+  }
+  if (sh.kind === 'glob') {
+    const f = clamp(sh.t / sh.ttl, 0, 1);
+    sh.x = sh.sx + (sh.tx - sh.sx) * f;
+    sh.y = sh.sy + (sh.ty - sh.sy) * f - Math.sin(f * Math.PI) * 1.1;
+    if (f >= 1) {
+      shots.push({ kind: 'pool', x: sh.tx, y: sh.ty, r: sh.pool, dps: sh.dps, t: 0, ttl: sh.dur });
+      for (let i = 0; i < 6; i++) spawnPart({ kind: 'spark', x: sh.tx, y: sh.ty, vx: (Math.random() - 0.5) * 2.4, vy: -Math.random() * 2, ttl: 0.3, color: '#a8e86a' });
+      return true;
+    }
+    return false;
+  }
   if (sh.kind === 'lob') {
     const f = clamp(sh.t / sh.ttl, 0, 1);
     sh.x = sh.sx + (sh.tx - sh.sx) * f;
@@ -378,6 +520,8 @@ function update(dt) {
     else if (p.kind === 'spark' || p.kind === 'debris') p.vy += 7 * dt;        // Funken/Splitter fallen
     else if (p.kind === 'smoke') p.vy -= 0.4 * dt;                             // Rauch steigt
     else if (p.kind === 'snow') p.x += Math.sin(p.t * 4 + p.ph) * dt * 0.5;    // Schnee taumelt
+    else if (p.kind === 'leaf') { p.vx *= 1 - dt * 2; p.vy = p.vy * (1 - dt * 2) + 1.2 * dt; }   // Blätter verwirbeln
+    else if (p.kind === 'bubble') p.vy -= 0.2 * dt;                            // Giftblasen steigen
     if (p.rot !== undefined) p.rot += dt * 9;
   }
 
@@ -429,14 +573,75 @@ function draw(time) {
   ctx.fillStyle = '#0c1a12'; ctx.fillRect(0, 0, CW, CH);
 
   ctx.save(); ctx.translate(OX, OY);
-  // Gras + Pfad
+  // Wiese
   for (let y = 0; y < GR; y++) for (let x = 0; x < GC; x++) {
-    if (isPath(x, y)) ctx.fillStyle = (x + y) % 2 ? '#b39b6e' : '#a8905f';
-    else ctx.fillStyle = (x + y) % 2 ? '#1d3a24' : '#1a3520';
+    ctx.fillStyle = (x + y) % 2 ? '#1d3a24' : '#1a3520';
     ctx.fillRect(x * T, y * T, T + 0.5, T + 0.5);
   }
+  // Teiche (leicht schimmernd, mit Ufer)
+  for (const k of POND) {
+    const [x, y] = k.split(',').map(Number);
+    ctx.fillStyle = '#2a5a7a';
+    ctx.fillRect(x * T, y * T, T + 0.5, T + 0.5);
+    ctx.fillStyle = `rgba(140,200,235,${0.16 + Math.sin(time * 1.6 + x * 2 + y) * 0.08})`;
+    ctx.fillRect(x * T, y * T, T + 0.5, T + 0.5);
+    ctx.fillStyle = 'rgba(220,240,255,0.35)';
+    const wy = y * T + T * (0.3 + Math.sin(time * 2 + x * 3) * 0.1);
+    ctx.fillRect(x * T + T * 0.15, wy, T * 0.35, 1.6);
+    ctx.fillRect(x * T + T * 0.55, wy + T * 0.25, T * 0.28, 1.6);
+  }
+  // Pfad: Erde mit dunklem Rand + Kieseln
+  for (const [x, y] of PATH) {
+    ctx.fillStyle = (x + y) % 2 ? '#b39b6e' : '#a8905f';
+    ctx.fillRect(x * T, y * T, T + 0.5, T + 0.5);
+  }
+  ctx.strokeStyle = 'rgba(70,52,30,0.55)'; ctx.lineWidth = 2;
+  for (const [x, y] of PATH) {
+    if (!isPath(x, y - 1)) { ctx.beginPath(); ctx.moveTo(x * T, y * T + 1); ctx.lineTo((x + 1) * T, y * T + 1); ctx.stroke(); }
+    if (!isPath(x, y + 1)) { ctx.beginPath(); ctx.moveTo(x * T, (y + 1) * T - 1); ctx.lineTo((x + 1) * T, (y + 1) * T - 1); ctx.stroke(); }
+    if (!isPath(x - 1, y)) { ctx.beginPath(); ctx.moveTo(x * T + 1, y * T); ctx.lineTo(x * T + 1, (y + 1) * T); ctx.stroke(); }
+    if (!isPath(x + 1, y)) { ctx.beginPath(); ctx.moveTo((x + 1) * T - 1, y * T); ctx.lineTo((x + 1) * T - 1, (y + 1) * T); ctx.stroke(); }
+    const h = tileHash(x, y);
+    ctx.fillStyle = 'rgba(90,70,45,0.5)';
+    for (let i = 0; i < 3; i++) {
+      const px = x * T + ((h >> (i * 5)) % 80) / 100 * T + T * 0.1;
+      const py = y * T + ((h >> (i * 7 + 3)) % 80) / 100 * T + T * 0.1;
+      ctx.beginPath(); ctx.arc(px, py, T * 0.035, 0, TAU); ctx.fill();
+    }
+  }
+  // Wiesen-Deko (deterministisch, unter den Türmen)
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let y = 0; y < GR; y++) for (let x = 0; x < GC; x++) {
+    if (isPath(x, y) || isPond(x, y)) continue;
+    const h = tileHash(x, y) % 100;
+    const cx2 = x * T + T * (0.3 + (tileHash(x, y) >> 8) % 40 / 100);
+    const cy2 = y * T + T * (0.3 + (tileHash(x, y) >> 12) % 40 / 100);
+    if (h < 26) {           // Grasbüschel
+      ctx.strokeStyle = '#2f5c36'; ctx.lineWidth = 1.4;
+      const sway = Math.sin(time * 1.8 + x + y) * T * 0.03;
+      ctx.beginPath();
+      ctx.moveTo(cx2 - T * 0.06, cy2 + T * 0.08); ctx.lineTo(cx2 - T * 0.08 + sway, cy2 - T * 0.1);
+      ctx.moveTo(cx2, cy2 + T * 0.08); ctx.lineTo(cx2 + sway, cy2 - T * 0.14);
+      ctx.moveTo(cx2 + T * 0.06, cy2 + T * 0.08); ctx.lineTo(cx2 + T * 0.08 + sway, cy2 - T * 0.1);
+      ctx.stroke();
+    } else if (h < 36) {    // Blume
+      ctx.font = (T * 0.3) + 'px system-ui';
+      ctx.fillText(h % 2 ? '🌼' : '🌸', cx2, cy2);
+    } else if (h < 44) {    // Stein
+      ctx.fillStyle = '#4a5a58';
+      ctx.beginPath(); ctx.ellipse(cx2, cy2, T * 0.11, T * 0.075, 0.4, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      ctx.beginPath(); ctx.ellipse(cx2 - T * 0.03, cy2 - T * 0.025, T * 0.05, T * 0.03, 0.4, 0, TAU); ctx.fill();
+    } else if (h < 50) {    // Baum (klein, Türme bleiben sichtbar davor)
+      ctx.font = (T * 0.52) + 'px system-ui';
+      ctx.fillText(h % 2 ? '🌲' : '🌳', cx2, cy2);
+    } else if (h < 54) {    // Pilz
+      ctx.font = (T * 0.26) + 'px system-ui';
+      ctx.fillText('🍄', cx2, cy2);
+    }
+  }
   // Start/Ziel
-  ctx.font = (T * 0.7) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = (T * 0.7) + 'px system-ui';
   const [sx, sy] = PATH[0], [ex, ey] = PATH[PATH.length - 1];
   ctx.fillText('🕳', sx * T + T / 2, sy * T + T / 2);
   ctx.fillText('🏠', ex * T + T / 2, ey * T + T / 2);
@@ -473,16 +678,31 @@ function drawTower(t, time) {
   const b = clamp((t.born ?? 1) / 0.35, 0, 1);
   const scale = b < 1 ? 0.2 + b * 1.0 - Math.sin(b * Math.PI) * -0.15 : 1;
   if (scale !== 1) { ctx.save(); ctx.translate(cx, cy); ctx.scale(scale, scale); ctx.translate(-cx, -cy); }
+  // Schatten unter dem Turm
+  ctx.globalAlpha = 0.3; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(cx + T * 0.04, cy + T * 0.3, T * 0.38, T * 0.15, 0, 0, TAU); ctx.fill();
+  ctx.globalAlpha = 1;
   // Sockel
   ctx.fillStyle = '#3a4a55';
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.38, 0, TAU); ctx.fill();
   ctx.fillStyle = def.color;
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.3, 0, TAU); ctx.fill();
-  // Lauf (Richtung)
-  if (t.type !== 'ice' && t.type !== 'flame') {
+  // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
+  if (!['ice', 'flame', 'wind', 'gold'].includes(t.type)) {
+    const kick = (t.kick || 0) * T * 0.1;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
     ctx.fillStyle = '#22303a';
-    ctx.fillRect(0, -T * 0.08, T * 0.42, T * 0.16);
+    ctx.fillRect(-kick, -T * 0.08, T * 0.42, T * 0.16);
+    ctx.restore();
+  }
+  // Windmaschine: rotierender Propeller
+  if (t.type === 'wind') {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate((t.pulse || 0) * 5);
+    ctx.strokeStyle = '#e8f6f2'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      ctx.rotate(TAU / 3);
+      ctx.beginPath(); ctx.moveTo(T * 0.08, 0); ctx.lineTo(T * 0.3, 0); ctx.stroke();
+    }
     ctx.restore();
   }
   // Laserstrahl
@@ -551,6 +771,16 @@ function drawParts() {
       ctx.globalAlpha = (1 - f) * 0.85;
       ctx.fillStyle = '#dff2ff';
       ctx.beginPath(); ctx.arc(p.x * T, p.y * T, T * 0.05, 0, TAU); ctx.fill();
+    } else if (p.kind === 'leaf') {
+      ctx.globalAlpha = 1 - f;
+      ctx.save(); ctx.translate(p.x * T, p.y * T); ctx.rotate(p.rot || 0);
+      ctx.fillStyle = '#7ab84a';
+      ctx.beginPath(); ctx.ellipse(0, 0, T * 0.08, T * 0.045, 0, 0, TAU); ctx.fill();
+      ctx.restore();
+    } else if (p.kind === 'bubble') {
+      ctx.globalAlpha = (1 - f) * 0.8;
+      ctx.strokeStyle = '#a8e86a'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(p.x * T, p.y * T, T * 0.055 * (1 + f), 0, TAU); ctx.stroke();
     } else if (p.kind === 'shock') {
       ctx.globalAlpha = 1 - f;
       ctx.strokeStyle = p.color || '#ffe2b0';
@@ -576,15 +806,35 @@ function drawEnemy(e, time) {
     ctx.beginPath(); ctx.arc(cx, cy, e.r * T * (1.5 + Math.sin(time * 5) * 0.18), 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
   }
+  // Schatten am Boden
+  ctx.globalAlpha = 0.28; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(cx, cy + e.r * T * 0.85, e.r * T * 0.9, e.r * T * 0.32, 0, 0, TAU); ctx.fill();
+  ctx.globalAlpha = 1;
+  // Watschel-Gang: Körper staucht und streckt sich im Rhythmus
+  const squash = 1 + Math.sin(time * 9 + e.wob) * 0.08 * (e.slowF > 0 ? 0.4 : 1);
+  ctx.save();
+  ctx.translate(cx, cy + wob);
+  ctx.scale(2 - squash, squash);
   ctx.fillStyle = e.color;
-  ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T, 0, TAU); ctx.fill();
-  if (e.slowF > 0) { ctx.strokeStyle = 'rgba(140,220,255,0.9)'; ctx.lineWidth = 2; ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(0, 0, e.r * T, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';   // Glanzlicht
+  ctx.beginPath(); ctx.arc(-e.r * T * 0.3, -e.r * T * 0.35, e.r * T * 0.32, 0, TAU); ctx.fill();
+  if (e.slowF > 0) { ctx.strokeStyle = 'rgba(140,220,255,0.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, e.r * T, 0, TAU); ctx.stroke(); }
+  ctx.restore();
   if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText('🔥', cx, cy - e.r * T - T * 0.12); }
-  // Augen
+  // Augen blicken in Laufrichtung
+  const [pax, pay] = PATH[e.pathI], [pbx, pby] = PATH[Math.min(e.pathI + 1, PATH.length - 1)];
+  const dx = Math.sign(pbx - pax), dy = Math.sign(pby - pay);
+  const eox = dx * e.r * T * 0.22, eoy = dy * e.r * T * 0.22;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx - e.r * T * 0.32 + eox, cy + wob - e.r * T * 0.2 + eoy, e.r * T * 0.2, 0, TAU);
+  ctx.arc(cx + e.r * T * 0.32 + eox, cy + wob - e.r * T * 0.2 + eoy, e.r * T * 0.2, 0, TAU);
+  ctx.fill();
   ctx.fillStyle = '#0f1a12';
   ctx.beginPath();
-  ctx.arc(cx - e.r * T * 0.35, cy + wob - e.r * T * 0.2, e.r * T * 0.16, 0, TAU);
-  ctx.arc(cx + e.r * T * 0.35, cy + wob - e.r * T * 0.2, e.r * T * 0.16, 0, TAU);
+  ctx.arc(cx - e.r * T * 0.32 + eox * 1.4, cy + wob - e.r * T * 0.2 + eoy * 1.4, e.r * T * 0.1, 0, TAU);
+  ctx.arc(cx + e.r * T * 0.32 + eox * 1.4, cy + wob - e.r * T * 0.2 + eoy * 1.4, e.r * T * 0.1, 0, TAU);
   ctx.fill();
   // HP-Balken
   const w = e.r * T * 2.2;
@@ -597,9 +847,65 @@ function drawShot(sh) {
   if (sh.kind === 'tracer') {
     ctx.strokeStyle = 'rgba(255,240,180,0.9)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(sh.x1 * T, sh.y1 * T); ctx.lineTo(sh.x2 * T, sh.y2 * T); ctx.stroke();
+  } else if (sh.kind === 'zap') {
+    // Kettenblitz: gezackte Segmente, die pro Frame neu zittern
+    ctx.globalAlpha = 1 - sh.t / sh.ttl;
+    for (const w of [[4.5, 'rgba(150,190,255,0.5)'], [2, '#fff']]) {
+      ctx.strokeStyle = w[1]; ctx.lineWidth = w[0];
+      ctx.beginPath();
+      for (let i = 0; i < sh.pts.length - 1; i++) {
+        const [x1, y1] = sh.pts[i], [x2, y2] = sh.pts[i + 1];
+        ctx.moveTo(x1 * T, y1 * T);
+        const segs = 4;
+        for (let sgi = 1; sgi <= segs; sgi++) {
+          const f = sgi / segs;
+          const jx = sgi < segs ? (Math.random() - 0.5) * 0.24 : 0;
+          const jy = sgi < segs ? (Math.random() - 0.5) * 0.24 : 0;
+          ctx.lineTo((x1 + (x2 - x1) * f + jx) * T, (y1 + (y2 - y1) * f + jy) * T);
+        }
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else if (sh.kind === 'pool') {
+    // Giftpfütze mit blubberndem Rand
+    const a = clamp(sh.ttl - sh.t, 0, 1);
+    ctx.globalAlpha = 0.45 * Math.min(1, a);
+    ctx.fillStyle = '#5ab82a';
+    ctx.beginPath(); ctx.ellipse(sh.x * T, sh.y * T, sh.r * T, sh.r * T * 0.7, 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 0.7 * Math.min(1, a);
+    ctx.strokeStyle = '#8ce84a'; ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (sh.kind === 'glob') {
+    // Schatten am Boden + Flasche im Flug
+    const f = clamp(sh.t / sh.ttl, 0, 1);
+    const gy = sh.sy + (sh.ty - sh.sy) * f;
+    ctx.globalAlpha = 0.25; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(sh.x * T, gy * T + T * 0.1, T * 0.1, T * 0.05, 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#8ad84a';
+    ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, T * 0.11, 0, TAU); ctx.fill();
+  } else if (sh.kind === 'gust') {
+    // Windstoß: expandierende Doppelringe
+    const f = sh.t / sh.ttl;
+    ctx.globalAlpha = (1 - f) * 0.6;
+    ctx.strokeStyle = '#cfeee8'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, sh.r * T * (0.3 + f * 0.7), 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, sh.r * T * Math.max(0, f - 0.18), 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
   } else if (sh.kind === 'lob') {
+    // Schatten am Boden, Granate rotiert im Bogenflug
+    const f = clamp(sh.t / sh.ttl, 0, 1);
+    const gy = sh.sy + (sh.ty - sh.sy) * f;
+    ctx.globalAlpha = 0.25; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(sh.x * T, gy * T + T * 0.1, T * 0.1, T * 0.05, 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.save(); ctx.translate(sh.x * T, sh.y * T); ctx.rotate(f * 9);
     ctx.fillStyle = '#333';
-    ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, T * 0.12, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, T * 0.12, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#666'; ctx.fillRect(-T * 0.02, -T * 0.17, T * 0.04, T * 0.07);
+    ctx.restore();
   } else if (sh.kind === 'rocket') {
     ctx.save(); ctx.translate(sh.x * T, sh.y * T); ctx.rotate(sh.angle);
     ctx.fillStyle = '#ddd'; ctx.fillRect(-T * 0.14, -T * 0.06, T * 0.28, T * 0.12);
@@ -690,7 +996,7 @@ function buildTower(type) {
   const cost = def.levels[0].cost;
   if (!game.sel || game.money < cost) return;
   const k = game.sel.x + ',' + game.sel.y;
-  if (towerAt[k] || isPath(game.sel.x, game.sel.y)) return;
+  if (towerAt[k] || isPath(game.sel.x, game.sel.y) || isPond(game.sel.x, game.sel.y)) return;
   game.money -= cost;
   const t = { type, lvl: 0, x: game.sel.x, y: game.sel.y, cd: 0, angle: 0, born: 0 };
   towers.push(t);
@@ -762,15 +1068,15 @@ canvas.addEventListener('pointerdown', (e) => {
   const k = gx + ',' + gy;
   game.sel = { x: gx, y: gy };
   if (towerAt[k]) showUpgpanel(towerAt[k]);
-  else if (!isPath(gx, gy)) showBuildbar();
+  else if (!isPath(gx, gy) && !isPond(gx, gy)) showBuildbar();
   else hidePanels();
 });
 
 // ---- Toolbar ---------------------------------------------------------------
 const speedBtn = document.getElementById('btn-speed');
-function updateSpeedBtn() { speedBtn.textContent = game.speed + '×'; }
+function updateSpeedBtn() { speedBtn.textContent = '⏩' + game.speed + '×'; }
 speedBtn.addEventListener('click', () => {
-  game.speed = game.speed === 1 ? 2 : game.speed === 2 ? 3 : 1;
+  game.speed = game.speed === 1 ? 2 : game.speed === 2 ? 3 : game.speed === 3 ? 5 : 1;
   updateSpeedBtn();
 });
 document.getElementById('btn-wave').addEventListener('click', () => { if (game.state === 'build') startWave(); });
@@ -797,7 +1103,7 @@ window.__td = { game, get towers() { return towers; }, get enemies() { return en
   TOWERS, PATH, isPath, startWave, newGame, update,
   place(type, x, y) {
     const k = x + ',' + y;
-    if (towerAt[k] || isPath(x, y)) return null;
+    if (towerAt[k] || isPath(x, y) || isPond(x, y)) return null;
     const cost = TOWERS[type].levels[0].cost;
     if (game.money < cost) return null;
     game.money -= cost;
