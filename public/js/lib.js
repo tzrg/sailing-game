@@ -165,12 +165,13 @@ function parseKey(key, raw) {
   if (key === 'mampf_best') return { game: 'mampf', variant: 'best', label: 'Highscore', sub: 'Arcade', value: raw, better: 'high' };
   if (key === 'snake_best') return { game: 'snake', variant: 'best', label: 'Highscore', sub: 'Arcade', value: raw, better: 'high' };
   if (key === 'maze_best') return { game: 'maze', variant: 'best', label: 'Highscore', sub: 'Labyrinth', value: raw, better: 'high' };
+  if (key === 'td_best') return { game: 'td', variant: 'best', label: 'Höchste Welle', sub: 'Endlos', value: raw, better: 'high' };
   m = key.match(/^lem_best_(\d+)$/);
   if (m) return { game: 'lem', variant: 'level' + m[1], label: 'Level ' + (parseInt(m[1], 10) + 1), sub: 'Gerettet', value: raw, better: 'high' };
   return null;
 }
 
-const GAME_TITLES = { sail: '⛵ Segeln', auto: '🏎 Autorennen', mtb: '🚵 Mountainbike', mampf: '🟡 Mampf', lem: '🐭 Lemminge', maze: '🧩 Super Maze', snake: '🐍 Snake' };
+const GAME_TITLES = { sail: '⛵ Segeln', auto: '🏎 Autorennen', mtb: '🚵 Mountainbike', mampf: '🟡 Mampf', lem: '🐭 Lemminge', maze: '🧩 Super Maze', snake: '🐍 Snake', td: '🏰 Tower Defense' };
 
 export const Scores = {
   // Alle lokalen Bestwerte als flache Liste.

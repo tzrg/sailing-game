@@ -946,6 +946,48 @@ body.landing {
 .fp-text { font-size: 14px; color: #eaf3fa; white-space: pre-wrap; word-break: break-word; line-height: 1.45; }
 #fr-back { margin-bottom: 4px; }
 
+/* Tower Defense: Bau-Leiste + Upgrade-Panel */
+#buildbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 14;
+  display: flex;
+  gap: 6px;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0));
+  background: rgba(6, 20, 34, 0.92);
+  overflow-x: auto;
+}
+#buildbar.hidden { display: none; }
+#buildbar .tdt {
+  flex: 0 0 auto;
+  min-width: 86px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #fff;
+  padding: 8px 6px;
+  cursor: pointer;
+}
+#buildbar .tdt .ti { font-size: 22px; line-height: 1; }
+#buildbar .tdt .tn { font-size: 11px; }
+#buildbar .tdt .tc { font-size: 12px; color: #ffd166; font-weight: 700; }
+#buildbar .tdt.broke { opacity: 0.4; cursor: default; }
+
+#upgpanel {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 14;
+  background: rgba(6, 20, 34, 0.94);
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0));
+}
+#upgpanel.hidden { display: none; }
+#upg-info { font-size: 13px; color: #eaf3fa; margin-bottom: 8px; line-height: 1.4; }
+#upg-btns { display: flex; gap: 8px; }
+#upg-btns .btn { flex: 1; }
+#upg-btns .btn.small { flex: 0 0 auto; }
+#upg-btns .btn:disabled { opacity: 0.45; cursor: default; }
+
 @media (max-width: 480px) {
   .cat-forms { grid-template-columns: 1fr; }
   .lp-head h1 { font-size: 25px; }

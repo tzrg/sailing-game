@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Tower Defense</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🏰%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+    <button id="btn-speed" title="Tempo">1×</button>
+    <button id="btn-wave" title="Nächste Welle">▶</button>
+  </div>
+
+  <!-- Bau-Leiste (erscheint, wenn ein freies Feld gewählt ist) -->
+  <div id="buildbar" class="hidden"></div>
+
+  <!-- Upgrade-Panel (erscheint, wenn ein Turm gewählt ist) -->
+  <div id="upgpanel" class="hidden">
+    <div id="upg-info"></div>
+    <div id="upg-btns">
+      <button id="upg-up" class="btn primary">⬆ Upgrade</button>
+      <button id="upg-sell" class="btn">💰 Verkaufen</button>
+      <button id="upg-close" class="btn small">✕</button>
+    </div>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>🏰 Tower Defense</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link" href="index.html">🏠</a>
+          <a class="game-link" href="sail.html">⛵</a>
+          <a class="game-link" href="auto.html">🏎</a>
+          <a class="game-link" href="mtb.html">🚵</a>
+          <a class="game-link" href="wurm.html">🐛</a>
+          <a class="game-link" href="lemminge.html">🐭</a>
+          <a class="game-link" href="gorilla.html">🦍</a>
+          <a class="game-link" href="mampf.html">🟡</a>
+          <a class="game-link" href="maze.html">🧩</a>
+          <a class="game-link" href="snake.html">🐍</a>
+          <a class="game-link active" href="td.html">🏰</a>
+        </div>
+      </div>
+
+      <button class="menu-btn" id="btn-restart">🔄 Neues Spiel</button>
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>🏰 Tower Defense</h1>
+      <ul>
+        <li>Monster laufen den <b>Parcours</b> entlang – erreicht eins das Ziel, kostet es ein <b>Leben ❤️</b> (Bosse fünf!). Bei 0 ist Schluss.</li>
+        <li><b>Freies Feld antippen</b> → Turm bauen. <b>Turm antippen</b> → Upgrade (2×) oder Verkaufen (70 %).</li>
+        <li><b>🔫 MG</b> – billig, schnell, Einzelziel · <b>💣 Granatkanone</b> – Flächenschaden · <b>📡 Laser</b> – durchbohrt alle in einer Linie</li>
+        <li><b>🔥 Flammenwerfer</b> – kurze Reichweite, trifft alle im Umkreis + Brennschaden · <b>🚀 Raketen</b> – zielsuchend, dicker Schaden · <b>❄️ Vereiser</b> – verlangsamt alle im Umkreis</li>
+        <li><b>Geld</b> gibt's pro Abschuss und als Wellen-Bonus. Jede Welle wird härter: Renner (schnell), Panzer (zäh), Regenerierer und alle 8 Wellen ein <b>Boss</b>.</li>
+        <li><b>▶</b> startet die nächste Welle sofort (Bonus fürs Frühstarten!), <b>1×/2×/3×</b> stellt das Tempo um.</li>
+        <li>Highscore = höchste erreichte Welle, zählt für die Bestenliste.</li>
+      </ul>
+      <p>Tipp: ❄️ Vereiser an Kurven + Flächenschaden dahinter ist ein Klassiker. Der Laser lohnt an langen Geraden.</p>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/td.js"></script>
+</body>
+</html>
