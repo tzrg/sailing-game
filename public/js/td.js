@@ -1,5 +1,5 @@
 // Tower Defense – Monster laufen den Parcours entlang, Türme halten sie auf.
-// Zwölf Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
+// Dreizehn Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
 // endlose Wellen. Die Kommandozentrale schaltet Nuke + Orbital-Laser frei.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -76,6 +76,11 @@ const TOWERS = {
       { cost: 120, dmg: 28, rate: 1.1, range: 2.7, chain: 3 },
       { cost: 130, dmg: 50, rate: 1.25, range: 3.0, chain: 4 },
       { cost: 230, dmg: 92, rate: 1.4, range: 3.3, chain: 6 }] },
+  ray: { name: 'Bestrahlungsturm', icon: '☣️', color: '#9ee06a', desc: 'Dauerstrahl-Kegel: verstrahlt statt zu schießen – Verstrahlung ignoriert Panzerung und bleibt für immer',
+    levels: [
+      { cost: 110, charge: 4, cap: 26, range: 2.3 },
+      { cost: 120, charge: 7, cap: 48, range: 2.6 },
+      { cost: 210, charge: 12, cap: 85, range: 2.9 }] },
   gift: { name: 'Giftschleuder', icon: '🧪', color: '#8ad84a', desc: 'hinterlässt ätzende Giftpfützen',
     levels: [
       { cost: 95, dps: 13, rate: 0.45, range: 3.0, pool: 0.95, dur: 4 },
@@ -127,11 +132,16 @@ const SPECS = {
     { key: 'dur', icon: '⏳', name: 'Zähflüssig', cost: 100, desc: 'Pfützen halten 3 s länger', mod: (s) => { s.dur += 3; } },
     { key: 'pool', icon: '🫧', name: 'Große Pfützen', cost: 100, desc: '+40% Pfützenradius', mod: (s) => { s.pool *= 1.4; } },
   ],
+  ray: [
+    { key: 'charge', icon: '☢️', name: 'Zerfallsplus', cost: 120, desc: '+50% Verstrahlung & Limit', mod: (s) => { s.charge *= 1.5; s.cap = Math.round(s.cap * 1.5); } },
+    { key: 'range', icon: '📡', name: 'Langstrahler', cost: 120, desc: '+0,8 Reichweite', mod: (s) => { s.range += 0.8; } },
+  ],
 };
 // Effektive Werte inkl. gewählter Spezialisierung
 function effStats(t) {
   const s = { ...towerStats(t) };
   if (t.type === 'flame') s.cone = 0.95;   // Grundkegel (~110°)
+  if (t.type === 'ray') s.cone = 0.55;     // schmaler Strahlenkegel (~63°)
   const spec = t.spec && (SPECS[t.type] || []).find((o) => o.key === t.spec);
   if (spec && spec.mod) spec.mod(s);
   return s;
@@ -227,7 +237,7 @@ function spawnEnemy(type) {
     x: sx + 0.5, y: sy + 0.5, slowT: 0, slowF: 0, burnT: 0, burnDps: 0,
     bounty: bounty(game.wave, t.mult), boss: !!t.boss, regen: t.regen || 0,
     armorHp: t.armor ? hp * t.armor : 0, maxArmor: t.armor ? hp * t.armor : 0,
-    vulnFire: 0, vulnShock: 0, windCd: 0,
+    vulnFire: 0, vulnShock: 0, windCd: 0, radDps: 0,
     r: t.r, color: t.color, wob: Math.random() * TAU,
   });
 }
@@ -241,6 +251,7 @@ function stepEnemy(e, dt) {
   if (e.vulnShock > 0) e.vulnShock -= dt;
   if (e.windCd > 0) e.windCd -= dt;
   if (e.burnT > 0) { e.burnT -= dt; damage(e, e.burnDps * dt, 'fire'); }
+  if (e.radDps > 0) e.hp -= e.radDps * dt;   // Verstrahlung: ignoriert Panzerung, klingt nie ab
   if (e.regen) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * e.regen * dt);
   const spd = e.speed * (1 - e.slowF);
   e.frac += spd * dt;
@@ -426,6 +437,42 @@ function stepTower(t, dt) {
         // Brutzel-Funken am Auftreffpunkt
         if (Math.random() < dt * 9) spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.1, vx: (Math.random() - 0.5) * 2, vy: -1 - Math.random(), ttl: 0.25, color: '#ff9ef0' });
       }
+    }
+    return;
+  }
+
+  if (t.type === 'ray') {
+    // Bestrahlung: kontinuierlicher Kegel Richtung nächster Gegner. Kein
+    // Direktschaden – wer im Strahl steht, sammelt dauerhafte Verstrahlung,
+    // die direkt an den Lebenspunkten nagt und jede Panzerung ignoriert.
+    let nearest = null, nd = 1e9;
+    for (const e of enemies) {
+      if (e.dead || e.escaped) continue;
+      const d = Math.hypot(e.x - cx, e.y - cy);
+      if (d <= s.range && d < nd) { nd = d; nearest = e; }
+    }
+    let any = false;
+    if (nearest) {
+      aimAt(t, nearest.x, nearest.y, dt);
+      for (const e of enemies) {
+        if (e.dead || e.escaped) continue;
+        if (Math.hypot(e.x - cx, e.y - cy) > s.range) continue;
+        let da = Math.atan2(e.y - cy, e.x - cx) - t.angle;
+        while (da > Math.PI) da -= TAU;
+        while (da < -Math.PI) da += TAU;
+        if (Math.abs(da) > s.cone) continue;
+        const cur = e.radDps || 0;
+        if (cur < s.cap) e.radDps = Math.min(s.cap, cur + s.charge * dt);
+        any = true;
+      }
+    }
+    t.firing = any;
+    t.pulse = (t.pulse || 0) + dt;
+    if (any && Math.random() < dt * 16) {
+      const a = t.angle + (Math.random() - 0.5) * s.cone * 1.8;
+      const sp = 1.6 + Math.random() * 1.6;
+      spawnPart({ kind: 'rad', x: cx + Math.cos(a) * 0.35, y: cy + Math.sin(a) * 0.35,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, ttl: 0.4 + Math.random() * 0.25 });
     }
     return;
   }
@@ -631,6 +678,10 @@ function update(dt) {
     // brennende Gegner züngeln
     if (e.burnT > 0 && Math.random() < dt * 7) {
       spawnPart({ kind: 'flame', x: e.x + (Math.random() - 0.5) * e.r, y: e.y - e.r, vx: (Math.random() - 0.5) * 0.5, vy: -1.2, ttl: 0.3, size: 0.09 });
+    }
+    // verstrahlte dünsten grüne Wölkchen aus
+    if (e.radDps > 0 && Math.random() < dt * 5) {
+      spawnPart({ kind: 'rad', x: e.x + (Math.random() - 0.5) * e.r, y: e.y - e.r * 0.5, vx: (Math.random() - 0.5) * 0.4, vy: -0.8, ttl: 0.45 });
     }
     if (e.escaped) {
       game.lives -= e.boss ? 5 : 1;
@@ -967,7 +1018,7 @@ function drawTower(t, time) {
   ctx.fillStyle = def.color;
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.3 * sock, 0, TAU); ctx.fill();
   // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
-  if (!['ice', 'flame', 'wind', 'gold', 'command'].includes(t.type)) {
+  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray'].includes(t.type)) {
     const kick = (t.kick || 0) * T * 0.1;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
     ctx.fillStyle = '#22303a';
@@ -1006,6 +1057,19 @@ function drawTower(t, time) {
     ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(T * 0.3, 0); ctx.lineTo(len, 0); ctx.stroke();
     ctx.restore();
+  }
+  // Strahlenkegel (giftgrün, flackernd)
+  if (t.type === 'ray' && t.firing) {
+    const rr = s.range * T;
+    ctx.globalAlpha = 0.15 + Math.sin(time * 13) * 0.05;
+    ctx.fillStyle = '#7dff5e';
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, rr, (t.angle || 0) - s.cone, (t.angle || 0) + s.cone);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#a8ff8a'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, (t.angle || 0) - s.cone, (t.angle || 0) + s.cone); ctx.stroke();
+    ctx.globalAlpha = 1;
   }
   // Feuerkegel-Bogen in Zielrichtung
   if (t.type === 'flame' && t.firing) {
@@ -1079,6 +1143,12 @@ function drawParts() {
       ctx.fillStyle = '#7ab84a';
       ctx.beginPath(); ctx.ellipse(0, 0, T * 0.08, T * 0.045, 0, 0, TAU); ctx.fill();
       ctx.restore();
+    } else if (p.kind === 'rad') {
+      ctx.globalAlpha = (1 - f) * 0.85;
+      ctx.fillStyle = '#8aff6a';
+      ctx.beginPath(); ctx.arc(p.x * T, p.y * T, T * 0.055 * (1 + f * 0.6), 0, TAU); ctx.fill();
+      ctx.globalAlpha = (1 - f) * 0.3;
+      ctx.beginPath(); ctx.arc(p.x * T, p.y * T, T * 0.12 * (1 + f), 0, TAU); ctx.fill();
     } else if (p.kind === 'bubble') {
       ctx.globalAlpha = (1 - f) * 0.8;
       ctx.strokeStyle = '#a8e86a'; ctx.lineWidth = 1.4;
@@ -1137,6 +1207,13 @@ function drawEnemy(e, time) {
   if (e.vulnFire > 0) { ctx.strokeStyle = 'rgba(255,140,50,0.9)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.35, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.vulnShock > 0) { ctx.strokeStyle = 'rgba(120,180,255,0.9)'; ctx.setLineDash([2, 4]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.5, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText('🔥', cx, cy - e.r * T - T * 0.12); }
+  if (e.radDps > 0) {
+    ctx.strokeStyle = `rgba(140,255,110,${0.45 + Math.sin(time * 7 + e.wob) * 0.25})`;
+    ctx.lineWidth = 1.6; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.2, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = (T * 0.24) + 'px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('☣️', cx + e.r * T * 0.95, cy - e.r * T - T * 0.08);
+  }
   // Augen blicken in Laufrichtung
   const [pax, pay] = PATH[e.pathI], [pbx, pby] = PATH[Math.min(e.pathI + 1, PATH.length - 1)];
   const dx = Math.sign(pbx - pax), dy = Math.sign(pby - pay);
@@ -1454,6 +1531,7 @@ function showUpgpanel(t) {
   if (s.slow) statBits.push('-' + Math.round(s.slow * 100) + '% Tempo');
   if (s.splash) statBits.push('Fläche ' + s.splash);
   if (s.burn) statBits.push('+' + s.burn + '/s Brand');
+  if (s.charge) statBits.push('+' + s.charge + '/s Verstrahlung · max ' + s.cap + '/s');
   if (s.chain) statBits.push(s.chain + ' Kettenziele');
   if (s.cone) statBits.push('Kegel ' + Math.round(s.cone * 2 * 180 / Math.PI) + '°');
   if (s.gold) statBits.push('+' + s.gold + ' 💰 alle ' + s.interval + ' s');
