@@ -86,11 +86,11 @@ const TOWERS = {
       { cost: 95, dps: 13, rate: 0.45, range: 3.0, pool: 0.95, dur: 4 },
       { cost: 105, dps: 25, rate: 0.5, range: 3.3, pool: 1.1, dur: 4.5 },
       { cost: 185, dps: 45, rate: 0.55, range: 3.6, pool: 1.25, dur: 5 }] },
-  wind: { name: 'Windmaschine', icon: '🌪️', color: '#9fd8d0', desc: 'pustet Gegner zurück (danach kurz windfest)',
+  wind: { name: 'Windmaschine', icon: '🌪️', color: '#9fd8d0', desc: 'pustet den vordersten Gegner zurück – nie weiter, als er bis zum nächsten Stoß wieder aufholt',
     levels: [
-      { cost: 100, push: 0.9, rate: 0.18, range: 2.6 },
-      { cost: 110, push: 1.4, rate: 0.2, range: 2.9 },
-      { cost: 200, push: 2.0, rate: 0.22, range: 3.2 }] },
+      { cost: 100, rate: 0.18, range: 2.6 },
+      { cost: 110, rate: 0.24, range: 2.9 },
+      { cost: 200, rate: 0.3, range: 3.2 }] },
   gold: { name: 'Goldmine', icon: '💰', color: '#d8b84a', desc: 'schürft stetig Gold (kein Schaden)',
     levels: [
       { cost: 100, gold: 2, interval: 3 },
@@ -387,16 +387,22 @@ function stepTower(t, dt) {
     t.cd -= dt;
     t.pulse = (t.pulse || 0) + dt;
     if (t.cd > 0) return;
-    let any = false;
+    // Nur der VORDERSTE Gegner im Radius wird zurückgepustet – und höchstens
+    // 3/4 der Strecke, die er bis zum nächsten Windstoß läuft. Langfristig
+    // kommt also jeder vorbei, der Turm verzögert nur.
+    let target = null, bp = -1;
     for (const e of enemies) {
       if (e.dead || e.escaped || e.windCd > 0) continue;
-      if (Math.hypot(e.x - cx, e.y - cy) <= s.range) { pushBack(e, s.push); e.windCd = 2.5; any = true; }
+      if (Math.hypot(e.x - cx, e.y - cy) <= s.range && progress(e) > bp) { bp = progress(e); target = e; }
     }
-    if (any) {
+    if (target) {
+      pushBack(target, 0.75 * target.speed / s.rate);
+      target.windCd = 2.5;
       t.cd = 1 / s.rate;
       shots.push({ kind: 'gust', x: cx, y: cy, r: s.range, t: 0, ttl: 0.45 });
+      const dir = Math.atan2(target.y - cy, target.x - cx);
       for (let i = 0; i < 8; i++) {
-        const a = Math.random() * TAU;
+        const a = dir + (Math.random() - 0.5) * 0.9;
         spawnPart({ kind: 'leaf', x: cx + Math.cos(a) * 0.3, y: cy + Math.sin(a) * 0.3, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, ttl: 0.5, rot: Math.random() * TAU });
       }
     }
@@ -881,16 +887,32 @@ window.addEventListener('pagehide', saveState);
 // ---- Rendering -------------------------------------------------------------
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-let CW = 0, CH = 0, T = 24, OX = 0, OY = 0;
+let CW = 0, CH = 0, T = 24, OX = 0, OY = 0, ROT = false;
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   CW = window.innerWidth; CH = window.innerHeight;
   canvas.width = Math.round(CW * dpr); canvas.height = Math.round(CH * dpr);
   canvas.style.width = CW + 'px'; canvas.style.height = CH + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  T = Math.min(CW / GC, (CH - 210) / GR);
-  OX = (CW - GC * T) / 2;
-  OY = 92;
+  // Querformat: das hohe Spielfeld wird um 90° gedreht, damit es den
+  // Bildschirm füllt (Handy quer, Desktop). Eingaben werden zurückgerechnet.
+  ROT = CW > CH;
+  if (ROT) {
+    T = Math.min((CW - 16) / GR, (CH - 120) / GC);
+    OX = (CW - GR * T) / 2;
+    OY = Math.max(58, (CH - GC * T) / 2);
+  } else {
+    T = Math.min(CW / GC, (CH - 210) / GR);
+    OX = (CW - GC * T) / 2;
+    OY = 92;
+  }
+}
+// Bildschirm- in Feldkoordinaten (berücksichtigt die Drehung)
+function toField(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  const sx = clientX - r.left, sy = clientY - r.top;
+  if (ROT) return { wx: (sy - OY) / T, wy: (OX + GR * T - sx) / T };
+  return { wx: (sx - OX) / T, wy: (sy - OY) / T };
 }
 window.addEventListener('resize', resize);
 
@@ -901,7 +923,9 @@ function draw(time) {
 
   let jx = 0, jy = 0;
   if (game.shakeT > 0) { jx = (Math.random() - 0.5) * game.shakeT * 18; jy = (Math.random() - 0.5) * game.shakeT * 18; }
-  ctx.save(); ctx.translate(OX + jx, OY + jy);
+  ctx.save();
+  ctx.translate(OX + jx, OY + jy);
+  if (ROT) { ctx.rotate(Math.PI / 2); ctx.translate(0, -GR * T); }
   // Wiese
   for (let y = 0; y < GR; y++) for (let x = 0; x < GC; x++) {
     ctx.fillStyle = (x + y) % 2 ? '#1d3a24' : '#1a3520';
@@ -955,7 +979,7 @@ function draw(time) {
       ctx.stroke();
     } else if (h < 36) {    // Blume
       ctx.font = (T * 0.3) + 'px system-ui';
-      ctx.fillText(h % 2 ? '🌼' : '🌸', cx2, cy2);
+      fText(h % 2 ? '🌼' : '🌸', cx2, cy2);
     } else if (h < 44) {    // Stein
       ctx.fillStyle = '#4a5a58';
       ctx.beginPath(); ctx.ellipse(cx2, cy2, T * 0.11, T * 0.075, 0.4, 0, TAU); ctx.fill();
@@ -963,17 +987,17 @@ function draw(time) {
       ctx.beginPath(); ctx.ellipse(cx2 - T * 0.03, cy2 - T * 0.025, T * 0.05, T * 0.03, 0.4, 0, TAU); ctx.fill();
     } else if (h < 50) {    // Baum (klein, Türme bleiben sichtbar davor)
       ctx.font = (T * 0.52) + 'px system-ui';
-      ctx.fillText(h % 2 ? '🌲' : '🌳', cx2, cy2);
+      fText(h % 2 ? '🌲' : '🌳', cx2, cy2);
     } else if (h < 54) {    // Pilz
       ctx.font = (T * 0.26) + 'px system-ui';
-      ctx.fillText('🍄', cx2, cy2);
+      fText('🍄', cx2, cy2);
     }
   }
   // Start/Ziel
   ctx.font = (T * 0.7) + 'px system-ui';
   const [sx, sy] = PATH[0], [ex, ey] = PATH[PATH.length - 1];
-  ctx.fillText('🕳', sx * T + T / 2, sy * T + T / 2);
-  ctx.fillText('🏠', ex * T + T / 2, ey * T + T / 2);
+  fText('🕳', sx * T + T / 2, sy * T + T / 2);
+  fText('🏠', ex * T + T / 2, ey * T + T / 2);
 
   // gewählte Kachel + Reichweite
   if (game.sel) {
@@ -1090,9 +1114,9 @@ function drawTower(t, time) {
   }
   // Icon + Level-Sterne
   ctx.font = (T * (t.type === 'command' ? 0.62 : 0.42)) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(def.icon, cx, cy - T * 0.02);
+  fText(def.icon, cx, cy - T * 0.02);
   ctx.font = (T * 0.24) + 'px system-ui';
-  ctx.fillText('⭐'.repeat(t.lvl), cx, cy + T * 0.34);
+  fText('⭐'.repeat(t.lvl), cx, cy + T * 0.34);
   if (scale !== 1) ctx.restore();
 }
 
@@ -1206,13 +1230,13 @@ function drawEnemy(e, time) {
   // Verwundbarkeits-Markierungen (Spezialmunition)
   if (e.vulnFire > 0) { ctx.strokeStyle = 'rgba(255,140,50,0.9)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.35, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.vulnShock > 0) { ctx.strokeStyle = 'rgba(120,180,255,0.9)'; ctx.setLineDash([2, 4]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.5, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
-  if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; ctx.fillText('🔥', cx, cy - e.r * T - T * 0.12); }
+  if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; fText('🔥', cx, cy - e.r * T - T * 0.12); }
   if (e.radDps > 0) {
     ctx.strokeStyle = `rgba(140,255,110,${0.45 + Math.sin(time * 7 + e.wob) * 0.25})`;
     ctx.lineWidth = 1.6; ctx.setLineDash([2, 3]);
     ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.2, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
     ctx.font = (T * 0.24) + 'px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText('☣️', cx + e.r * T * 0.95, cy - e.r * T - T * 0.08);
+    fText('☣️', cx + e.r * T * 0.95, cy - e.r * T - T * 0.08);
   }
   // Augen blicken in Laufrichtung
   const [pax, pay] = PATH[e.pathI], [pbx, pby] = PATH[Math.min(e.pathI + 1, PATH.length - 1)];
@@ -1343,8 +1367,9 @@ function drawShot(sh) {
     const f = sh.t / sh.ttl;
     const x = sh.x * T, y = sh.y * T;
     if (f < 0.16) {
+      const D = CW + CH;
       ctx.fillStyle = `rgba(255,250,235,${0.9 * (1 - f / 0.16)})`;
-      ctx.fillRect(-OX - 20, -OY - 20, CW + 40, CH + 40);
+      ctx.fillRect(-D, -D, 2 * D, 2 * D);
     }
     for (const ring of [[0.95, 6, '255,178,77'], [0.7, 3, '255,240,200']]) {
       ctx.strokeStyle = `rgba(${ring[2]},${0.9 * (1 - f)})`;
@@ -1353,18 +1378,22 @@ function drawShot(sh) {
     }
     const rise = f * T * 2.4;
     const fb = T * (0.5 + f * 1.9);
+    // "oben" zeigt im gedrehten Feld Richtung -x
+    const ux = ROT ? -1 : 0, uy = ROT ? 0 : -1;
+    const bx = x + ux * rise, by = y + uy * rise;
     ctx.globalAlpha = Math.min(1, 1.5 * (1 - f));
     ctx.fillStyle = 'rgba(255,120,40,0.35)';
-    ctx.beginPath(); ctx.arc(x, y - rise, fb * 1.5, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx, by, fb * 1.5, 0, TAU); ctx.fill();
     // Pilzstiel unter dem Ball
     ctx.fillStyle = 'rgba(255,150,70,0.4)';
-    ctx.fillRect(x - fb * 0.32, y - rise, fb * 0.64, rise + fb * 0.2);
+    if (ROT) ctx.fillRect(bx, y - fb * 0.32, rise + fb * 0.2, fb * 0.64);
+    else ctx.fillRect(x - fb * 0.32, by, fb * 0.64, rise + fb * 0.2);
     ctx.fillStyle = '#ff9a3c';
-    ctx.beginPath(); ctx.arc(x, y - rise, fb, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx, by, fb, 0, TAU); ctx.fill();
     ctx.fillStyle = '#ffe66e';
-    ctx.beginPath(); ctx.arc(x, y - rise - fb * 0.15, fb * 0.62, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx + ux * fb * 0.15, by + uy * fb * 0.15, fb * 0.62, 0, TAU); ctx.fill();
     ctx.fillStyle = '#fff8e0';
-    ctx.beginPath(); ctx.arc(x, y - rise - fb * 0.22, fb * 0.3, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx + ux * fb * 0.22, by + uy * fb * 0.22, fb * 0.3, 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
   } else if (sh.kind === 'sbeam') {
     const x = sh.x * T, y = sh.y * T;
@@ -1379,21 +1408,27 @@ function drawShot(sh) {
       ctx.moveTo(x, y - T * 0.5); ctx.lineTo(x, y + T * 0.5);
       ctx.stroke();
       ctx.strokeStyle = `rgba(255,130,100,${0.2 + g * 0.5})`; ctx.lineWidth = 1.2 + g * 1.5;
-      ctx.beginPath(); ctx.moveTo(x, -OY); ctx.lineTo(x, y); ctx.stroke();
+      ctx.beginPath();
+      if (ROT) { ctx.moveTo(-CH, y); ctx.lineTo(x, y); } else { ctx.moveTo(x, -CW); ctx.lineTo(x, y); }
+      ctx.stroke();
     } else if (sh.t < 0.85) {
       // Strahl aus dem Orbit: pulsierende Lichtsäule mit weißglühendem Kern
       const p = (sh.t - 0.35) / 0.5;
       const puls = 1 + Math.sin(sh.t * 55) * 0.18;
       const w = T * 0.6 * (1 - p * 0.3) * puls;
+      const beamRect = (hw) => {
+        if (ROT) ctx.fillRect(-CH, y - hw, x + CH, hw * 2);
+        else ctx.fillRect(x - hw, -CW, hw * 2, y + CW);
+      };
       ctx.globalAlpha = 0.35;
       ctx.fillStyle = '#8fd0ff';
-      ctx.fillRect(x - w * 1.6, -OY, w * 3.2, y + OY);
+      beamRect(w * 1.6);
       ctx.globalAlpha = 0.85;
       ctx.fillStyle = '#cfeaff';
-      ctx.fillRect(x - w * 0.7, -OY, w * 1.4, y + OY);
+      beamRect(w * 0.7);
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x - w * 0.28, -OY, w * 0.56, y + OY);
+      beamRect(w * 0.28);
       // Aufschlag: grelle Scheibe + expandierende Doppelringe
       ctx.fillStyle = 'rgba(235,248,255,0.95)';
       ctx.beginPath(); ctx.arc(x, y, T * (0.7 + p * 0.4) * puls, 0, TAU); ctx.fill();
@@ -1414,7 +1449,7 @@ function drawShot(sh) {
   } else if (sh.kind === 'coin') {
     ctx.globalAlpha = 1 - sh.t / sh.ttl;
     ctx.fillStyle = '#ffd166'; ctx.font = (T * 0.36) + 'px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText('+' + sh.v, sh.x * T, (sh.y - sh.t * 1.2) * T);
+    fText('+' + sh.v, sh.x * T, (sh.y - sh.t * 1.2) * T);
     ctx.globalAlpha = 1;
   }
 }
@@ -1453,14 +1488,19 @@ function drawHUD() {
   if (game.state === 'over') {
     centerText('💀 Game Over – Welle ' + game.wave, '#ff6a5a');
     ctx.fillStyle = '#9fc0d8'; ctx.font = '13px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText('Tippe für ein neues Spiel', CW / 2, OY + GR * T / 2 + 34);
+    ctx.fillText('Tippe für ein neues Spiel', CW / 2, OY + (ROT ? GC : GR) * T / 2 + 34);
   }
 }
 function centerText(text, color) {
-  const y = OY + GR * T / 2;
+  const y = OY + (ROT ? GC : GR) * T / 2;
   ctx.fillStyle = 'rgba(8,16,30,0.8)'; roundRectP(CW / 2 - 165, y - 26, 330, 46, 10); ctx.fill();
   ctx.fillStyle = color; ctx.font = 'bold 19px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(text, CW / 2, y - 3); ctx.textBaseline = 'alphabetic';
+}
+// Text im Feld aufrecht zeichnen, auch wenn das Feld gedreht ist
+function fText(txt, x, y) {
+  if (!ROT) { ctx.fillText(txt, x, y); return; }
+  ctx.save(); ctx.translate(x, y); ctx.rotate(-Math.PI / 2); ctx.fillText(txt, 0, 0); ctx.restore();
 }
 function roundRectP(x, y, w, h, r) {
   ctx.beginPath(); ctx.moveTo(x + r, y);
@@ -1613,15 +1653,14 @@ for (const key of ['leicht', 'normal', 'schwer']) {
 canvas.addEventListener('pointerdown', (e) => {
   if (game.state === 'over') { newGame(); return; }
   if (game.targeting === 'slaser') {
-    const rr = canvas.getBoundingClientRect();
-    const wx = (e.clientX - rr.left - OX) / T, wy = (e.clientY - rr.top - OY) / T;
+    const { wx, wy } = toField(e.clientX, e.clientY);
     if (wx >= 0 && wx < GC && wy >= 0 && wy < GR) fireSlaser(wx, wy);
     else { game.targeting = null; updateSupers(); }
     return;
   }
-  const r = canvas.getBoundingClientRect();
-  const gx = Math.floor((e.clientX - r.left - OX) / T);
-  const gy = Math.floor((e.clientY - r.top - OY) / T);
+  const { wx, wy } = toField(e.clientX, e.clientY);
+  const gx = Math.floor(wx);
+  const gy = Math.floor(wy);
   if (gx < 0 || gx >= GC || gy < 0 || gy >= GR) { hidePanels(); return; }
   const k = gx + ',' + gy;
   game.sel = { x: gx, y: gy };
@@ -1677,6 +1716,7 @@ function frame(now) {
 }
 
 window.__td = { game, get towers() { return towers; }, get enemies() { return enemies; },
+  get geom() { return { T, OX, OY, ROT }; },
   TOWERS, SPECS, PATH, isPath, startWave, newGame, update, effStats, fireNuke, fireSlaser,
   saveState, applySave, tryRestore,
   get shots() { return shots; },
