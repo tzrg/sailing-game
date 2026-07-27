@@ -91,9 +91,11 @@ const TOWERS = {
       { cost: 100, gold: 2, interval: 3 },
       { cost: 120, gold: 4, interval: 3.1 },
       { cost: 220, gold: 7, interval: 3.2 }] },
-  command: { name: 'Kommandozentrale', icon: '🛰️', color: '#c0c8e8', desc: 'schaltet ☢️ Nuke + 🛰️ Orbital-Laser frei (je 1× pro Welle)',
+  command: { name: 'Kommandozentrale', icon: '🛰️', color: '#c0c8e8', desc: 'schaltet ☢️ Nuke + 🛰️ Orbital-Laser frei (je 1× pro Welle); Upgrades machen beide stärker',
     levels: [
-      { cost: 400 }] },
+      { cost: 400, nuke: 340, beam: 600, brad: 1.25 },
+      { cost: 300, nuke: 520, beam: 950, brad: 1.45 },
+      { cost: 550, nuke: 780, beam: 1450, brad: 1.7 }] },
 };
 
 // ---- Spezialisierungen: exklusive Entweder-oder-Wahl pro Turm --------------
@@ -106,7 +108,7 @@ const SPECS = {
   mg: AMMO_SPECS,
   cannon: AMMO_SPECS.map((a) => ({ ...a, cost: 110 })),
   grenade: [
-    { key: 'dmg', icon: '💥', name: 'Sprengkraft', cost: 110, desc: '+50% Schaden', mod: (s) => { s.dmg *= 1.5; } },
+    { key: 'dmg', icon: '💥', name: 'Sprengkraft', cost: 110, desc: '+50% Schaden, größere Fläche', mod: (s) => { s.dmg *= 1.5; s.splash += 0.35; } },
     { key: 'range', icon: '🔭', name: 'Langrohr', cost: 110, desc: '+1,0 Reichweite', mod: (s) => { s.range += 1.0; } },
   ],
   rocket: [
@@ -120,6 +122,10 @@ const SPECS = {
   flame: [
     { key: 'wide', icon: '🌊', name: 'Breitmaul', cost: 100, desc: 'fast doppelt so breiter Feuerkegel', mod: (s) => { s.cone = 1.75; } },
     { key: 'range', icon: '🗼', name: 'Feuerlanze', cost: 100, desc: '+0,8 Reichweite', mod: (s) => { s.range += 0.8; } },
+  ],
+  gift: [
+    { key: 'dur', icon: '⏳', name: 'Zähflüssig', cost: 100, desc: 'Pfützen halten 3 s länger', mod: (s) => { s.dur += 3; } },
+    { key: 'pool', icon: '🫧', name: 'Große Pfützen', cost: 100, desc: '+40% Pfützenradius', mod: (s) => { s.pool *= 1.4; } },
   ],
 };
 // Effektive Werte inkl. gewählter Spezialisierung
@@ -149,6 +155,7 @@ const game = {
   banner: '', bannerT: 0,
   nukeUsed: false, laserUsed: false,   // Superwaffen: je 1x pro Welle
   targeting: null,      // 'slaser' = nächster Tap aufs Feld feuert den Orbital-Laser
+  shakeT: 0,            // Bildschirm-Wackeln (Nuke/Orbital-Laser)
 };
 let towers = [];        // {type,lvl,x,y,cd,angle,target}
 let enemies = [];       // {type,hp,maxHp,speed,pathI,frac,x,y,slowT,slowF,burnT,burnDps,bounty,boss}
@@ -158,7 +165,8 @@ let parts = [];         // Deko-Partikel (Flammen, Funken, Rauch, Schnee, …)
 const MAX_PARTS = 520;
 function spawnPart(p) { if (parts.length < MAX_PARTS) { p.t = 0; parts.push(p); } }
 
-function newGame() {
+function newGame(keepSave) {
+  if (!keepSave) clearSave();
   game.money = DIFF.money; game.lives = DIFF.lives; game.wave = 0;
   game.state = 'build'; game.speed = 1; game.nextT = 0;
   game.toSpawn = []; game.sel = null; game.banner = ''; game.bannerT = 0;
@@ -528,14 +536,19 @@ function stepShot(sh, dt) {
     // Orbital-Laser: erst Zielmarkierung, nach 0,35s kracht der Strahl runter
     if (!sh.hit && sh.t >= 0.35) {
       sh.hit = true;
+      game.shakeT = Math.max(game.shakeT, 0.35);
       for (const e of enemies) {
         if (e.dead || e.escaped) continue;
-        if (Math.hypot(e.x - sh.x, e.y - sh.y) <= 1.2 + e.r) damage(e, 420, 'laser');
+        if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.rad + e.r) damage(e, sh.dmg, 'laser');
       }
-      spawnPart({ kind: 'shock', x: sh.x, y: sh.y, r: 1.6, ttl: 0.35, color: '#cfe8ff' });
-      for (let i = 0; i < 10; i++) {
-        const a = Math.random() * TAU, sp = 2 + Math.random() * 3;
-        spawnPart({ kind: 'spark', x: sh.x, y: sh.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, ttl: 0.4, color: '#dff0ff' });
+      spawnPart({ kind: 'shock', x: sh.x, y: sh.y, r: sh.rad * 1.4, ttl: 0.35, color: '#cfe8ff' });
+      for (let i = 0; i < 14; i++) {
+        const a = Math.random() * TAU, sp = 2 + Math.random() * 3.5;
+        spawnPart({ kind: 'spark', x: sh.x, y: sh.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2.4, ttl: 0.45, color: '#dff0ff' });
+      }
+      for (let i = 0; i < 5; i++) {
+        spawnPart({ kind: 'smoke', x: sh.x + (Math.random() - 0.5) * sh.rad, y: sh.y + (Math.random() - 0.5) * sh.rad * 0.6,
+          vx: (Math.random() - 0.5) * 0.4, vy: -0.7 - Math.random() * 0.5, ttl: 0.9 + Math.random() * 0.4, size: 0.2 + Math.random() * 0.14 });
       }
     }
     return sh.t >= sh.ttl;
@@ -637,6 +650,8 @@ function update(dt) {
   }
   enemies = enemies.filter((e) => !e.dead && !e.escaped);
 
+  if (game.shakeT > 0) game.shakeT = Math.max(0, game.shakeT - dt);
+
   // Türme & Schüsse
   for (const t of towers) stepTower(t, dt);
   shots = shots.filter((sh) => !stepShot(sh, dt));
@@ -664,12 +679,14 @@ function update(dt) {
     game.banner = 'Welle ' + game.wave + ' geschafft! +' + (15 + game.wave * 3) + ' 💰';
     game.bannerT = 1.6;
     saveBest();
+    saveState();
   }
 }
 
 function gameOver() {
   game.state = 'over';
   saveBest();
+  clearSave();
 }
 
 // ---- Highscore -------------------------------------------------------------
@@ -684,32 +701,131 @@ function saveBest() {
 
 // ---- Superwaffen (Kommandozentrale) ----------------------------------------
 function hasCommand() { return towers.some((t) => t.type === 'command'); }
+// Die stärkste (höchststufige) Kommandozentrale bestimmt die Superwaffen-Werte
+function commandTower() {
+  let best = null;
+  for (const t of towers) if (t.type === 'command' && (!best || t.lvl > best.lvl)) best = t;
+  return best;
+}
 
 function fireNuke() {
+  const c = commandTower();
+  if (!c) return;
+  const s = towerStats(c);
   game.nukeUsed = true;
+  game.shakeT = 0.6;
   // Riesen-Flächenschlag auf ALLES, was gerade unterwegs ist. Panzerung
   // schluckt davon wie üblich das meiste – Bosse überleben den Blitz.
-  shots.push({ kind: 'nuke', x: GC / 2, y: GR / 2, t: 0, ttl: 0.9 });
+  shots.push({ kind: 'nuke', x: GC / 2, y: GR / 2, t: 0, ttl: 1.5 });
   for (const e of enemies) {
     if (e.dead || e.escaped) continue;
-    damage(e, 260, 'explosive');
+    damage(e, s.nuke, 'explosive');
     spawnPart({ kind: 'shock', x: e.x, y: e.y, r: 1.0, ttl: 0.4, color: '#ffd8a0' });
   }
-  // Pilzwolke über der Feldmitte
-  for (let i = 0; i < 12; i++) {
-    spawnPart({ kind: 'smoke', x: GC / 2 + (Math.random() - 0.5) * 3, y: GR / 2 + (Math.random() - 0.5) * 2,
-      vx: (Math.random() - 0.5) * 0.5, vy: -0.9 - Math.random() * 0.7, ttl: 1.2 + Math.random() * 0.6, size: 0.3 + Math.random() * 0.25 });
+  // Feuerball, Pilzstiel und -wolke über der Feldmitte
+  const nx = GC / 2, ny = GR / 2;
+  for (let i = 0; i < 20; i++) {
+    const a = Math.random() * TAU;
+    spawnPart({ kind: 'flame', x: nx + Math.cos(a) * Math.random() * 0.7, y: ny + Math.sin(a) * Math.random() * 0.5,
+      vx: Math.cos(a) * 0.9, vy: -2.0 - Math.random() * 1.8, ttl: 0.6 + Math.random() * 0.5, size: 0.18 + Math.random() * 0.16 });
+  }
+  for (let i = 0; i < 14; i++) {
+    spawnPart({ kind: 'smoke', x: nx + (Math.random() - 0.5) * 3, y: ny + (Math.random() - 0.5) * 2,
+      vx: (Math.random() - 0.5) * 0.5, vy: -0.9 - Math.random() * 0.8, ttl: 1.3 + Math.random() * 0.7, size: 0.3 + Math.random() * 0.28 });
+  }
+  for (let i = 0; i < 10; i++) {
+    const a = Math.random() * TAU, sp = 3 + Math.random() * 4;
+    spawnPart({ kind: 'debris', x: nx, y: ny, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 3, ttl: 0.6 + Math.random() * 0.4, rot: Math.random() * TAU });
   }
   game.banner = '☢️ NUKE!'; game.bannerT = 1.2;
   updateSupers();
 }
 
 function fireSlaser(x, y) {
+  const c = commandTower();
+  if (!c) return;
+  const s = towerStats(c);
   game.laserUsed = true;
   game.targeting = null;
-  shots.push({ kind: 'sbeam', x, y, t: 0, ttl: 0.85, hit: false });
+  shots.push({ kind: 'sbeam', x, y, t: 0, ttl: 1.2, hit: false, dmg: s.beam, rad: s.brad });
   updateSupers();
 }
+
+// ---- Spielstand ------------------------------------------------------------
+// Zwischen den Wellen wird automatisch gesichert: immer lokal (localStorage),
+// für eingeloggte Spieler zusätzlich in der Datenbank (geräteübergreifend).
+const SAVE_KEY = 'td_save';
+function diffKey() { return DIFF === DIFFS.leicht ? 'leicht' : DIFF === DIFFS.schwer ? 'schwer' : 'normal'; }
+function authHeaders() {
+  let tok = null;
+  try { tok = localStorage.getItem('tgl_token'); } catch { /* egal */ }
+  return tok ? { Authorization: 'Bearer ' + tok } : null;
+}
+function saveState() {
+  if (game.state === 'over') return;
+  if (game.wave === 0 && !towers.length) return;
+  const d = {
+    v: 1, ts: Date.now(), diff: diffKey(),
+    money: Math.round(game.money), lives: game.lives,
+    wave: game.state === 'wave' ? game.wave - 1 : game.wave,   // laufende Welle wird wiederholt
+    towers: towers.map((t) => ({ type: t.type, lvl: t.lvl, x: t.x, y: t.y, spec: t.spec || null })),
+  };
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch { /* egal */ }
+  const h = authHeaders();
+  if (h) {
+    fetch('/api/save/td', { method: 'PUT', headers: { 'Content-Type': 'application/json', ...h },
+      body: JSON.stringify({ data: d }) }).catch(() => {});
+  }
+}
+function clearSave() {
+  try { localStorage.removeItem(SAVE_KEY); } catch { /* egal */ }
+  const h = authHeaders();
+  if (h) {
+    fetch('/api/save/td', { method: 'PUT', headers: { 'Content-Type': 'application/json', ...h },
+      body: JSON.stringify({ data: null }) }).catch(() => {});
+  }
+}
+function applySave(d) {
+  if (!d || !Array.isArray(d.towers)) return false;
+  DIFF = DIFFS[d.diff] || DIFFS.normal;
+  for (const k of ['leicht', 'normal', 'schwer']) {
+    document.getElementById('diff-' + k).classList.toggle('active', DIFFS[k] === DIFF);
+  }
+  newGame(true);
+  game.money = Math.max(0, d.money | 0);
+  game.lives = Math.max(1, Math.min(99, d.lives | 0));
+  game.wave = Math.max(0, d.wave | 0);
+  for (const td of d.towers) {
+    const def = TOWERS[td.type];
+    if (!def) continue;
+    const x = td.x | 0, y = td.y | 0, k = x + ',' + y;
+    if (x < 0 || x >= GC || y < 0 || y >= GR || towerAt[k] || isPath(x, y) || isPond(x, y)) continue;
+    const t = { type: td.type, lvl: clamp(td.lvl | 0, 0, def.levels.length - 1), x, y, cd: 0, angle: 0, born: 1 };
+    if (td.spec && (SPECS[td.type] || []).some((o) => o.key === td.spec)) t.spec = td.spec;
+    towers.push(t); towerAt[k] = t;
+  }
+  updateSupers();
+  if (game.wave > 0) game.nextT = 12;
+  game.banner = 'Spielstand geladen – weiter mit Welle ' + (game.wave + 1);
+  game.bannerT = 2.2;
+  return true;
+}
+async function tryRestore() {
+  let local = null;
+  try { local = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { /* egal */ }
+  let remote = null;
+  const h = authHeaders();
+  if (h) {
+    try {
+      const r = await fetch('/api/save/td', { headers: h });
+      if (r.ok) remote = (await r.json()).save || null;
+    } catch { /* egal */ }
+  }
+  const best = remote && (!local || (remote.ts || 0) > (local.ts || 0)) ? remote : local;
+  if (best) applySave(best);
+}
+// beim Verlassen der Seite den aktuellen Stand mitnehmen
+window.addEventListener('pagehide', saveState);
 
 // ---- Rendering -------------------------------------------------------------
 const canvas = document.getElementById('game');
@@ -732,7 +848,9 @@ function draw(time) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#0c1a12'; ctx.fillRect(0, 0, CW, CH);
 
-  ctx.save(); ctx.translate(OX, OY);
+  let jx = 0, jy = 0;
+  if (game.shakeT > 0) { jx = (Math.random() - 0.5) * game.shakeT * 18; jy = (Math.random() - 0.5) * game.shakeT * 18; }
+  ctx.save(); ctx.translate(OX + jx, OY + jy);
   // Wiese
   for (let y = 0; y < GR; y++) for (let x = 0; x < GC; x++) {
     ctx.fillStyle = (x + y) % 2 ? '#1d3a24' : '#1a3520';
@@ -842,11 +960,12 @@ function drawTower(t, time) {
   ctx.globalAlpha = 0.3; ctx.fillStyle = '#000';
   ctx.beginPath(); ctx.ellipse(cx + T * 0.04, cy + T * 0.3, T * 0.38, T * 0.15, 0, 0, TAU); ctx.fill();
   ctx.globalAlpha = 1;
-  // Sockel
+  // Sockel (die Kommandozentrale ist ein sichtbar größerer Bau)
+  const sock = t.type === 'command' ? 1.25 : 1;
   ctx.fillStyle = '#3a4a55';
-  ctx.beginPath(); ctx.arc(cx, cy, T * 0.38, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, T * 0.38 * sock, 0, TAU); ctx.fill();
   ctx.fillStyle = def.color;
-  ctx.beginPath(); ctx.arc(cx, cy, T * 0.3, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, T * 0.3 * sock, 0, TAU); ctx.fill();
   // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
   if (!['ice', 'flame', 'wind', 'gold', 'command'].includes(t.type)) {
     const kick = (t.kick || 0) * T * 0.1;
@@ -859,14 +978,14 @@ function drawTower(t, time) {
   if (t.type === 'command') {
     const ready = !game.nukeUsed || !game.laserUsed;
     ctx.save(); ctx.translate(cx, cy);
-    ctx.strokeStyle = 'rgba(180,200,255,0.55)'; ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.arc(0, 0, T * 0.34, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = 'rgba(180,200,255,0.55)'; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(0, 0, T * 0.42, 0, TAU); ctx.stroke();
     ctx.rotate((t.pulse || 0) * 2.2);
-    ctx.strokeStyle = 'rgba(140,220,120,0.8)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(T * 0.34, 0); ctx.stroke();
+    ctx.strokeStyle = 'rgba(140,220,120,0.8)'; ctx.lineWidth = 2.2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(T * 0.42, 0); ctx.stroke();
     ctx.restore();
     ctx.fillStyle = ready && Math.sin(time * 6) > 0 ? '#7dff8a' : '#2a5a34';
-    ctx.beginPath(); ctx.arc(cx + T * 0.26, cy - T * 0.26, T * 0.05, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + T * 0.32, cy - T * 0.32, T * 0.055, 0, TAU); ctx.fill();
   }
   // Windmaschine: rotierender Propeller
   if (t.type === 'wind') {
@@ -906,7 +1025,7 @@ function drawTower(t, time) {
     ctx.beginPath(); ctx.arc(cx, cy, s.range * T * f, 0, TAU); ctx.stroke();
   }
   // Icon + Level-Sterne
-  ctx.font = (T * 0.42) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = (T * (t.type === 'command' ? 0.62 : 0.42)) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(def.icon, cx, cy - T * 0.02);
   ctx.font = (T * 0.24) + 'px system-ui';
   ctx.fillText('⭐'.repeat(t.lvl), cx, cy + T * 0.34);
@@ -1142,18 +1261,39 @@ function drawShot(sh) {
     ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, sh.r * T * (0.4 + f * 0.8), 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
   } else if (sh.kind === 'nuke') {
-    // Nuke: greller Blitz übers ganze Feld + Druckwellenring
+    // Nuke: greller Anfangsblitz, doppelte Druckwelle und ein aufsteigender
+    // Feuerball, der zur Pilzwolke wird
     const f = sh.t / sh.ttl;
-    ctx.fillStyle = `rgba(255,240,200,${0.7 * (1 - f)})`;
-    ctx.fillRect(-OX, -OY, CW, CH);
-    ctx.globalAlpha = 1 - f;
-    ctx.strokeStyle = '#ffb24d'; ctx.lineWidth = 3 + 8 * (1 - f);
-    ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, f * GC * T * 0.75, 0, TAU); ctx.stroke();
+    const x = sh.x * T, y = sh.y * T;
+    if (f < 0.16) {
+      ctx.fillStyle = `rgba(255,250,235,${0.9 * (1 - f / 0.16)})`;
+      ctx.fillRect(-OX - 20, -OY - 20, CW + 40, CH + 40);
+    }
+    for (const ring of [[0.95, 6, '255,178,77'], [0.7, 3, '255,240,200']]) {
+      ctx.strokeStyle = `rgba(${ring[2]},${0.9 * (1 - f)})`;
+      ctx.lineWidth = ring[1] * (1 - f) + 1;
+      ctx.beginPath(); ctx.arc(x, y, f * GC * T * ring[0], 0, TAU); ctx.stroke();
+    }
+    const rise = f * T * 2.4;
+    const fb = T * (0.5 + f * 1.9);
+    ctx.globalAlpha = Math.min(1, 1.5 * (1 - f));
+    ctx.fillStyle = 'rgba(255,120,40,0.35)';
+    ctx.beginPath(); ctx.arc(x, y - rise, fb * 1.5, 0, TAU); ctx.fill();
+    // Pilzstiel unter dem Ball
+    ctx.fillStyle = 'rgba(255,150,70,0.4)';
+    ctx.fillRect(x - fb * 0.32, y - rise, fb * 0.64, rise + fb * 0.2);
+    ctx.fillStyle = '#ff9a3c';
+    ctx.beginPath(); ctx.arc(x, y - rise, fb, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#ffe66e';
+    ctx.beginPath(); ctx.arc(x, y - rise - fb * 0.15, fb * 0.62, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff8e0';
+    ctx.beginPath(); ctx.arc(x, y - rise - fb * 0.22, fb * 0.3, 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
   } else if (sh.kind === 'sbeam') {
     const x = sh.x * T, y = sh.y * T;
+    const rad = (sh.rad || 1.2) * T;
     if (sh.t < 0.35) {
-      // rotes Zielkreuz zieht sich zusammen
+      // rotes Zielkreuz zieht sich zusammen, dünner Leitstrahl aus dem Orbit
       const g = sh.t / 0.35;
       ctx.strokeStyle = `rgba(255,90,60,${0.45 + g * 0.5})`; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(x, y, T * (1.3 - g * 0.75), 0, TAU); ctx.stroke();
@@ -1161,17 +1301,39 @@ function drawShot(sh) {
       ctx.moveTo(x - T * 0.5, y); ctx.lineTo(x + T * 0.5, y);
       ctx.moveTo(x, y - T * 0.5); ctx.lineTo(x, y + T * 0.5);
       ctx.stroke();
-    } else {
-      // Strahl aus dem Orbit: breite Säule + weißglühender Kern + Aufschlag
-      const b = 1 - (sh.t - 0.35) / (sh.ttl - 0.35);
-      ctx.globalAlpha = Math.min(1, b * 1.4);
-      ctx.fillStyle = 'rgba(150,215,255,0.55)';
-      ctx.fillRect(x - T * 0.55 * b, -OY, T * 1.1 * b, y + OY);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x - T * 0.16 * b, -OY, T * 0.32 * b, y + OY);
-      ctx.beginPath(); ctx.arc(x, y, T * 0.95 * b, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `rgba(255,130,100,${0.2 + g * 0.5})`; ctx.lineWidth = 1.2 + g * 1.5;
+      ctx.beginPath(); ctx.moveTo(x, -OY); ctx.lineTo(x, y); ctx.stroke();
+    } else if (sh.t < 0.85) {
+      // Strahl aus dem Orbit: pulsierende Lichtsäule mit weißglühendem Kern
+      const p = (sh.t - 0.35) / 0.5;
+      const puls = 1 + Math.sin(sh.t * 55) * 0.18;
+      const w = T * 0.6 * (1 - p * 0.3) * puls;
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#8fd0ff';
+      ctx.fillRect(x - w * 1.6, -OY, w * 3.2, y + OY);
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#cfeaff';
+      ctx.fillRect(x - w * 0.7, -OY, w * 1.4, y + OY);
       ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - w * 0.28, -OY, w * 0.56, y + OY);
+      // Aufschlag: grelle Scheibe + expandierende Doppelringe
+      ctx.fillStyle = 'rgba(235,248,255,0.95)';
+      ctx.beginPath(); ctx.arc(x, y, T * (0.7 + p * 0.4) * puls, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `rgba(160,220,255,${0.9 * (1 - p)})`; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y, rad * (0.3 + p * 0.9), 0, TAU); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${0.7 * (1 - p)})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, rad * p * 1.2, 0, TAU); ctx.stroke();
+    } else {
+      // glühender Nachbrand am Einschlagspunkt
+      const p = (sh.t - 0.85) / (sh.ttl - 0.85);
+      ctx.globalAlpha = (1 - p) * 0.7;
+      ctx.fillStyle = '#ff9a5c';
+      ctx.beginPath(); ctx.ellipse(x, y, rad * 0.75, rad * 0.5, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#ffe6b0';
+      ctx.beginPath(); ctx.ellipse(x, y, rad * 0.4, rad * 0.26, 0, 0, TAU); ctx.fill();
     }
+    ctx.globalAlpha = 1;
   } else if (sh.kind === 'coin') {
     ctx.globalAlpha = 1 - sh.t / sh.ttl;
     ctx.fillStyle = '#ffd166'; ctx.font = (T * 0.36) + 'px system-ui'; ctx.textAlign = 'center';
@@ -1262,6 +1424,7 @@ function buildTower(type) {
   towerAt[k] = t;
   buildDust(t);
   updateSupers();
+  saveState();
   showUpgpanel(t);
 }
 
@@ -1294,8 +1457,9 @@ function showUpgpanel(t) {
   if (s.chain) statBits.push(s.chain + ' Kettenziele');
   if (s.cone) statBits.push('Kegel ' + Math.round(s.cone * 2 * 180 / Math.PI) + '°');
   if (s.gold) statBits.push('+' + s.gold + ' 💰 alle ' + s.interval + ' s');
+  if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
   if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
-  if (t.type === 'command') statBits.push('☢️ + 🛰️ freigeschaltet');
+  if (t.type === 'command') statBits.push('☢️ ' + s.nuke + ' Schaden', '🛰️ ' + s.beam + ' Schaden · Radius ' + s.brad);
   info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${'⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
   if (next) {
@@ -1304,6 +1468,7 @@ function showUpgpanel(t) {
     up.onclick = () => {
       if (game.money < next.cost) return;
       game.money -= next.cost; t.lvl++;
+      saveState();
       showUpgpanel(t);
     };
   } else {
@@ -1318,6 +1483,7 @@ function showUpgpanel(t) {
     towers = towers.filter((x) => x !== t);
     delete towerAt[t.x + ',' + t.y];
     updateSupers();
+    saveState();
     hidePanels();
   };
   renderSpecs(t);
@@ -1346,6 +1512,7 @@ function renderSpecs(t) {
         if (game.money < a.cost || t.spec) return;
         game.money -= a.cost;
         t.spec = a.key;
+        saveState();
         showUpgpanel(t);   // Stats & Anzeige auffrischen
       });
       box.appendChild(b);
@@ -1433,6 +1600,7 @@ function frame(now) {
 
 window.__td = { game, get towers() { return towers; }, get enemies() { return enemies; },
   TOWERS, SPECS, PATH, isPath, startWave, newGame, update, effStats, fireNuke, fireSlaser,
+  saveState, applySave, tryRestore,
   get shots() { return shots; },
   place(type, x, y) {
     const k = x + ',' + y;
@@ -1455,5 +1623,6 @@ window.__td = { game, get towers() { return towers; }, get enemies() { return en
 
 loadBest();
 resize();
-newGame();
+newGame(true);       // Spielstand nicht anfassen – gleich prüfen wir, ob einer da ist
+tryRestore();
 requestAnimationFrame(frame);

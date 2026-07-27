@@ -32,6 +32,7 @@ const mem = {
   users: new Map(),   // nameLower -> { name, pass, created }
   tokens: new Map(),  // token -> name
   scores: new Map(),  // `${nameLower}|${game}|${variant}` -> row
+  saves: new Map(),   // `${nameLower}|${game}` -> { data, updated }
   feedback: [],       // { id, user_name, game, text, created }
   threads: [],        // { id, title, author, created, last_post }
   posts: [],          // { id, thread_id, author, text, created }
@@ -66,6 +67,15 @@ const memStore = {
   },
   async leaderboard() {
     return [...mem.scores.values()];
+  },
+  // ---- Spielstände ----
+  async setSave(name, game, data) {
+    const key = `${name.toLowerCase()}|${game}`;
+    if (data == null) mem.saves.delete(key);
+    else mem.saves.set(key, { data, updated: Date.now() });
+  },
+  async getSave(name, game) {
+    return mem.saves.get(`${name.toLowerCase()}|${game}`) || null;
   },
   // ---- Feedback ----
   async addFeedback(name, game, text) {
@@ -142,6 +152,13 @@ async function makePgStore() {
           updated    bigint NOT NULL,
           PRIMARY KEY (user_name, game, variant)
         );
+        CREATE TABLE IF NOT EXISTS savegames (
+          user_name  text NOT NULL,
+          game       text NOT NULL,
+          data       text NOT NULL,
+          updated    bigint NOT NULL,
+          PRIMARY KEY (user_name, game)
+        );
         CREATE TABLE IF NOT EXISTS feedback (
           id         serial PRIMARY KEY,
           user_name  text NOT NULL,
@@ -211,6 +228,21 @@ async function makePgStore() {
       const r = await pg.query('SELECT * FROM scores');
       return r.rows;
     },
+    // ---- Spielstände ----
+    async setSave(name, game, data) {
+      if (data == null) {
+        await pg.query('DELETE FROM savegames WHERE lower(user_name)=lower($1) AND game=$2', [name, game]);
+        return;
+      }
+      await pg.query(
+        `INSERT INTO savegames(user_name,game,data,updated) VALUES($1,$2,$3,$4)
+         ON CONFLICT (user_name,game) DO UPDATE SET data=EXCLUDED.data, updated=EXCLUDED.updated`,
+        [name, game, data, Date.now()]);
+    },
+    async getSave(name, game) {
+      const r = await pg.query('SELECT data,updated FROM savegames WHERE lower(user_name)=lower($1) AND game=$2', [name, game]);
+      return r.rows[0] || null;
+    },
     // ---- Feedback ----
     async addFeedback(name, game, text) {
       await pg.query('INSERT INTO feedback(user_name,game,text,created) VALUES($1,$2,$3,$4)', [name, game, text, Date.now()]);
@@ -277,6 +309,8 @@ export const db = {
   upsertScore: (...a) => store.upsertScore(...a),
   userScores: (...a) => store.userScores(...a),
   leaderboard: (...a) => store.leaderboard(...a),
+  setSave: (...a) => store.setSave(...a),
+  getSave: (...a) => store.getSave(...a),
   addFeedback: (...a) => store.addFeedback(...a),
   listFeedback: (...a) => store.listFeedback(...a),
   createThread: (...a) => store.createThread(...a),

@@ -59,8 +59,10 @@ Docker-Container deployt.
   Kommandozentrale). Schadensarten + **Panzerung** (Kinetik/Laser knacken
   sie), pro Turm einmalige **Spezialisierungen** (Spezialmunition,
   Schaden-oder-Reichweite, mehr Kettenziele, breiterer Feuerkegel) und die
-  Kommandozentrale schaltet **☢️ Nuke** und **🛰️ Orbital-Laser** frei
-  (je 1× pro Welle). Höchste Welle zählt für die Bestenliste.
+  Kommandozentrale (3 Stufen) schaltet **☢️ Nuke** und **🛰️ Orbital-Laser**
+  frei (je 1× pro Welle, Upgrades machen beide stärker). Der Spielstand wird
+  zwischen den Wellen automatisch gespeichert (eingeloggt auch in der
+  Datenbank). Höchste Welle zählt für die Bestenliste.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
@@ -258,6 +260,11 @@ Der Node-Dienst bietet:
 - **Highscores** (`/api/scores`, `/api/leaderboard`): die Spiele speichern
   ihre Bestwerte weiterhin lokal; nach dem Login lädt die Landing-Page sie
   hoch und zeigt eine globale Bestenliste.
+- **Spielstände** (`/api/save/:game`, ein Slot pro Nutzer und Spiel, nur
+  eingeloggt): Tower Defense sichert zwischen den Wellen automatisch –
+  immer lokal (localStorage) und zusätzlich in der Datenbank, sodass der
+  Spielstand auf anderen Geräten weiterläuft. `data: null` löscht den Slot
+  („Neues Spiel"/Game Over).
 - **Caterpillar-Online-Sessions** über WebSocket (`/ws`): der **Host
   simuliert autoritativ** und schickt ~20×/s Snapshots (Würmer, Projektile,
   Wind, Zug, sowie Krater-Ereignisse fürs zerstörbare Gelände). Gäste

@@ -178,6 +178,35 @@ app.post('/api/forum/threads/:id/posts', limitWrite, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Spielstände (ein Slot pro Nutzer und Spiel) ---------------------------
+const limitSave = rateLimiter({ windowMs: 60 * 1000, max: 30 });
+const validGame = (g) => /^[a-z0-9_-]{1,24}$/.test(g);
+
+app.put('/api/save/:game', limitSave, async (req, res) => {
+  const u = await requireAuth(req, res); if (!u) return;
+  const g = String(req.params.game || '');
+  if (!validGame(g)) return res.status(400).json({ error: 'Ungültiges Spiel.' });
+  const data = req.body?.data;
+  if (data == null) {           // null = Spielstand löschen (z. B. Neues Spiel)
+    await db.setSave(u.name, g, null);
+    return res.json({ ok: true });
+  }
+  const str = JSON.stringify(data);
+  if (typeof data !== 'object' || str.length > 32000) return res.status(400).json({ error: 'Spielstand ungültig oder zu groß.' });
+  await db.setSave(u.name, g, str);
+  res.json({ ok: true });
+});
+
+app.get('/api/save/:game', async (req, res) => {
+  const u = await requireAuth(req, res); if (!u) return;
+  const g = String(req.params.game || '');
+  if (!validGame(g)) return res.status(400).json({ error: 'Ungültiges Spiel.' });
+  const row = await db.getSave(u.name, g);
+  let save = null;
+  if (row) { try { save = JSON.parse(row.data); } catch { /* egal */ } }
+  res.json({ save });
+});
+
 // Globale Bestenliste: bester Wert je (game,variant) über alle Spieler
 app.get('/api/leaderboard', async (req, res) => {
   const rows = await db.leaderboard();
