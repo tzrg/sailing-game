@@ -40,67 +40,80 @@ const TOWERS = {
     levels: [
       { cost: 45, dmg: 6, rate: 4.5, range: 2.4 },
       { cost: 55, dmg: 11, rate: 5.5, range: 2.6 },
-      { cost: 100, dmg: 19, rate: 6.5, range: 2.9 }] },
+      { cost: 100, dmg: 19, rate: 6.5, range: 2.9 },
+      { cost: 1000, dmg: 45, rate: 8, range: 3.3 }] },
   cannon: { name: 'Kanone', icon: '🎯', color: '#7a8a6a', desc: 'Kinetik: viel Schaden, weit, knackt Panzerung',
     levels: [
       { cost: 125, dmg: 85, rate: 0.5, range: 4.2 },
       { cost: 135, dmg: 160, rate: 0.55, range: 4.5 },
-      { cost: 245, dmg: 300, rate: 0.6, range: 4.8 }] },
+      { cost: 245, dmg: 300, rate: 0.6, range: 4.8 },
+      { cost: 1800, dmg: 700, rate: 0.7, range: 5.4 }] },
   grenade: { name: 'Granatkanone', icon: '💣', color: '#c9a15a', desc: 'Flächenschaden (prallt an Panzerung ab)',
     levels: [
       { cost: 80, dmg: 22, rate: 0.9, range: 2.6, splash: 1.15 },
       { cost: 90, dmg: 40, rate: 1.0, range: 2.9, splash: 1.3 },
-      { cost: 160, dmg: 75, rate: 1.15, range: 3.2, splash: 1.5 }] },
+      { cost: 160, dmg: 75, rate: 1.15, range: 3.2, splash: 1.5 },
+      { cost: 1500, dmg: 180, rate: 1.3, range: 3.6, splash: 1.9 }] },
   laser: { name: 'Laser', icon: '📡', color: '#e06fd8', desc: 'durchbohrt Linie UND Panzerung',
     levels: [
       { cost: 110, dps: 20, range: 3.4 },
       { cost: 120, dps: 38, range: 3.7 },
-      { cost: 210, dps: 70, range: 4.0 }] },
+      { cost: 210, dps: 70, range: 4.0 },
+      { cost: 1600, dps: 170, range: 4.5 }] },
   flame: { name: 'Flammenwerfer', icon: '🔥', color: '#e0703a', desc: 'Umkreis + Brennschaden',
     levels: [
       { cost: 85, dps: 16, range: 1.9, burn: 5 },
       { cost: 95, dps: 30, range: 2.1, burn: 10 },
-      { cost: 170, dps: 55, range: 2.3, burn: 18 }] },
+      { cost: 170, dps: 55, range: 2.3, burn: 18 },
+      { cost: 1400, dps: 130, range: 2.7, burn: 40 }] },
   rocket: { name: 'Raketenturm', icon: '🚀', color: '#b04a4a', desc: 'zielsuchend, hoher Schaden',
     levels: [
       { cost: 130, dmg: 50, rate: 0.55, range: 3.6, splash: 0.9 },
       { cost: 140, dmg: 95, rate: 0.62, range: 3.9, splash: 1.05 },
-      { cost: 240, dmg: 170, rate: 0.7, range: 4.2, splash: 1.2 }] },
+      { cost: 240, dmg: 170, rate: 0.7, range: 4.2, splash: 1.2 },
+      { cost: 1800, dmg: 400, rate: 0.8, range: 4.6, splash: 1.5 }] },
   ice: { name: 'Vereiser', icon: '❄️', color: '#6fc4e0', desc: 'verlangsamt im Umkreis',
     levels: [
       { cost: 55, slow: 0.35, range: 2.1 },
       { cost: 60, slow: 0.45, range: 2.4 },
-      { cost: 110, slow: 0.55, range: 2.8 }] },
+      { cost: 110, slow: 0.55, range: 2.8 },
+      { cost: 900, slow: 0.68, range: 3.3 }] },
   tesla: { name: 'Blitzturm', icon: '⚡', color: '#ffe66e', desc: 'Kettenblitz springt von Gegner zu Gegner',
     levels: [
       { cost: 120, dmg: 28, rate: 1.1, range: 2.7, chain: 3 },
       { cost: 130, dmg: 50, rate: 1.25, range: 3.0, chain: 4 },
-      { cost: 230, dmg: 92, rate: 1.4, range: 3.3, chain: 6 }] },
+      { cost: 230, dmg: 92, rate: 1.4, range: 3.3, chain: 6 },
+      { cost: 1700, dmg: 210, rate: 1.6, range: 3.7, chain: 8 }] },
   ray: { name: 'Bestrahlungsturm', icon: '☣️', color: '#9ee06a', desc: 'Dauerstrahl-Kegel: verstrahlt statt zu schießen – Verstrahlung ignoriert Panzerung und bleibt für immer',
     levels: [
       { cost: 110, charge: 4, cap: 26, range: 2.3 },
       { cost: 120, charge: 7, cap: 48, range: 2.6 },
-      { cost: 210, charge: 12, cap: 85, range: 2.9 }] },
+      { cost: 210, charge: 12, cap: 85, range: 2.9 },
+      { cost: 1500, charge: 24, cap: 170, range: 3.3 }] },
   gift: { name: 'Giftschleuder', icon: '🧪', color: '#8ad84a', desc: 'hinterlässt ätzende Giftpfützen',
     levels: [
       { cost: 95, dps: 13, rate: 0.45, range: 3.0, pool: 0.95, dur: 4 },
       { cost: 105, dps: 25, rate: 0.5, range: 3.3, pool: 1.1, dur: 4.5 },
-      { cost: 185, dps: 45, rate: 0.55, range: 3.6, pool: 1.25, dur: 5 }] },
+      { cost: 185, dps: 45, rate: 0.55, range: 3.6, pool: 1.25, dur: 5 },
+      { cost: 1400, dps: 95, rate: 0.6, range: 4.0, pool: 1.45, dur: 5.5 }] },
   wind: { name: 'Windmaschine', icon: '🌪️', color: '#9fd8d0', desc: 'pustet den vordersten Gegner zurück – nie weiter, als er bis zum nächsten Stoß wieder aufholt',
     levels: [
       { cost: 100, rate: 0.18, range: 2.6 },
       { cost: 110, rate: 0.24, range: 2.9 },
-      { cost: 200, rate: 0.3, range: 3.2 }] },
+      { cost: 200, rate: 0.3, range: 3.2 },
+      { cost: 900, rate: 0.38, range: 3.6 }] },
   gold: { name: 'Goldmine', icon: '💰', color: '#d8b84a', desc: 'schürft stetig Gold (kein Schaden)',
     levels: [
       { cost: 100, gold: 2, interval: 3 },
       { cost: 120, gold: 4, interval: 3.1 },
-      { cost: 220, gold: 7, interval: 3.2 }] },
+      { cost: 220, gold: 7, interval: 3.2 },
+      { cost: 1200, gold: 16, interval: 3.2 }] },
   command: { name: 'Kommandozentrale', icon: '🛰️', color: '#c0c8e8', desc: 'schaltet ☢️ Nuke + 🛰️ Orbital-Laser frei (je 1× pro Welle); Upgrades machen beide stärker',
     levels: [
       { cost: 400, nuke: 340, beam: 600, brad: 1.25 },
       { cost: 300, nuke: 520, beam: 950, brad: 1.45 },
-      { cost: 550, nuke: 780, beam: 1450, brad: 1.7 }] },
+      { cost: 550, nuke: 780, beam: 1450, brad: 1.7 },
+      { cost: 2500, nuke: 1400, beam: 2600, brad: 2.0 }] },
 };
 
 // ---- Spezialisierungen: exklusive Entweder-oder-Wahl pro Turm --------------
@@ -199,6 +212,9 @@ function buildWave(w) {
     if (w >= 2 && i % 3 === 2) t = 'runner';
     if (w >= 4 && i % 4 === 3) t = 'tank';
     if (w >= 7 && i % 5 === 4) t = 'regen';
+    if (w >= 10 && i % 6 === 1) t = 'ember';
+    if (w >= 12 && i % 6 === 3) t = 'prisma';
+    if (w >= 14 && i % 6 === 5) t = 'blitzer';
     list.push(t);
   }
   // Boss-Wellen: ab Welle 16 kommen sie im Rudel
@@ -211,6 +227,11 @@ const ETYPES = {
   runner: { hp: 0.6, speed: 2.6, mult: 1.1, color: '#e0d05a', r: 0.24 },
   tank: { hp: 2.6, speed: 0.95, mult: 2.5, color: '#8a6fb8', r: 0.34, armor: 0.5 },
   regen: { hp: 1.7, speed: 1.2, mult: 1.8, color: '#5ac9a8', r: 0.3, regen: 0.02 },
+  // Resistenzler (ab Welle 10/12/14): nehmen von "ihrem" Element nur 10% –
+  // damit braucht jede Verteidigung einen Waffen-Mix
+  ember: { hp: 1.4, speed: 1.7, mult: 1.7, color: '#e0703a', r: 0.29, resist: 'fire' },
+  prisma: { hp: 1.7, speed: 1.25, mult: 1.9, color: '#e8b8f0', r: 0.3, resist: 'laser' },
+  blitzer: { hp: 1.5, speed: 1.9, mult: 1.9, color: '#ffe66e', r: 0.28, resist: 'shock' },
   boss: { hp: 14, speed: 0.55, mult: 12, color: '#d84a6a', r: 0.44, boss: true, armor: 0.3 },
 };
 
@@ -237,7 +258,7 @@ function spawnEnemy(type) {
     x: sx + 0.5, y: sy + 0.5, slowT: 0, slowF: 0, burnT: 0, burnDps: 0,
     bounty: bounty(game.wave, t.mult), boss: !!t.boss, regen: t.regen || 0,
     armorHp: t.armor ? hp * t.armor : 0, maxArmor: t.armor ? hp * t.armor : 0,
-    vulnFire: 0, vulnShock: 0, windCd: 0, radDps: 0,
+    vulnFire: 0, vulnShock: 0, windCd: 0, radDps: 0, resist: t.resist || null,
     r: t.r, color: t.color, wob: Math.random() * TAU,
   });
 }
@@ -268,6 +289,7 @@ function stepEnemy(e, dt) {
 // Panzerung schluckt Feuer/Blitz/Explosion/Gift fast komplett, wird aber von
 // Kinetik (x1.5, Wolfram x2.2) und Laser (x1) effektiv zerlegt.
 function damage(e, amt, type = 'kinetic', ap = false) {
+  if (e.resist === type) amt *= 0.1;   // Resistenzler: nur 10% vom eigenen Element
   if (type === 'fire' && e.vulnFire > 0) amt *= 1.5;
   if (type === 'shock' && e.vulnShock > 0) amt *= 1.5;
   if (e.armorHp > 0) {
@@ -1116,7 +1138,7 @@ function drawTower(t, time) {
   ctx.font = (T * (t.type === 'command' ? 0.62 : 0.42)) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   fText(def.icon, cx, cy - T * 0.02);
   ctx.font = (T * 0.24) + 'px system-ui';
-  fText('⭐'.repeat(t.lvl), cx, cy + T * 0.34);
+  fText(t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl), cx, cy + T * 0.34);
   if (scale !== 1) ctx.restore();
 }
 
@@ -1231,6 +1253,17 @@ function drawEnemy(e, time) {
   if (e.vulnFire > 0) { ctx.strokeStyle = 'rgba(255,140,50,0.9)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.35, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.vulnShock > 0) { ctx.strokeStyle = 'rgba(120,180,255,0.9)'; ctx.setLineDash([2, 4]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.5, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; fText('🔥', cx, cy - e.r * T - T * 0.12); }
+  if (e.resist) {
+    // kleines Abzeichen über der linken Schulter: wogegen er immun-ish ist
+    const bx2 = cx - e.r * T * 0.95, by2 = cy - e.r * T - T * 0.1;
+    ctx.fillStyle = 'rgba(10,22,16,0.8)';
+    ctx.beginPath(); ctx.arc(bx2, by2, T * 0.14, 0, TAU); ctx.fill();
+    ctx.strokeStyle = e.resist === 'fire' ? '#ff9a3c' : e.resist === 'laser' ? '#e88af0' : '#ffe66e';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(bx2, by2, T * 0.14, 0, TAU); ctx.stroke();
+    ctx.font = (T * 0.17) + 'px system-ui'; ctx.textAlign = 'center';
+    fText(e.resist === 'fire' ? '🔥' : e.resist === 'laser' ? '📡' : '⚡', bx2, by2);
+  }
   if (e.radDps > 0) {
     ctx.strokeStyle = `rgba(140,255,110,${0.45 + Math.sin(time * 7 + e.wob) * 0.25})`;
     ctx.lineWidth = 1.6; ctx.setLineDash([2, 3]);
@@ -1578,7 +1611,7 @@ function showUpgpanel(t) {
   if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
   if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
   if (t.type === 'command') statBits.push('☢️ ' + s.nuke + ' Schaden', '🛰️ ' + s.beam + ' Schaden · Radius ' + s.brad);
-  info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${'⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
+  info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
   if (next) {
     up.textContent = `⬆ Upgrade (${next.cost} 💰)`;
