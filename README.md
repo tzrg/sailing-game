@@ -59,6 +59,9 @@ Docker-Container deployt.
   Verstrahlung, Anti-Boss-Railgun, Hypnoseturm, Giftschleuder, Windmaschine,
   Goldmine, Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.
+  Abschüsse (Todesstoß-Regel) und Schaden werden pro Turm und Turmart
+  gezählt; die 📊-Statistik im Menü zeigt den Turmarten-Vergleich und wer
+  welche Monsterart erlegt hat.
   Späte Wellen bringen Resistenzler (Feuer-, Laser- und Blitz-resistent),
   die einen Waffen-Mix erzwingen. Schadensarten + **Panzerung** (Kinetik/Laser knacken
   sie), pro Turm einmalige **Spezialisierungen** (Spezialmunition,

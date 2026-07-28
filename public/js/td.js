@@ -198,6 +198,13 @@ const game = {
   shakeT: 0,            // Bildschirm-Wackeln (Nuke/Orbital-Laser)
 };
 let towers = [];        // {type,lvl,x,y,cd,angle,target}
+// Gesamtstatistik je Turmart: kills/dmg + Matrix "Turmart x Monsterart"
+let stats = { types: {}, vs: {} };
+function statType(type) { return stats.types[type] || (stats.types[type] = { kills: 0, dmg: 0 }); }
+function creditDmg(src, dealt) {
+  src.dmgDone = (src.dmgDone || 0) + dealt;
+  statType(src.type).dmg += dealt;
+}
 let enemies = [];       // {type,hp,maxHp,speed,pathI,frac,x,y,slowT,slowF,burnT,burnDps,bounty,boss}
 let shots = [];         // Projektile/Effekte
 let towerAt = {};       // "x,y" -> tower
@@ -212,6 +219,7 @@ function newGame(keepSave) {
   game.toSpawn = []; game.sel = null; game.banner = ''; game.bannerT = 0;
   game.nukeUsed = false; game.laserUsed = false; game.targeting = null;
   towers = []; enemies = []; shots = []; towerAt = {}; parts = [];
+  stats = { types: {}, vs: {} };
   updateSpeedBtn();
   updateSupers();
   hidePanels();
@@ -293,7 +301,7 @@ function stepEnemy(e, dt) {
     const dealt = Math.min(Math.max(e.hp, 0), e.radDps * dt);
     e.hp -= e.radDps * dt;
     if (e.radSrc) {
-      e.radSrc.dmgDone = (e.radSrc.dmgDone || 0) + dealt;
+      creditDmg(e.radSrc, dealt);
       if (e.hp <= 0 && !e.killedBy) e.killedBy = e.radSrc;
     }
   }
@@ -337,12 +345,12 @@ function damage(e, amt, type = 'kinetic', ap = false, src = null) {
     let mult = 0.25;
     if (type === 'kinetic') mult = ap ? 2.2 : 1.5;
     else if (type === 'laser') mult = 1.0;
-    if (src) src.dmgDone = (src.dmgDone || 0) + Math.min(e.armorHp, amt * mult);
+    if (src) creditDmg(src, Math.min(e.armorHp, amt * mult));
     e.armorHp -= amt * mult;
     if (e.armorHp <= 0) { e.armorHp = 0; armorBreak(e); }
     return;
   }
-  if (src) src.dmgDone = (src.dmgDone || 0) + Math.min(Math.max(e.hp, 0), amt);
+  if (src) creditDmg(src, Math.min(Math.max(e.hp, 0), amt));
   e.hp -= amt;
   // Abschuss bekommt, wer den Todesstoß landet
   if (e.hp <= 0 && !e.killedBy && src) e.killedBy = src;
@@ -534,7 +542,7 @@ function stepTower(t, dt) {
     if (tg.boss || Math.random() < s.acc) {
       // Volltreffer: durchschlägt die Panzerung komplett, Bosse kriegen extra
       const rdmg = s.dmg * (tg.boss ? s.bossMul : 1);
-      t.dmgDone = (t.dmgDone || 0) + Math.min(Math.max(tg.hp, 0), rdmg);
+      creditDmg(t, Math.min(Math.max(tg.hp, 0), rdmg));
       tg.hp -= rdmg;
       if (tg.hp <= 0 && !tg.killedBy) tg.killedBy = t;
       shots.push({ kind: 'rail', x1: cx, y1: cy, x2: tg.x, y2: tg.y, t: 0, ttl: 0.15 });
@@ -824,7 +832,12 @@ function update(dt) {
       if (game.lives <= 0) { game.lives = 0; gameOver(); }
     } else if (e.hp <= 0) {
       e.dead = true;
-      if (e.killedBy && towers.includes(e.killedBy)) e.killedBy.kills = (e.killedBy.kills || 0) + 1;
+      if (e.killedBy) {
+        if (towers.includes(e.killedBy)) e.killedBy.kills = (e.killedBy.kills || 0) + 1;
+        statType(e.killedBy.type).kills++;
+        const vs = stats.vs[e.killedBy.type] || (stats.vs[e.killedBy.type] = {});
+        vs[e.type] = (vs[e.type] || 0) + 1;
+      }
       game.money += e.bounty;
       shots.push({ kind: 'coin', x: e.x, y: e.y, t: 0, ttl: 0.6, v: e.bounty });
       // Todes-Pop: Ring + Konfetti in Gegnerfarbe
@@ -960,6 +973,7 @@ function saveState() {
     money: Math.round(game.money), lives: game.lives,
     wave: game.state === 'wave' ? game.wave - 1 : game.wave,   // laufende Welle wird wiederholt
     towers: towers.map((t) => ({ type: t.type, lvl: t.lvl, x: t.x, y: t.y, spec: t.spec || null, kills: t.kills || 0, dmg: Math.round(t.dmgDone || 0) })),
+    stats,
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch { /* egal */ }
   const h = authHeaders();
@@ -994,6 +1008,9 @@ function applySave(d) {
     const t = { type: td.type, lvl: clamp(td.lvl | 0, 0, def.levels.length - 1), x, y, cd: 0, angle: 0, born: 1, kills: Math.max(0, td.kills | 0), dmgDone: Math.max(0, td.dmg | 0) };
     if (td.spec && (SPECS[td.type] || []).some((o) => o.key === td.spec)) t.spec = td.spec;
     towers.push(t); towerAt[k] = t;
+  }
+  if (d.stats && typeof d.stats === 'object') {
+    stats = { types: d.stats.types || {}, vs: d.stats.vs || {} };
   }
   updateSupers();
   if (game.wave > 0) game.nextT = 12;
@@ -1913,6 +1930,57 @@ menuEl.addEventListener('click', (e) => { if (e.target === menuEl) menuEl.classL
 document.getElementById('btn-help').addEventListener('click', () => { menuEl.classList.add('hidden'); helpEl.classList.remove('hidden'); });
 document.getElementById('btn-start').addEventListener('click', () => helpEl.classList.add('hidden'));
 document.getElementById('btn-restart').addEventListener('click', () => { menuEl.classList.add('hidden'); newGame(); });
+// ---- Statistik-Ansicht -----------------------------------------------------
+const EINFO = {
+  blob: ['🟢', 'Blob'], runner: ['🟡', 'Renner'], tank: ['🟣', 'Panzer'],
+  regen: ['♻️', 'Regenerierer'], ember: ['🔥', 'Glutläufer'], prisma: ['💎', 'Prisma'],
+  blitzer: ['⚡', 'Geerdeter'], boss: ['👹', 'Boss'],
+};
+const statsEl = document.getElementById('stats');
+function renderStats() {
+  const body = document.getElementById('stats-body');
+  const types = Object.keys(stats.types).filter((k) => TOWERS[k]);
+  if (!types.length) {
+    body.innerHTML = '<p class="stats-note">Noch keine Daten – erst mal ballern! Kills und Schaden werden pro Turmart gesammelt (auch von inzwischen verkauften Türmen).</p>';
+    return;
+  }
+  types.sort((a, b) => (stats.types[b].dmg - stats.types[a].dmg) || (stats.types[b].kills - stats.types[a].kills));
+  let totalKills = 0, totalDmg = 0;
+  let html = '<div class="stats-h">Turmarten im Vergleich</div>'
+    + '<p class="stats-note">Zählt alles seit Spielstart, auch verkaufte Türme. Einzelne Türme zeigen ihre Werte im Upgrade-Panel.</p>'
+    + '<div class="stats-wrap"><table class="stats-table"><tr><th>Turmart</th><th>aktiv</th><th>💀 Kills</th><th>💥 Schaden</th></tr>';
+  for (const k of types) {
+    const st = stats.types[k];
+    totalKills += st.kills; totalDmg += st.dmg;
+    const active = towers.filter((t) => t.type === k).length;
+    html += `<tr><td>${TOWERS[k].icon} ${TOWERS[k].name}</td><td>${active}×</td><td>${st.kills}</td><td>${fmtCount(st.dmg)}</td></tr>`;
+  }
+  html += `<tr class="total"><td>Gesamt</td><td>${towers.length}×</td><td>${totalKills}</td><td>${fmtCount(totalDmg)}</td></tr></table></div>`;
+
+  // Matrix: welche Turmart hat welche Monsterart erledigt?
+  const killers = types.filter((k) => stats.vs[k] && Object.keys(stats.vs[k]).length);
+  const monsters = Object.keys(EINFO).filter((m) => killers.some((k) => stats.vs[k][m]));
+  if (killers.length && monsters.length) {
+    html += '<div class="stats-h">Wer erlegt welche Monster?</div>'
+      + '<div class="stats-wrap"><table class="stats-table"><tr><th></th>'
+      + monsters.map((m) => `<th title="${EINFO[m][1]}">${EINFO[m][0]}</th>`).join('') + '</tr>';
+    for (const k of killers) {
+      html += `<tr><td>${TOWERS[k].icon} ${TOWERS[k].name}</td>`
+        + monsters.map((m) => `<td>${stats.vs[k][m] || '–'}</td>`).join('') + '</tr>';
+    }
+    const legend = monsters.map((m) => `${EINFO[m][0]} ${EINFO[m][1]}`).join(' · ');
+    html += `</table></div><p class="stats-note">${legend}</p>`;
+  }
+  body.innerHTML = html;
+}
+document.getElementById('btn-stats').addEventListener('click', () => {
+  menuEl.classList.add('hidden');
+  renderStats();
+  statsEl.classList.remove('hidden');
+});
+document.getElementById('btn-stats-close').addEventListener('click', () => statsEl.classList.add('hidden'));
+statsEl.addEventListener('click', (e) => { if (e.target === statsEl) statsEl.classList.add('hidden'); });
+
 const killsBtn = document.getElementById('btn-kills');
 function updateKillsBtn() { killsBtn.textContent = '💀 Abschuss-Zähler: ' + (showKills ? 'an' : 'aus'); }
 killsBtn.addEventListener('click', () => {
@@ -1933,6 +2001,7 @@ function frame(now) {
 
 window.__td = { game, get towers() { return towers; }, get enemies() { return enemies; },
   get geom() { return { T, OX, OY, ROT }; },
+  get stats() { return stats; },
   TOWERS, SPECS, PATH, isPath, startWave, newGame, update, effStats, fireNuke, fireSlaser,
   saveState, applySave, tryRestore,
   get shots() { return shots; },
