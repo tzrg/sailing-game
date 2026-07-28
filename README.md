@@ -246,6 +246,26 @@ Dockerfile
 railway.json
 ```
 
+## Tests
+
+`npm test` führt die komplette Suite aus (`test/run-all.mjs`):
+
+- **`test/api.test.mjs`** – Backend-API: Konten (Registrierung mit
+  Proof-of-Work, Login, Honeypot), Scores + Top-10-Bestenliste,
+  Spielstand- und Historien-Slots, Auth-/Validierungs-Wächter.
+- **`test/landing.test.mjs`** – Landing-Page im Headless-Browser:
+  Datenbank-Warnbanner im In-Memory-Modus, aufklappbare Top-10-Liste.
+- **`test/td.test.mjs`** – Tower Defense komplett (85+ Checks) über den
+  Test-Hook `window.__td`: Spezialisierungen, Flammen-/Strahlenkegel,
+  Superwaffen, Windmaschinen-Regel, Querformat-Eingaben, Stufe-4-Ausbau,
+  Resistenzen, Railgun/Hypnose, Abschuss-/Schadenszähler, Statistik,
+  Spiel-Historie und der Spielstand-Roundtrip über einen Seiten-Reload.
+
+Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
+zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird
+als npm-Paket aufgelöst; ist keines installiert, greifen die Systempfade der
+Entwicklungs-Umgebung. Eigener Browser-Pfad: `TEST_CHROMIUM=/pfad/zu/chromium`.
+
 ## Persistenz auf Railway (wichtig!)
 
 Der Server speichert **nur dann dauerhaft**, wenn die Umgebungsvariable
