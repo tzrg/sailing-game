@@ -290,8 +290,12 @@ function stepEnemy(e, dt) {
   if (e.windCd > 0) e.windCd -= dt;
   if (e.burnT > 0) { e.burnT -= dt; damage(e, e.burnDps * dt, 'fire', false, e.burnSrc); }
   if (e.radDps > 0) {   // Verstrahlung: ignoriert Panzerung, klingt nie ab
+    const dealt = Math.min(Math.max(e.hp, 0), e.radDps * dt);
     e.hp -= e.radDps * dt;
-    if (e.radSrc) e.lastHitBy = e.radSrc;
+    if (e.radSrc) {
+      e.radSrc.dmgDone = (e.radSrc.dmgDone || 0) + dealt;
+      if (e.hp <= 0 && !e.killedBy) e.killedBy = e.radSrc;
+    }
   }
   if (e.regen) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * e.regen * dt);
   if (e.hypnoT > 0) {
@@ -326,7 +330,6 @@ function stepEnemy(e, dt) {
 // Panzerung schluckt Feuer/Blitz/Explosion/Gift fast komplett, wird aber von
 // Kinetik (x1.5, Wolfram x2.2) und Laser (x1) effektiv zerlegt.
 function damage(e, amt, type = 'kinetic', ap = false, src = null) {
-  if (src) e.lastHitBy = src;          // für den Abschuss-Zähler pro Turm
   if (e.resist === type) amt *= 0.1;   // Resistenzler: nur 10% vom eigenen Element
   if (type === 'fire' && e.vulnFire > 0) amt *= 1.5;
   if (type === 'shock' && e.vulnShock > 0) amt *= 1.5;
@@ -334,11 +337,15 @@ function damage(e, amt, type = 'kinetic', ap = false, src = null) {
     let mult = 0.25;
     if (type === 'kinetic') mult = ap ? 2.2 : 1.5;
     else if (type === 'laser') mult = 1.0;
+    if (src) src.dmgDone = (src.dmgDone || 0) + Math.min(e.armorHp, amt * mult);
     e.armorHp -= amt * mult;
     if (e.armorHp <= 0) { e.armorHp = 0; armorBreak(e); }
     return;
   }
+  if (src) src.dmgDone = (src.dmgDone || 0) + Math.min(Math.max(e.hp, 0), amt);
   e.hp -= amt;
+  // Abschuss bekommt, wer den Todesstoß landet
+  if (e.hp <= 0 && !e.killedBy && src) e.killedBy = src;
 }
 
 // Panzerung zerspringt: graue Scherben + Ring
@@ -526,8 +533,10 @@ function stepTower(t, dt) {
     spawnPart({ kind: 'muzzle', x: cx + Math.cos(t.angle) * 0.55, y: cy + Math.sin(t.angle) * 0.55, a: t.angle, ttl: 0.1, size: 0.34 });
     if (tg.boss || Math.random() < s.acc) {
       // Volltreffer: durchschlägt die Panzerung komplett, Bosse kriegen extra
-      tg.lastHitBy = t;
-      tg.hp -= s.dmg * (tg.boss ? s.bossMul : 1);
+      const rdmg = s.dmg * (tg.boss ? s.bossMul : 1);
+      t.dmgDone = (t.dmgDone || 0) + Math.min(Math.max(tg.hp, 0), rdmg);
+      tg.hp -= rdmg;
+      if (tg.hp <= 0 && !tg.killedBy) tg.killedBy = t;
       shots.push({ kind: 'rail', x1: cx, y1: cy, x2: tg.x, y2: tg.y, t: 0, ttl: 0.15 });
       for (let i = 0; i < 8; i++) {
         const a = Math.random() * TAU, sp = 2 + Math.random() * 3;
@@ -815,7 +824,7 @@ function update(dt) {
       if (game.lives <= 0) { game.lives = 0; gameOver(); }
     } else if (e.hp <= 0) {
       e.dead = true;
-      if (e.lastHitBy && towers.includes(e.lastHitBy)) e.lastHitBy.kills = (e.lastHitBy.kills || 0) + 1;
+      if (e.killedBy && towers.includes(e.killedBy)) e.killedBy.kills = (e.killedBy.kills || 0) + 1;
       game.money += e.bounty;
       shots.push({ kind: 'coin', x: e.x, y: e.y, t: 0, ttl: 0.6, v: e.bounty });
       // Todes-Pop: Ring + Konfetti in Gegnerfarbe
@@ -950,7 +959,7 @@ function saveState() {
     v: 1, ts: Date.now(), diff: diffKey(),
     money: Math.round(game.money), lives: game.lives,
     wave: game.state === 'wave' ? game.wave - 1 : game.wave,   // laufende Welle wird wiederholt
-    towers: towers.map((t) => ({ type: t.type, lvl: t.lvl, x: t.x, y: t.y, spec: t.spec || null, kills: t.kills || 0 })),
+    towers: towers.map((t) => ({ type: t.type, lvl: t.lvl, x: t.x, y: t.y, spec: t.spec || null, kills: t.kills || 0, dmg: Math.round(t.dmgDone || 0) })),
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch { /* egal */ }
   const h = authHeaders();
@@ -982,7 +991,7 @@ function applySave(d) {
     if (!def) continue;
     const x = td.x | 0, y = td.y | 0, k = x + ',' + y;
     if (x < 0 || x >= GC || y < 0 || y >= GR || towerAt[k] || isPath(x, y) || isPond(x, y)) continue;
-    const t = { type: td.type, lvl: clamp(td.lvl | 0, 0, def.levels.length - 1), x, y, cd: 0, angle: 0, born: 1, kills: Math.max(0, td.kills | 0) };
+    const t = { type: td.type, lvl: clamp(td.lvl | 0, 0, def.levels.length - 1), x, y, cd: 0, angle: 0, born: 1, kills: Math.max(0, td.kills | 0), dmgDone: Math.max(0, td.dmg | 0) };
     if (td.spec && (SPECS[td.type] || []).some((o) => o.key === td.spec)) t.spec = td.spec;
     towers.push(t); towerAt[k] = t;
   }
@@ -1145,10 +1154,10 @@ function draw(time) {
       if (['gold', 'ice', 'wind'].includes(t.type)) continue;
       const kx = (t.x + 0.5) * T, ky = (t.y + 0.5) * T;
       ctx.fillStyle = 'rgba(8,16,24,0.72)';
-      roundRectP(kx - T * 0.34, ky + T * 0.4, T * 0.68, T * 0.28, 4); ctx.fill();
-      ctx.fillStyle = '#ffd166'; ctx.font = (T * 0.2) + 'px system-ui';
+      roundRectP(kx - T * 0.62, ky + T * 0.4, T * 1.24, T * 0.28, 4); ctx.fill();
+      ctx.fillStyle = '#ffd166'; ctx.font = (T * 0.175) + 'px system-ui';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      fText('💀' + (t.kills || 0), kx, ky + T * 0.55);
+      fText('💀' + (t.kills || 0) + ' 💥' + fmtCount(t.dmgDone || 0), kx, ky + T * 0.55);
       ctx.textBaseline = 'alphabetic';
     }
   }
@@ -1687,6 +1696,12 @@ function centerText(text, color) {
   ctx.fillStyle = color; ctx.font = 'bold 19px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(text, CW / 2, y - 3); ctx.textBaseline = 'alphabetic';
 }
+// Schadenszahlen kompakt: 950 · 5,3k · 1,2M
+function fmtCount(v) {
+  if (v >= 1e6) return (Math.round(v / 1e5) / 10).toLocaleString('de-DE') + 'M';
+  if (v >= 1000) return (Math.round(v / 100) / 10).toLocaleString('de-DE') + 'k';
+  return String(Math.round(v));
+}
 // Text im Feld aufrecht zeichnen, auch wenn das Feld gedreht ist
 function fText(txt, x, y) {
   if (!ROT) { ctx.fillText(txt, x, y); return; }
@@ -1770,7 +1785,7 @@ function showUpgpanel(t) {
   if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
   if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
   if (t.type === 'command') statBits.push('☢️ ' + s.nuke + ' Schaden', '🛰️ ' + s.beam + ' Schaden · Radius ' + s.brad);
-  if (!['gold', 'ice', 'wind'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse');
+  if (!['gold', 'ice', 'wind'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse · 💥 ' + fmtCount(t.dmgDone || 0) + ' Schaden');
   info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
   if (next) {
