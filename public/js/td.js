@@ -2251,6 +2251,22 @@ function renderHelp() {
 }
 renderHelp();
 
+// Manuell speichern: sichert sofort (Banner als Bestätigung)
+document.getElementById('btn-save').addEventListener('click', () => {
+  menuEl.classList.add('hidden');
+  if (game.state === 'over' || (game.wave === 0 && !towers.length)) {
+    game.banner = 'Nichts zu speichern – erst bauen oder spielen!';
+    game.bannerT = 1.8;
+    return;
+  }
+  saveState();
+  const online = authHeaders() ? ' – auch online' : '';
+  game.banner = game.state === 'wave'
+    ? '💾 Gespeichert! Weiter geht es ab Start von Welle ' + game.wave + online
+    : '💾 Spielstand gespeichert' + online;
+  game.bannerT = 2.2;
+});
+
 const killsBtn = document.getElementById('btn-kills');
 function updateKillsBtn() { killsBtn.textContent = '💀 Abschuss-Zähler: ' + (showKills ? 'an' : 'aus'); }
 killsBtn.addEventListener('click', () => {
