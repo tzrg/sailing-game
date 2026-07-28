@@ -983,6 +983,28 @@ body.landing {
 .s-label small { display: block; color: #8aa7bd; font-size: 11px; }
 .s-val { font-variant-numeric: tabular-nums; color: #8fe0b6; white-space: nowrap; }
 .lb-title { font-size: 13px; color: #9fc0d8; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* aufklappbare Top-10-Liste je Highscore-Eintrag */
+.lb-click { cursor: pointer; }
+.lb-click:active { background: rgba(255, 255, 255, 0.05); }
+.lb-chev { color: #9fc0d8; font-size: 12px; }
+.lb-list {
+  margin: 2px 0 8px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 8px;
+}
+.lb-list.hidden { display: none; }
+.lb-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  padding: 3px 0;
+  color: #dcebf5;
+}
+.lb-entry.me { color: #ffd166; font-weight: 700; }
+.lb-entry.muted { color: #8aa4b8; font-size: 12px; }
 .scores.hidden { display: none; }
 
 .lp-foot { margin-top: 30px; text-align: center; }

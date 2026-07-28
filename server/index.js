@@ -207,16 +207,23 @@ app.get('/api/save/:game', async (req, res) => {
   res.json({ save });
 });
 
-// Globale Bestenliste: bester Wert je (game,variant) über alle Spieler
+// Globale Bestenliste: Top 10 je (game,variant) über alle Spieler –
+// die Landing-Page zeigt den Besten und klappt die Liste auf Wunsch auf.
 app.get('/api/leaderboard', async (req, res) => {
   const rows = await db.leaderboard();
-  const best = new Map();   // game|variant -> row
+  const groups = new Map();   // game|variant -> rows
   for (const r of rows) {
     const key = `${r.game}|${r.variant}`;
-    const cur = best.get(key);
-    if (!cur || (r.better === 'high' ? r.value > cur.value : r.value < cur.value)) best.set(key, r);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
   }
-  res.json({ board: [...best.values()] });
+  const board = [];
+  for (const list of groups.values()) {
+    const better = list[0].better;
+    list.sort((a, b) => (better === 'high' ? b.value - a.value : a.value - b.value));
+    board.push(...list.slice(0, 10));
+  }
+  res.json({ board });
 });
 
 // ---- Statische Dateien -----------------------------------------------------

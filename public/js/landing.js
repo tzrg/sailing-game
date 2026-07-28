@@ -76,21 +76,48 @@ async function renderLeaderboard() {
   const board = await Scores.leaderboard();
   if (!board) { wrap.classList.add('hidden'); return; }
   wrap.classList.remove('hidden');
-  wrap.innerHTML = '<h3 class="lb-title">🌍 Bestenliste (alle Spieler)</h3>';
+  wrap.innerHTML = '<h3 class="lb-title">🌍 Bestenliste (alle Spieler) – antippen für die Top 10</h3>';
   if (!board.length) { wrap.innerHTML += '<p class="muted small">Noch keine Einträge – lade deine Bestzeiten mit dem Login hoch.</p>'; return; }
+  const me = (Auth.current() || '').toLowerCase();
+  // je Spiel und Variante ALLE Spieler einsammeln
   const byGame = {};
-  for (const r of board) (byGame[r.game] ||= []).push(r);
-  for (const [game, rows] of Object.entries(byGame)) {
-    rows.sort((a, b) => (a.sub || '').localeCompare(b.sub || ''));
+  for (const r of board) ((byGame[r.game] ||= {})[r.variant] ||= []).push(r);
+  for (const [game, variants] of Object.entries(byGame)) {
     const box = document.createElement('div');
     box.className = 'score-game';
     box.innerHTML = `<h3>${Scores.gameTitle(game)}</h3>`;
-    for (const r of rows.slice(0, 8)) {
+    const groups = Object.values(variants);
+    groups.sort((a, b) => (a[0].sub || '').localeCompare(b[0].sub || ''));
+    for (const rows of groups.slice(0, 8)) {
+      const better = rows[0].better;
+      rows.sort((a, b) => (better === 'high' ? b.value - a.value : a.value - b.value));
+      const top = rows[0];
       const row = document.createElement('div');
-      row.className = 'score-row';
-      row.innerHTML = `<span class="s-label">${r.label || r.variant}<small>${r.sub || ''} · 👑 ${r.user_name}</small></span>` +
-        `<span class="s-val">${fmtValue(r.value, r.better)}</span>`;
+      row.className = 'score-row lb-click';
+      row.innerHTML = `<span class="s-label">${top.label || top.variant}` +
+        `<small>${top.sub || ''} · 👑 ${top.user_name} · ${rows.length} Spieler</small></span>` +
+        `<span class="s-val">${fmtValue(top.value, top.better)} <span class="lb-chev">▸</span></span>`;
+      const list = document.createElement('div');
+      list.className = 'lb-list hidden';
+      rows.slice(0, 10).forEach((r, i) => {
+        const li = document.createElement('div');
+        li.className = 'lb-entry' + (r.user_name.toLowerCase() === me ? ' me' : '');
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+        li.innerHTML = `<span>${medal} ${r.user_name}</span><span>${fmtValue(r.value, r.better)}</span>`;
+        list.appendChild(li);
+      });
+      if (rows.length > 10) {
+        const more = document.createElement('div');
+        more.className = 'lb-entry muted';
+        more.textContent = `… und ${rows.length - 10} weitere`;
+        list.appendChild(more);
+      }
+      row.addEventListener('click', () => {
+        list.classList.toggle('hidden');
+        row.querySelector('.lb-chev').textContent = list.classList.contains('hidden') ? '▸' : '▾';
+      });
       box.appendChild(row);
+      box.appendChild(list);
     }
     wrap.appendChild(box);
   }
