@@ -612,6 +612,32 @@ html, body {
   margin-bottom: 14px;
 }
 
+/* Hilfe-Dropdowns (Tower Defense) */
+#help h2 { font-size: 16px; margin: 16px 0 4px; }
+.help-note { margin-top: 0; }
+.hd {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  margin: 5px 0;
+  background: rgba(255, 255, 255, 0.04);
+}
+.hd summary {
+  cursor: pointer;
+  padding: 8px 11px;
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.hd summary::-webkit-details-marker { display: none; }
+.hd summary::after { content: '▸'; color: #9fc0d8; flex: 0 0 auto; }
+.hd[open] summary::after { content: '▾'; }
+.hd .hd-body { padding: 0 11px 9px; font-size: 13px; color: #cfe2f0; line-height: 1.45; }
+.hd .hd-body p { margin: 5px 0; color: #cfe2f0; font-size: 13px; }
+
 /* Statistik-Tabellen (Tower Defense) */
 .stats-table {
   width: 100%;

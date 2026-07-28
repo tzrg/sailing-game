@@ -108,7 +108,7 @@ const TOWERS = {
       { cost: 120, gold: 4, interval: 3.1 },
       { cost: 220, gold: 7, interval: 3.2 },
       { cost: 1200, gold: 16, interval: 3.2 }] },
-  loader: { name: 'Auto-Lader', icon: '⚙️', color: '#d8c56a', desc: 'passiv: MG & Kanone auf Nachbarfeldern schießen deutlich schneller (der beste Lader daneben zählt)',
+  loader: { name: 'Auto-Lader', icon: '⚙️', color: '#d8c56a', desc: 'passiv: MG, Kanone & Railgun auf Nachbarfeldern schießen deutlich schneller (der beste Lader daneben zählt)',
     levels: [
       { cost: 90, boost: 1.5 },
       { cost: 100, boost: 1.8 },
@@ -187,8 +187,9 @@ function effStats(t) {
   if (t.type === 'railgun') s.bossMul = 3; // Grundbonus gegen Bosse
   const spec = t.spec && (SPECS[t.type] || []).find((o) => o.key === t.spec);
   if (spec && spec.mod) spec.mod(s);
-  // Auto-Lader: der beste ⚙️ auf einem der 8 Nachbarfelder beschleunigt MG/Kanone
-  if ((t.type === 'mg' || t.type === 'cannon') && s.rate) {
+  // Auto-Lader: der beste ⚙️ auf einem der 8 Nachbarfelder beschleunigt
+  // MG, Kanone und Railgun
+  if ((t.type === 'mg' || t.type === 'cannon' || t.type === 'railgun') && s.rate) {
     let boost = 1;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
@@ -1923,7 +1924,7 @@ function showUpgpanel(t) {
   if (s.splash) statBits.push('Fläche ' + s.splash);
   if (s.burn) statBits.push('+' + s.burn + '/s Brand');
   if (s.charge) statBits.push('+' + s.charge + '/s Verstrahlung · max ' + s.cap + '/s');
-  if (s.boost) statBits.push('Feuerrate ×' + s.boost + ' für MG & Kanone daneben');
+  if (s.boost) statBits.push('Feuerrate ×' + s.boost + ' für MG, Kanone & Railgun daneben');
   if (s.boosted) statBits.push('⚙️ Auto-Lader aktiv: Feuerrate ×' + s.boosted);
   if (t.type === 'improb') statBits.push('verwürfelt 1 Monster pro Schuss (je nur 1×, keine Bosse)');
   if (s.acc) statBits.push('trifft Kleine zu ' + Math.round(s.acc * 100) + '% · Bosse immer, ×' + s.bossMul);
@@ -2112,6 +2113,76 @@ document.getElementById('btn-stats').addEventListener('click', () => {
 });
 document.getElementById('btn-stats-close').addEventListener('click', () => statsEl.classList.add('hidden'));
 statsEl.addEventListener('click', (e) => { if (e.target === statsEl) statsEl.classList.add('hidden'); });
+
+// ---- Hilfe-Menü: Dropdowns je Turm- und Gegnerart --------------------------
+const TIPS = {
+  mg: 'Früh billig; mit ⚙️ Auto-Lader daneben wird es eine Kreissäge. 🔩 Wolframkern knackt Panzer.',
+  cannon: 'Lange Reichweite – wirkt über mehrere Pfadschleifen. Erste Wahl gegen Panzerung.',
+  grenade: 'An Kurven und Doppelpfaden stellen, wo Gruppen dicht laufen. Prallt an Panzerung ab.',
+  laser: 'An lange Geraden bauen – trifft alles auf der Linie und schält nebenbei Panzerung.',
+  flame: 'Der Kegel schwenkt zum nächsten Gegner; Brand wirkt nach. Gegen 🔥 Glutläufer nutzlos.',
+  rocket: 'Zielsuchend, verfehlt nie. Mit ☢️ Taktischer Nuke die Endgame-Flächenwaffe.',
+  ice: 'Macht keinen Schaden, ist aber Gold wert: an Kurven bremsen, dahinter draufhauen.',
+  tesla: 'Stark gegen Pulks – der Blitz springt weiter. ⚡ Geerdete lachen nur darüber.',
+  ray: 'Verstrahlung bleibt für immer und ignoriert Panzerung – vorne markieren, hinten sterben lassen.',
+  loader: 'Passiv! Direkt neben MG, Kanone oder Railgun stellen – nur der beste Lader daneben zählt.',
+  improb: 'Glücksspiel: verwandelt Panzer in Blobs – oder in Renner. Am besten auf dicke Brocken.',
+  railgun: 'Der Boss-Killer: trifft Bosse immer, 3× Schaden, durch jede Panzerung. Kleine verfehlt sie oft.',
+  hypno: 'Hypnotisierte stehen still und beißen Nachbarn – je fetter das Opfer, desto härter der Biss.',
+  gift: 'Pfützen liegen auf dem Weg und ätzen jeden, der durchläuft. Länge vor Fläche an Engstellen.',
+  wind: 'Verzögert den Vordersten (¾-Regel: niemand hängt ewig fest). Gut vor der Kill-Zone.',
+  gold: 'Früh gebaut zahlt sie sich über die Wellen aus. In eine ruhige Ecke stellen.',
+  command: 'Schaltet ☢️ Nuke und 🛰️ Orbital-Laser frei (je 1× pro Welle). Upgrades stärken beide massiv.',
+};
+const MAINSTAT = {
+  mg: ['dmg', 'Schaden'], cannon: ['dmg', 'Schaden'], grenade: ['dmg', 'Schaden'],
+  rocket: ['dmg', 'Schaden'], tesla: ['dmg', 'Schaden'], railgun: ['dmg', 'Schaden'],
+  laser: ['dps', 'Schaden/s'], flame: ['dps', 'Schaden/s'], gift: ['dps', 'Gift/s'],
+  ice: ['slow', 'Tempo-Malus', (v) => Math.round(v * 100) + '%'],
+  wind: ['rate', 'Stöße/s'], improb: ['rate', 'Würfe/s'],
+  ray: ['charge', 'Verstrahlung/s'], gold: ['gold', 'Gold'],
+  loader: ['boost', 'Feuerrate', (v) => '×' + v],
+  hypno: ['factor', 'Biss', (v) => Math.round(v * 100) + '% MaxHP/s'],
+  command: ['nuke', '☢️-Schaden'],
+};
+const EHELP = {
+  blob: { wave: 1, desc: 'Das Standardmonster: mittleres Tempo, keine Extras.', tip: 'Futter für alles – gut zum Gold sammeln.' },
+  runner: { wave: 2, desc: 'Flitzt mit fast doppeltem Tempo, hat dafür wenig HP.', tip: '❄️ Vereiser und 🌪️ Wind bremsen; schnelle Türme wie das MG fangen ihn ab.' },
+  tank: { wave: 4, desc: 'Zäher Brocken mit grauer Rüstung, die Feuer, Blitz, Explosion und Gift fast komplett schluckt.', tip: 'Kinetik (MG/Kanone), Laser, 🧲 Railgun oder ☣️ Verstrahlung – oder per 🎲 verwandeln.' },
+  regen: { wave: 7, desc: 'Heilt sich stetig selbst.', tip: 'Fokus-Schaden statt Dauer-Gekleckere – oder permanente ☣️ Verstrahlung, die heilt er nicht weg.' },
+  ember: { wave: 10, desc: 'Feuerresistent: nimmt nur 10 % Feuerschaden, auch vom Brand.', tip: 'Flammenwerfer sparen – alles andere wirkt normal.' },
+  prisma: { wave: 12, desc: 'Laserresistent: Laserstrahlen wirken fast gar nicht.', tip: 'Kinetik, Explosion oder Blitz nehmen – der 📡 Laser darf Pause machen.' },
+  blitzer: { wave: 14, desc: 'Geerdet: Blitzschaden verpufft (10 %), und flott ist er auch noch.', tip: 'Der ⚡ Blitzturm überspringt ihn gefühlt – MG, Kanone oder Flächenschaden nutzen.' },
+  boss: { wave: 8, desc: 'Alle 8 Wellen, riesig, kostet 5 ❤️, ab Welle 16 im Rudel und meist dick gepanzert. Immun gegen Hypnose und Verwandlung.', tip: '🧲 Railgun (3–6× Schaden, immer Treffer) plus ☢️/🛰️ Superwaffen bereithalten.' },
+};
+function renderHelp() {
+  const chain = (k, def) => {
+    const m = MAINSTAT[k];
+    if (!m || def.levels[0][m[0]] === undefined) return '';
+    const fmt = m[2] || ((v) => v);
+    return ' · ' + m[1] + ': ' + def.levels.map((l) => fmt(l[m[0]])).join(' → ');
+  };
+  let html = '';
+  for (const [k, def] of Object.entries(TOWERS)) {
+    const costs = def.levels.map((l) => l.cost).join(' → ');
+    const specs = (SPECS[k] || [])
+      .map((sp) => `${sp.icon} <b>${sp.name}</b> (${sp.cost} 💰): ${sp.desc}`).join('<br>');
+    html += `<details class="hd"><summary>${def.icon} ${def.name}</summary><div class="hd-body">`
+      + `<p>${def.desc}.</p>`
+      + `<p>💡 ${TIPS[k] || ''}</p>`
+      + `<p>⬆ Stufen: ${costs} 💰${chain(k, def)}</p>`
+      + (specs ? `<p>🎛 Spezialisierung (einmalig, entweder/oder):<br>${specs}</p>` : '')
+      + '</div></details>';
+  }
+  document.getElementById('help-towers').innerHTML = html;
+  let eh = '';
+  for (const [k, info] of Object.entries(EHELP)) {
+    eh += `<details class="hd"><summary>${EINFO[k][0]} ${EINFO[k][1]} · ab Welle ${info.wave}</summary>`
+      + `<div class="hd-body"><p>${info.desc}</p><p>💡 ${info.tip}</p></div></details>`;
+  }
+  document.getElementById('help-enemies').innerHTML = eh;
+}
+renderHelp();
 
 const killsBtn = document.getElementById('btn-kills');
 function updateKillsBtn() { killsBtn.textContent = '💀 Abschuss-Zähler: ' + (showKills ? 'an' : 'aus'); }
