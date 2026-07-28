@@ -61,8 +61,10 @@ Docker-Container deployt.
   Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.
   Abschüsse (Todesstoß-Regel) und Schaden werden pro Turm und Turmart
-  gezählt; die 📊-Statistik im Menü zeigt den Turmarten-Vergleich und wer
-  welche Monsterart erlegt hat.
+  gezählt; die 📊-Statistik im Menü zeigt den Turmarten-Vergleich, wer
+  welche Monsterart erlegt hat und die Spiel-Historie: jedes Ergebnis
+  (Game Over oder aufgegeben) wird mit Welle, Kills, Schaden und Top-Turm
+  gespeichert – lokal und eingeloggt in der Datenbank (Slot td_history).
   Späte Wellen bringen Resistenzler (Feuer-, Laser- und Blitz-resistent),
   die einen Waffen-Mix erzwingen. Schadensarten + **Panzerung** (Kinetik/Laser knacken
   sie), pro Turm einmalige **Spezialisierungen** (Spezialmunition,

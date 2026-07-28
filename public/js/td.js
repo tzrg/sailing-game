@@ -239,7 +239,11 @@ const MAX_PARTS = 520;
 function spawnPart(p) { if (parts.length < MAX_PARTS) { p.t = 0; parts.push(p); } }
 
 function newGame(keepSave) {
-  if (!keepSave) clearSave();
+  if (!keepSave) {
+    // laufende Partie wird aufgegeben -> als Ergebnis in die Historie
+    if (game.wave > 0 && game.state !== 'over') recordResult('quit');
+    clearSave();
+  }
   game.money = DIFF.money; game.lives = DIFF.lives; game.wave = 0;
   game.state = 'build'; game.speed = 1; game.nextT = 0;
   game.toSpawn = []; game.sel = null; game.banner = ''; game.bannerT = 0;
@@ -989,6 +993,7 @@ function update(dt) {
 function gameOver() {
   game.state = 'over';
   saveBest();
+  recordResult('over');
   clearSave();
 }
 
@@ -1137,6 +1142,53 @@ async function tryRestore() {
 }
 // beim Verlassen der Seite den aktuellen Stand mitnehmen
 window.addEventListener('pagehide', saveState);
+
+// ---- Spiel-Historie: jedes Ergebnis mit Statistik-Zusammenfassung ----------
+// Lokal (localStorage) und für eingeloggte Spieler zusätzlich in der
+// Datenbank (eigener Slot 'td_history' über dieselbe Save-API).
+const HIST_KEY = 'td_history';
+let history = [];
+function pushHistoryToServer() {
+  const h = authHeaders();
+  if (!h) return;
+  fetch('/api/save/td_history', { method: 'PUT', headers: { 'Content-Type': 'application/json', ...h },
+    body: JSON.stringify({ data: { v: 1, runs: history } }) }).catch(() => { /* egal */ });
+}
+function recordResult(end) {
+  const reached = end === 'over' ? Math.max(0, game.wave - 1) : game.wave;
+  // Game Over zählt immer (auch in Welle 1 gestorben); Abbruch nur, wenn
+  // überhaupt eine Welle lief
+  if (end !== 'over' && reached < 1) return;
+  let kills = 0, dmg = 0, top = null;
+  for (const [k, st] of Object.entries(stats.types)) {
+    kills += st.kills; dmg += st.dmg;
+    if (!top || st.dmg > stats.types[top].dmg) top = k;
+  }
+  history.unshift({ ts: Date.now(), diff: diffKey(), wave: reached, end, kills, dmg: Math.round(dmg), top });
+  history = history.slice(0, 50);
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(history)); } catch { /* egal */ }
+  pushHistoryToServer();
+}
+async function loadHistory() {
+  try { history = JSON.parse(localStorage.getItem(HIST_KEY) || '[]') || []; } catch { history = []; }
+  const h = authHeaders();
+  if (!h) return;
+  try {
+    const r = await fetch('/api/save/td_history', { headers: h });
+    if (!r.ok) return;
+    const remote = ((await r.json()).save || {}).runs || [];
+    const seen = new Set(history.map((x) => x && x.ts));
+    let merged = false;
+    for (const run of remote) {
+      if (run && typeof run.ts === 'number' && !seen.has(run.ts)) { history.push(run); merged = true; }
+    }
+    if (merged) {
+      history.sort((a, b) => b.ts - a.ts);
+      history = history.slice(0, 50);
+      try { localStorage.setItem(HIST_KEY, JSON.stringify(history)); } catch { /* egal */ }
+    }
+  } catch { /* egal */ }
+}
 
 // ---- Rendering -------------------------------------------------------------
 const canvas = document.getElementById('game');
@@ -2070,11 +2122,25 @@ const EINFO = {
   blitzer: ['⚡', 'Geerdeter'], boss: ['👹', 'Boss'],
 };
 const statsEl = document.getElementById('stats');
+function historyHtml() {
+  if (!history.length) return '';
+  let html = '<div class="stats-h">📜 Spiel-Historie</div>'
+    + '<div class="stats-wrap"><table class="stats-table"><tr><th>Datum</th><th>Grad</th><th>Welle</th><th>💀</th><th>💥</th><th>Top</th></tr>';
+  for (const run of history.slice(0, 15)) {
+    const d = new Date(run.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const icon = run.top && TOWERS[run.top] ? TOWERS[run.top].icon : '–';
+    html += `<tr><td>${run.end === 'over' ? '💀' : '🚪'} ${d}</td><td>${(DIFFS[run.diff] || { label: run.diff }).label}</td>`
+      + `<td>${run.wave}</td><td>${run.kills}</td><td>${fmtCount(run.dmg)}</td><td>${icon}</td></tr>`;
+  }
+  html += '</table></div><p class="stats-note">💀 Game Over · 🚪 aufgegeben · Top = Turmart mit dem meisten Schaden. '
+    + 'Die letzten ' + Math.min(history.length, 15) + ' von max. 50 Partien – eingeloggt wandert die Historie mit in die Datenbank.</p>';
+  return html;
+}
 function renderStats() {
   const body = document.getElementById('stats-body');
   const types = Object.keys(stats.types).filter((k) => TOWERS[k]);
   if (!types.length) {
-    body.innerHTML = '<p class="stats-note">Noch keine Daten – erst mal ballern! Kills und Schaden werden pro Turmart gesammelt (auch von inzwischen verkauften Türmen).</p>';
+    body.innerHTML = '<p class="stats-note">Noch keine Daten – erst mal ballern! Kills und Schaden werden pro Turmart gesammelt (auch von inzwischen verkauften Türmen).</p>' + historyHtml();
     return;
   }
   types.sort((a, b) => (stats.types[b].dmg - stats.types[a].dmg) || (stats.types[b].kills - stats.types[a].kills));
@@ -2104,6 +2170,7 @@ function renderStats() {
     const legend = monsters.map((m) => `${EINFO[m][0]} ${EINFO[m][1]}`).join(' · ');
     html += `</table></div><p class="stats-note">${legend}</p>`;
   }
+  html += historyHtml();
   body.innerHTML = html;
 }
 document.getElementById('btn-stats').addEventListener('click', () => {
@@ -2205,6 +2272,7 @@ function frame(now) {
 window.__td = { game, get towers() { return towers; }, get enemies() { return enemies; },
   get geom() { return { T, OX, OY, ROT }; },
   get stats() { return stats; },
+  get history() { return history; },
   TOWERS, SPECS, PATH, isPath, startWave, newGame, update, effStats, fireNuke, fireSlaser,
   saveState, applySave, tryRestore,
   get shots() { return shots; },
@@ -2231,4 +2299,5 @@ loadBest();
 resize();
 newGame(true);       // Spielstand nicht anfassen – gleich prüfen wir, ob einer da ist
 tryRestore();
+loadHistory();
 requestAnimationFrame(frame);
