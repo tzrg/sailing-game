@@ -56,8 +56,9 @@ Docker-Container deployt.
   Schlangenlinien-Parcours, drei Schwierigkeitsgrade, dreizehn Turmtypen
   (MG, Kanone, Granatkanone, Laser, Flammenwerfer mit Feuerkegel, Raketen,
   Vereiser, Blitzturm, Bestrahlungsturm mit permanenter panzerignorierender
-  Verstrahlung, Anti-Boss-Railgun, Hypnoseturm, Giftschleuder, Windmaschine,
-  Goldmine, Kommandozentrale),
+  Verstrahlung, Anti-Boss-Railgun, Hypnoseturm, passiver Auto-Lader,
+  Unwahrscheinlichkeitskanone, Giftschleuder, Windmaschine, Goldmine,
+  Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.
   Abschüsse (Todesstoß-Regel) und Schaden werden pro Turm und Turmart
   gezählt; die 📊-Statistik im Menü zeigt den Turmarten-Vergleich und wer

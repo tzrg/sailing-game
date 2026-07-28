@@ -1,5 +1,5 @@
 // Tower Defense – Monster laufen den Parcours entlang, Türme halten sie auf.
-// Fünfzehn Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
+// Siebzehn Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
 // endlose Wellen. Die Kommandozentrale schaltet Nuke + Orbital-Laser frei.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -108,6 +108,18 @@ const TOWERS = {
       { cost: 120, gold: 4, interval: 3.1 },
       { cost: 220, gold: 7, interval: 3.2 },
       { cost: 1200, gold: 16, interval: 3.2 }] },
+  loader: { name: 'Auto-Lader', icon: '⚙️', color: '#d8c56a', desc: 'passiv: MG & Kanone auf Nachbarfeldern schießen deutlich schneller (der beste Lader daneben zählt)',
+    levels: [
+      { cost: 90, boost: 1.5 },
+      { cost: 100, boost: 1.8 },
+      { cost: 180, boost: 2.1 },
+      { cost: 900, boost: 2.6 }] },
+  improb: { name: 'Unwahrscheinlichkeitskanone', icon: '🎲', color: '#e08ad8', desc: 'verwandelt Gegner in eine zufällige andere Art – HP-Anteil bleibt, nur 1× pro Monster, Bosse sind immun',
+    levels: [
+      { cost: 140, rate: 0.25, range: 3.0 },
+      { cost: 150, rate: 0.3, range: 3.3 },
+      { cost: 260, rate: 0.35, range: 3.6 },
+      { cost: 1300, rate: 0.5, range: 4.0 }] },
   railgun: { name: 'Railgun', icon: '🧲', color: '#7a9ac8', desc: 'Anti-Boss-Geschütz: durchschlägt Panzerung komplett, 3× Schaden an Bossen (trifft immer) – verfehlt kleine Gegner oft',
     levels: [
       { cost: 250, dmg: 180, rate: 0.35, range: 4.5, acc: 0.35 },
@@ -144,6 +156,7 @@ const SPECS = {
   rocket: [
     { key: 'dmg', icon: '💥', name: 'Gefechtskopf', cost: 130, desc: '+50% Schaden', mod: (s) => { s.dmg *= 1.5; } },
     { key: 'range', icon: '🔭', name: 'Booster', cost: 130, desc: '+1,0 Reichweite', mod: (s) => { s.range += 1.0; } },
+    { key: 'tnuke', icon: '☢️', name: 'Taktische Nuke', cost: 1200, desc: 'Sprengkopf: 6× Schaden im Zentrum, nach außen stark abnehmend, Radius 2,3' },
   ],
   tesla: [
     { key: 'chain', icon: '🕸️', name: 'Mehr Ziele', cost: 120, desc: '+2 Kettenziele', mod: (s) => { s.chain += 2; } },
@@ -174,6 +187,18 @@ function effStats(t) {
   if (t.type === 'railgun') s.bossMul = 3; // Grundbonus gegen Bosse
   const spec = t.spec && (SPECS[t.type] || []).find((o) => o.key === t.spec);
   if (spec && spec.mod) spec.mod(s);
+  // Auto-Lader: der beste ⚙️ auf einem der 8 Nachbarfelder beschleunigt MG/Kanone
+  if ((t.type === 'mg' || t.type === 'cannon') && s.rate) {
+    let boost = 1;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (!dx && !dy) continue;
+        const n = towerAt[(t.x + dx) + ',' + (t.y + dy)];
+        if (n && n.type === 'loader') boost = Math.max(boost, towerStats(n).boost);
+      }
+    }
+    if (boost > 1) { s.rate = Math.round(s.rate * boost * 100) / 100; s.boosted = boost; }
+  }
   return s;
 }
 
@@ -397,8 +422,60 @@ function pushBack(e, dist) {
   e.y = ay + 0.5 + (by - ay) * e.frac;
 }
 
+// Unwahrscheinlichkeitskanone: Gegner wird zufällig zu einer anderen Art.
+// Der prozentuale HP-Stand bleibt erhalten, jede Verwandlung nur einmal.
+const MORPHS = ['blob', 'runner', 'tank', 'regen', 'ember', 'prisma', 'blitzer'];
+function morphEnemy(e) {
+  const options = MORPHS.filter((k) => k !== e.type);
+  const def = ETYPES[options[Math.floor(Math.random() * options.length)]];
+  const oldDef = ETYPES[e.type] || { hp: 1 };
+  const pct = clamp(e.hp / e.maxHp, 0, 1);
+  const base = e.maxHp / (oldDef.hp || 1);   // Wellen-Grundwert rückrechnen
+  e.type = MORPHS.find((k) => ETYPES[k] === def);
+  e.maxHp = base * def.hp;
+  e.hp = e.maxHp * pct;
+  e.speed = def.speed;
+  e.maxArmor = def.armor ? e.maxHp * def.armor : 0;
+  e.armorHp = e.maxArmor * pct;
+  e.regen = def.regen || 0;
+  e.resist = def.resist || null;
+  e.r = def.r;
+  e.color = def.color;
+  e.morphed = true;
+  // Regenbogen-Puff
+  spawnPart({ kind: 'pop', x: e.x, y: e.y, r: e.r * 2.6, ttl: 0.4, color: '#ffffff' });
+  const cols = ['#ff6a6a', '#ffd166', '#7dff8a', '#6fd6ff', '#e08ad8'];
+  for (let i = 0; i < 10; i++) {
+    const a = Math.random() * TAU, sp = 1.8 + Math.random() * 2;
+    spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.2, ttl: 0.45, color: cols[i % 5] });
+  }
+}
+
+// Taktische Nuke (Raketen-Spezialisierung): extremer Schaden im Zentrum,
+// quadratisch nach außen abnehmend
+function tacticalNuke(x, y, dmg, src) {
+  const R = 2.3;
+  for (const e of enemies) {
+    if (e.dead || e.escaped) continue;
+    const d = Math.hypot(e.x - x, e.y - y);
+    if (d > R + e.r) continue;
+    const f = Math.pow(1 - clamp(d / (R + e.r), 0, 1), 2);
+    damage(e, dmg * 6 * f, 'explosive', false, src);
+  }
+  shots.push({ kind: 'tnuke', x, y, r: R, t: 0, ttl: 0.7 });
+  game.shakeT = Math.max(game.shakeT, 0.25);
+  for (let i = 0; i < 8; i++) {
+    spawnPart({ kind: 'flame', x: x + (Math.random() - 0.5) * 0.5, y: y + (Math.random() - 0.5) * 0.4,
+      vx: (Math.random() - 0.5) * 0.8, vy: -1.6 - Math.random() * 1.2, ttl: 0.5 + Math.random() * 0.3, size: 0.15 + Math.random() * 0.1 });
+  }
+  for (let i = 0; i < 6; i++) {
+    spawnPart({ kind: 'smoke', x: x + (Math.random() - 0.5) * 1.2, y: y + (Math.random() - 0.5) * 0.8,
+      vx: (Math.random() - 0.5) * 0.4, vy: -0.7 - Math.random() * 0.5, ttl: 1.0 + Math.random() * 0.5, size: 0.22 + Math.random() * 0.16 });
+  }
+}
+
 function stepTower(t, dt) {
-  if (t.type === 'command') { t.pulse = (t.pulse || 0) + dt; return; }
+  if (t.type === 'command' || t.type === 'loader') { t.pulse = (t.pulse || 0) + dt; return; }
   const s = effStats(t);
   const cx = t.x + 0.5, cy = t.y + 0.5;
   t.born = (t.born ?? 1) + dt;
@@ -519,6 +596,23 @@ function stepTower(t, dt) {
         if (Math.random() < dt * 9) spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.1, vx: (Math.random() - 0.5) * 2, vy: -1 - Math.random(), ttl: 0.25, color: '#ff9ef0' });
       }
     }
+    return;
+  }
+
+  if (t.type === 'improb') {
+    t.cd -= dt;
+    // vorderster Nicht-Boss, der noch nie verwandelt wurde
+    let target = null, bp = -1;
+    for (const e of enemies) {
+      if (e.dead || e.escaped || e.boss || e.morphed) continue;
+      if (Math.hypot(e.x - cx, e.y - cy) <= s.range && progress(e) > bp) { bp = progress(e); target = e; }
+    }
+    if (target) aimAt(t, target.x, target.y, dt);
+    if (t.cd > 0 || !target) return;
+    t.cd = 1 / s.rate;
+    t.kick = 1;
+    shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.16, color: 'rgba(224,138,216,0.95)', w: 3 });
+    morphEnemy(target);
     return;
   }
 
@@ -721,7 +815,7 @@ function splashDamage(x, y, radius, dmg, src = null) {
 
 function stepShot(sh, dt) {
   sh.t = (sh.t || 0) + dt;
-  if (sh.kind === 'tracer' || sh.kind === 'boom' || sh.kind === 'zap' || sh.kind === 'gust' || sh.kind === 'nuke' || sh.kind === 'rail') return sh.t >= sh.ttl;
+  if (sh.kind === 'tracer' || sh.kind === 'boom' || sh.kind === 'zap' || sh.kind === 'gust' || sh.kind === 'nuke' || sh.kind === 'rail' || sh.kind === 'tnuke') return sh.t >= sh.ttl;
   if (sh.kind === 'sbeam') {
     // Orbital-Laser: erst Zielmarkierung, nach 0,35s kracht der Strahl runter
     if (!sh.hit && sh.t >= 0.35) {
@@ -776,7 +870,11 @@ function stepShot(sh, dt) {
       // weiterfliegen und am letzten Kurs verpuffen
       sh.x += Math.cos(sh.angle) * sh.speed * dt;
       sh.y += Math.sin(sh.angle) * sh.speed * dt;
-      if (sh.t > 1.6) { splashDamage(sh.x, sh.y, sh.splash, sh.dmg * 0.5, sh.src); return true; }
+      if (sh.t > 1.6) {
+        if (sh.src && sh.src.spec === 'tnuke') tacticalNuke(sh.x, sh.y, sh.dmg * 0.5, sh.src);
+        else splashDamage(sh.x, sh.y, sh.splash, sh.dmg * 0.5, sh.src);
+        return true;
+      }
       return false;
     }
     sh.angle = Math.atan2(tg.y - sh.y, tg.x - sh.x);
@@ -784,7 +882,11 @@ function stepShot(sh, dt) {
     sh.y += Math.sin(sh.angle) * sh.speed * dt;
     // Rauchspur hinter der Rakete
     if (Math.random() < dt * 45) spawnPart({ kind: 'smoke', x: sh.x - Math.cos(sh.angle) * 0.2, y: sh.y - Math.sin(sh.angle) * 0.2, vx: 0, vy: -0.25, ttl: 0.55, size: 0.1 });
-    if (Math.hypot(tg.x - sh.x, tg.y - sh.y) < 0.3) { splashDamage(tg.x, tg.y, sh.splash, sh.dmg, sh.src); return true; }
+    if (Math.hypot(tg.x - sh.x, tg.y - sh.y) < 0.3) {
+      if (sh.src && sh.src.spec === 'tnuke') tacticalNuke(tg.x, tg.y, sh.dmg, sh.src);
+      else splashDamage(tg.x, tg.y, sh.splash, sh.dmg, sh.src);
+      return true;
+    }
     return false;
   }
   return true;
@@ -1168,7 +1270,7 @@ function draw(time) {
   // Abschuss-Zähler (im Menü umschaltbar)
   if (showKills) {
     for (const t of towers) {
-      if (['gold', 'ice', 'wind'].includes(t.type)) continue;
+      if (['gold', 'ice', 'wind', 'loader', 'improb'].includes(t.type)) continue;
       const kx = (t.x + 0.5) * T, ky = (t.y + 0.5) * T;
       ctx.fillStyle = 'rgba(8,16,24,0.72)';
       roundRectP(kx - T * 0.62, ky + T * 0.4, T * 1.24, T * 0.28, 4); ctx.fill();
@@ -1206,11 +1308,21 @@ function drawTower(t, time) {
   ctx.fillStyle = def.color;
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.3 * sock, 0, TAU); ctx.fill();
   // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
-  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno'].includes(t.type)) {
+  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno', 'loader'].includes(t.type)) {
     const kick = (t.kick || 0) * T * 0.1;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
     ctx.fillStyle = '#22303a';
     ctx.fillRect(-kick, -T * 0.08, T * 0.42, T * 0.16);
+    ctx.restore();
+  }
+  // Auto-Lader: rotierender Zahnkranz
+  if (t.type === 'loader') {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate((t.pulse || 0) * 2);
+    ctx.strokeStyle = '#f5e6b0'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) {
+      ctx.rotate(TAU / 6);
+      ctx.beginPath(); ctx.moveTo(T * 0.3, 0); ctx.lineTo(T * 0.38, 0); ctx.stroke();
+    }
     ctx.restore();
   }
   // Railgun: zwei Magnetschienen mit Glimmen dazwischen
@@ -1611,6 +1723,23 @@ function drawShot(sh) {
     ctx.fillStyle = '#fff8e0';
     ctx.beginPath(); ctx.arc(bx + ux * fb * 0.22, by + uy * fb * 0.22, fb * 0.3, 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
+  } else if (sh.kind === 'tnuke') {
+    const f = sh.t / sh.ttl;
+    const x = sh.x * T, y = sh.y * T;
+    ctx.globalAlpha = 1 - f;
+    ctx.fillStyle = 'rgba(255,240,200,0.8)';
+    ctx.beginPath(); ctx.arc(x, y, sh.r * T * 0.4 * (1 - f * 0.5), 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#ffb24d'; ctx.lineWidth = 3 + 5 * (1 - f);
+    ctx.beginPath(); ctx.arc(x, y, sh.r * T * f, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, sh.r * T * f * 0.65, 0, TAU); ctx.stroke();
+    const ux2 = ROT ? -1 : 0, uy2 = ROT ? 0 : -1;
+    const rise = f * T * 1.2, fb = T * (0.3 + f * 0.7);
+    ctx.fillStyle = '#ff9a3c';
+    ctx.beginPath(); ctx.arc(x + ux2 * rise, y + uy2 * rise, fb, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#ffe66e';
+    ctx.beginPath(); ctx.arc(x + ux2 * rise, y + uy2 * rise, fb * 0.55, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
   } else if (sh.kind === 'sbeam') {
     const x = sh.x * T, y = sh.y * T;
     const rad = (sh.rad || 1.2) * T;
@@ -1794,6 +1923,9 @@ function showUpgpanel(t) {
   if (s.splash) statBits.push('Fläche ' + s.splash);
   if (s.burn) statBits.push('+' + s.burn + '/s Brand');
   if (s.charge) statBits.push('+' + s.charge + '/s Verstrahlung · max ' + s.cap + '/s');
+  if (s.boost) statBits.push('Feuerrate ×' + s.boost + ' für MG & Kanone daneben');
+  if (s.boosted) statBits.push('⚙️ Auto-Lader aktiv: Feuerrate ×' + s.boosted);
+  if (t.type === 'improb') statBits.push('verwürfelt 1 Monster pro Schuss (je nur 1×, keine Bosse)');
   if (s.acc) statBits.push('trifft Kleine zu ' + Math.round(s.acc * 100) + '% · Bosse immer, ×' + s.bossMul);
   if (s.factor) statBits.push('Hypnose ' + s.dur + ' s · Biss ' + Math.round(s.factor * 100) + '% seiner Max-HP/s');
   if (s.chain) statBits.push(s.chain + ' Kettenziele');
@@ -1802,7 +1934,7 @@ function showUpgpanel(t) {
   if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
   if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
   if (t.type === 'command') statBits.push('☢️ ' + s.nuke + ' Schaden', '🛰️ ' + s.beam + ' Schaden · Radius ' + s.brad);
-  if (!['gold', 'ice', 'wind'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse · 💥 ' + fmtCount(t.dmgDone || 0) + ' Schaden');
+  if (!['gold', 'ice', 'wind', 'loader', 'improb'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse · 💥 ' + fmtCount(t.dmgDone || 0) + ' Schaden');
   info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
   if (next) {
