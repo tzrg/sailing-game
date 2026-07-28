@@ -56,7 +56,8 @@ Docker-Container deployt.
   Schlangenlinien-Parcours, drei Schwierigkeitsgrade, dreizehn Turmtypen
   (MG, Kanone, Granatkanone, Laser, Flammenwerfer mit Feuerkegel, Raketen,
   Vereiser, Blitzturm, Bestrahlungsturm mit permanenter panzerignorierender
-  Verstrahlung, Giftschleuder, Windmaschine, Goldmine, Kommandozentrale),
+  Verstrahlung, Anti-Boss-Railgun, Hypnoseturm, Giftschleuder, Windmaschine,
+  Goldmine, Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.
   Späte Wellen bringen Resistenzler (Feuer-, Laser- und Blitz-resistent),
   die einen Waffen-Mix erzwingen. Schadensarten + **Panzerung** (Kinetik/Laser knacken

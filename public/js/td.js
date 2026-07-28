@@ -1,5 +1,5 @@
 // Tower Defense – Monster laufen den Parcours entlang, Türme halten sie auf.
-// Dreizehn Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
+// Fünfzehn Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
 // endlose Wellen. Die Kommandozentrale schaltet Nuke + Orbital-Laser frei.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -108,6 +108,18 @@ const TOWERS = {
       { cost: 120, gold: 4, interval: 3.1 },
       { cost: 220, gold: 7, interval: 3.2 },
       { cost: 1200, gold: 16, interval: 3.2 }] },
+  railgun: { name: 'Railgun', icon: '🧲', color: '#7a9ac8', desc: 'Anti-Boss-Geschütz: durchschlägt Panzerung komplett, 3× Schaden an Bossen (trifft immer) – verfehlt kleine Gegner oft',
+    levels: [
+      { cost: 250, dmg: 180, rate: 0.35, range: 4.5, acc: 0.35 },
+      { cost: 260, dmg: 340, rate: 0.4, range: 4.8, acc: 0.4 },
+      { cost: 450, dmg: 620, rate: 0.45, range: 5.2, acc: 0.45 },
+      { cost: 2000, dmg: 1400, rate: 0.5, range: 5.6, acc: 0.55 }] },
+  hypno: { name: 'Hypnoseturm', icon: '🌀', color: '#c883e0', desc: 'hypnotisiert einen Gegner: der bleibt stehen und beißt die anderen (Bosse sind immun)',
+    levels: [
+      { cost: 160, dur: 4, factor: 0.05, range: 2.8 },
+      { cost: 170, dur: 5, factor: 0.07, range: 3.1 },
+      { cost: 300, dur: 6, factor: 0.09, range: 3.4 },
+      { cost: 1600, dur: 8, factor: 0.13, range: 3.8 }] },
   command: { name: 'Kommandozentrale', icon: '🛰️', color: '#c0c8e8', desc: 'schaltet ☢️ Nuke + 🛰️ Orbital-Laser frei (je 1× pro Welle); Upgrades machen beide stärker',
     levels: [
       { cost: 400, nuke: 340, beam: 600, brad: 1.25 },
@@ -149,12 +161,17 @@ const SPECS = {
     { key: 'charge', icon: '☢️', name: 'Zerfallsplus', cost: 120, desc: '+50% Verstrahlung & Limit', mod: (s) => { s.charge *= 1.5; s.cap = Math.round(s.cap * 1.5); } },
     { key: 'range', icon: '📡', name: 'Langstrahler', cost: 120, desc: '+0,8 Reichweite', mod: (s) => { s.range += 0.8; } },
   ],
+  railgun: [
+    { key: 'focus', icon: '🎯', name: 'Fokus', cost: 200, desc: 'zielsicher: trifft kleine Gegner zu 90%', mod: (s) => { s.acc = 0.9; } },
+    { key: 'hyper', icon: '⚡', name: 'Hypercharge', cost: 200, desc: 'streut doppelt so stark, aber 6× Schaden an Bossen', mod: (s) => { s.acc *= 0.5; s.bossMul = 6; } },
+  ],
 };
 // Effektive Werte inkl. gewählter Spezialisierung
 function effStats(t) {
   const s = { ...towerStats(t) };
   if (t.type === 'flame') s.cone = 0.95;   // Grundkegel (~110°)
   if (t.type === 'ray') s.cone = 0.55;     // schmaler Strahlenkegel (~63°)
+  if (t.type === 'railgun') s.bossMul = 3; // Grundbonus gegen Bosse
   const spec = t.spec && (SPECS[t.type] || []).find((o) => o.key === t.spec);
   if (spec && spec.mod) spec.mod(s);
   return s;
@@ -271,9 +288,29 @@ function stepEnemy(e, dt) {
   if (e.vulnFire > 0) e.vulnFire -= dt;
   if (e.vulnShock > 0) e.vulnShock -= dt;
   if (e.windCd > 0) e.windCd -= dt;
-  if (e.burnT > 0) { e.burnT -= dt; damage(e, e.burnDps * dt, 'fire'); }
-  if (e.radDps > 0) e.hp -= e.radDps * dt;   // Verstrahlung: ignoriert Panzerung, klingt nie ab
+  if (e.burnT > 0) { e.burnT -= dt; damage(e, e.burnDps * dt, 'fire', false, e.burnSrc); }
+  if (e.radDps > 0) {   // Verstrahlung: ignoriert Panzerung, klingt nie ab
+    e.hp -= e.radDps * dt;
+    if (e.radSrc) e.lastHitBy = e.radSrc;
+  }
   if (e.regen) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * e.regen * dt);
+  if (e.hypnoT > 0) {
+    // Hypnotisiert: bleibt stehen und beißt den nächsten anderen Gegner
+    e.hypnoT -= dt;
+    let tgt = null, nd = 1.8;
+    for (const o of enemies) {
+      if (o === e || o.dead || o.escaped) continue;
+      const d = Math.hypot(o.x - e.x, o.y - e.y);
+      if (d < nd) { nd = d; tgt = o; }
+    }
+    if (tgt) {
+      damage(tgt, e.hypnoDps * dt, 'kinetic', false, e.hypnoSrc);
+      if (Math.random() < dt * 7) {
+        spawnPart({ kind: 'spark', x: tgt.x, y: tgt.y - 0.2, vx: (Math.random() - 0.5) * 2, vy: -1.4, ttl: 0.3, color: '#f0a8ff' });
+      }
+    }
+    return;
+  }
   const spd = e.speed * (1 - e.slowF);
   e.frac += spd * dt;
   while (e.frac >= 1) {
@@ -288,7 +325,8 @@ function stepEnemy(e, dt) {
 // Schadenstypen: kinetic | laser | fire | shock | explosive | poison
 // Panzerung schluckt Feuer/Blitz/Explosion/Gift fast komplett, wird aber von
 // Kinetik (x1.5, Wolfram x2.2) und Laser (x1) effektiv zerlegt.
-function damage(e, amt, type = 'kinetic', ap = false) {
+function damage(e, amt, type = 'kinetic', ap = false, src = null) {
+  if (src) e.lastHitBy = src;          // für den Abschuss-Zähler pro Turm
   if (e.resist === type) amt *= 0.1;   // Resistenzler: nur 10% vom eigenen Element
   if (type === 'fire' && e.vulnFire > 0) amt *= 1.5;
   if (type === 'shock' && e.vulnShock > 0) amt *= 1.5;
@@ -373,7 +411,7 @@ function stepTower(t, dt) {
     // Kettenblitz: springt zu den jeweils nächsten, noch nicht getroffenen Gegnern
     const hit = [target];
     let cur = target, dmg = s.dmg;
-    damage(cur, dmg, 'shock');
+    damage(cur, dmg, 'shock', false, t);
     for (let j = 1; j < s.chain; j++) {
       let next = null, nd = 2.3;
       for (const e of enemies) {
@@ -383,7 +421,7 @@ function stepTower(t, dt) {
       }
       if (!next) break;
       dmg *= 0.75;
-      damage(next, dmg, 'shock');
+      damage(next, dmg, 'shock', false, t);
       hit.push(next);
       cur = next;
     }
@@ -400,7 +438,7 @@ function stepTower(t, dt) {
     if (t.cd > 0 || !target) return;
     t.cd = 1 / s.rate;
     // Flasche fliegt dorthin, wo das Ziel gleich sein wird
-    shots.push({ kind: 'glob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.5, dps: s.dps, pool: s.pool, dur: s.dur });
+    shots.push({ kind: 'glob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.5, dps: s.dps, pool: s.pool, dur: s.dur, src: t });
     t.kick = 1;
     return;
   }
@@ -461,10 +499,69 @@ function stepTower(t, dt) {
       if (along < 0 || along > len) continue;
       const dist = Math.abs(px * dy - py * dx);
       if (dist < 0.38 + e.r * 0.5) {
-        damage(e, s.dps * dt, 'laser');
+        damage(e, s.dps * dt, 'laser', false, t);
         // Brutzel-Funken am Auftreffpunkt
         if (Math.random() < dt * 9) spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.1, vx: (Math.random() - 0.5) * 2, vy: -1 - Math.random(), ttl: 0.25, color: '#ff9ef0' });
       }
+    }
+    return;
+  }
+
+  if (t.type === 'railgun') {
+    t.cd -= dt;
+    // Bosse haben Vorrang, sonst der vorderste Gegner
+    let front = null, bp = -1, boss = null, bbp = -1;
+    for (const e of enemies) {
+      if (e.dead || e.escaped) continue;
+      const d = Math.hypot(e.x - cx, e.y - cy);
+      if (d > s.range) continue;
+      if (e.boss && progress(e) > bbp) { bbp = progress(e); boss = e; }
+      if (progress(e) > bp) { bp = progress(e); front = e; }
+    }
+    const tg = boss || front;
+    if (tg) aimAt(t, tg.x, tg.y, dt);
+    if (t.cd > 0 || !tg) return;
+    t.cd = 1 / s.rate;
+    t.kick = 1;
+    spawnPart({ kind: 'muzzle', x: cx + Math.cos(t.angle) * 0.55, y: cy + Math.sin(t.angle) * 0.55, a: t.angle, ttl: 0.1, size: 0.34 });
+    if (tg.boss || Math.random() < s.acc) {
+      // Volltreffer: durchschlägt die Panzerung komplett, Bosse kriegen extra
+      tg.lastHitBy = t;
+      tg.hp -= s.dmg * (tg.boss ? s.bossMul : 1);
+      shots.push({ kind: 'rail', x1: cx, y1: cy, x2: tg.x, y2: tg.y, t: 0, ttl: 0.15 });
+      for (let i = 0; i < 8; i++) {
+        const a = Math.random() * TAU, sp = 2 + Math.random() * 3;
+        spawnPart({ kind: 'spark', x: tg.x, y: tg.y - 0.1, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5, ttl: 0.35, color: '#bfe6ff' });
+      }
+      if (tg.boss) game.shakeT = Math.max(game.shakeT, 0.12);
+    } else {
+      // Daneben! Der Schuss zischt am kleinen Ziel vorbei
+      const oa = t.angle + (Math.random() < 0.5 ? 1 : -1) * (0.25 + Math.random() * 0.3);
+      const mx = cx + Math.cos(oa) * s.range * 0.9, my = cy + Math.sin(oa) * s.range * 0.9;
+      shots.push({ kind: 'rail', x1: cx, y1: cy, x2: mx, y2: my, t: 0, ttl: 0.12, miss: true });
+      spawnPart({ kind: 'smoke', x: mx, y: my, vx: 0, vy: -0.3, ttl: 0.5, size: 0.12, dust: true });
+    }
+    return;
+  }
+
+  if (t.type === 'hypno') {
+    t.pulse = (t.pulse || 0) + dt;
+    t.cd -= dt;
+    if (t.victim && (t.victim.dead || t.victim.escaped || t.victim.hypnoT <= 0)) { t.victim = null; t.cd = 1.5; }
+    if (t.victim || t.cd > 0) return;
+    // vorderster Nicht-Boss ohne laufende Hypnose
+    let target = null, bp = -1;
+    for (const e of enemies) {
+      if (e.dead || e.escaped || e.boss || e.hypnoT > 0) continue;
+      if (Math.hypot(e.x - cx, e.y - cy) <= s.range && progress(e) > bp) { bp = progress(e); target = e; }
+    }
+    if (target) {
+      target.hypnoT = s.dur;
+      target.hypnoDps = target.maxHp * s.factor;
+      target.hypnoSrc = t;
+      t.victim = target;
+      spawnPart({ kind: 'pop', x: target.x, y: target.y, r: target.r * 2.2, ttl: 0.35, color: '#e0a8ff' });
+      shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.25, color: 'rgba(224,168,255,0.8)', w: 2.5 });
     }
     return;
   }
@@ -491,6 +588,7 @@ function stepTower(t, dt) {
         if (Math.abs(da) > s.cone) continue;
         const cur = e.radDps || 0;
         if (cur < s.cap) e.radDps = Math.min(s.cap, cur + s.charge * dt);
+        e.radSrc = t;
         any = true;
       }
     }
@@ -524,8 +622,8 @@ function stepTower(t, dt) {
         while (da > Math.PI) da -= TAU;
         while (da < -Math.PI) da += TAU;
         if (Math.abs(da) > s.cone) continue;
-        damage(e, s.dps * dt, 'fire');
-        e.burnT = Math.max(e.burnT, 2.5); e.burnDps = Math.max(e.burnDps, s.burn);
+        damage(e, s.dps * dt, 'fire', false, t);
+        e.burnT = Math.max(e.burnT, 2.5); e.burnDps = Math.max(e.burnDps, s.burn); e.burnSrc = t;
         any = true;
       }
     }
@@ -554,7 +652,7 @@ function stepTower(t, dt) {
   if (t.type === 'mg') {
     let dmg = s.dmg;
     if (t.spec === 'tungsten') dmg *= 1.6;
-    damage(target, dmg, 'kinetic', t.spec === 'tungsten');
+    damage(target, dmg, 'kinetic', t.spec === 'tungsten', t);
     if (t.spec === 'fire') target.vulnFire = 4;      // Brandmarkierer: nimmt 4s mehr Feuerschaden
     if (t.spec === 'shock') target.vulnShock = 4;    // Ionisiert: nimmt 4s mehr Blitzschaden
     const tcol = t.spec === 'fire' ? 'rgba(255,150,60,0.95)' : t.spec === 'shock' ? 'rgba(140,190,255,0.95)' : t.spec === 'tungsten' ? 'rgba(240,248,255,1)' : 'rgba(255,240,180,0.9)';
@@ -568,7 +666,7 @@ function stepTower(t, dt) {
   } else if (t.type === 'cannon') {
     let cdmg = s.dmg;
     if (t.spec === 'tungsten') cdmg *= 1.6;
-    damage(target, cdmg, 'kinetic', t.spec === 'tungsten');
+    damage(target, cdmg, 'kinetic', t.spec === 'tungsten', t);
     if (t.spec === 'fire') target.vulnFire = 4;
     if (t.spec === 'shock') target.vulnShock = 4;
     shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.1, color: 'rgba(255,255,255,0.95)', w: 3 });
@@ -579,18 +677,18 @@ function stepTower(t, dt) {
       spawnPart({ kind: 'spark', x: target.x, y: target.y - 0.1, vx: Math.cos(a) * (1.5 + Math.random() * 2.5), vy: Math.sin(a) * 2.5 - 1.5, ttl: 0.35, color: '#fff0c0' });
     }
   } else if (t.type === 'grenade') {
-    shots.push({ kind: 'lob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.45, dmg: s.dmg, splash: s.splash });
+    shots.push({ kind: 'lob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.45, dmg: s.dmg, splash: s.splash, src: t });
     spawnPart({ kind: 'smoke', x: cx + Math.cos(t.angle) * 0.4, y: cy + Math.sin(t.angle) * 0.4, vx: 0, vy: -0.4, ttl: 0.5, size: 0.16 });
   } else if (t.type === 'rocket') {
-    shots.push({ kind: 'rocket', x: cx, y: cy, target, speed: 7, dmg: s.dmg, splash: s.splash, angle: t.angle });
+    shots.push({ kind: 'rocket', x: cx, y: cy, target, speed: 7, dmg: s.dmg, splash: s.splash, angle: t.angle, src: t });
   }
 }
 
-function splashDamage(x, y, radius, dmg) {
+function splashDamage(x, y, radius, dmg, src = null) {
   for (const e of enemies) {
     if (e.dead || e.escaped) continue;
     const d = Math.hypot(e.x - x, e.y - y);
-    if (d <= radius + e.r) damage(e, dmg * clamp(1 - d / (radius + e.r) * 0.5, 0.5, 1), 'explosive');
+    if (d <= radius + e.r) damage(e, dmg * clamp(1 - d / (radius + e.r) * 0.5, 0.5, 1), 'explosive', false, src);
   }
   shots.push({ kind: 'boom', x, y, r: radius, t: 0, ttl: 0.3 });
   // Druckwelle, Splitter und Rauch
@@ -606,7 +704,7 @@ function splashDamage(x, y, radius, dmg) {
 
 function stepShot(sh, dt) {
   sh.t = (sh.t || 0) + dt;
-  if (sh.kind === 'tracer' || sh.kind === 'boom' || sh.kind === 'zap' || sh.kind === 'gust' || sh.kind === 'nuke') return sh.t >= sh.ttl;
+  if (sh.kind === 'tracer' || sh.kind === 'boom' || sh.kind === 'zap' || sh.kind === 'gust' || sh.kind === 'nuke' || sh.kind === 'rail') return sh.t >= sh.ttl;
   if (sh.kind === 'sbeam') {
     // Orbital-Laser: erst Zielmarkierung, nach 0,35s kracht der Strahl runter
     if (!sh.hit && sh.t >= 0.35) {
@@ -614,7 +712,7 @@ function stepShot(sh, dt) {
       game.shakeT = Math.max(game.shakeT, 0.35);
       for (const e of enemies) {
         if (e.dead || e.escaped) continue;
-        if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.rad + e.r) damage(e, sh.dmg, 'laser');
+        if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.rad + e.r) damage(e, sh.dmg, 'laser', false, sh.src);
       }
       spawnPart({ kind: 'shock', x: sh.x, y: sh.y, r: sh.rad * 1.4, ttl: 0.35, color: '#cfe8ff' });
       for (let i = 0; i < 14; i++) {
@@ -632,7 +730,7 @@ function stepShot(sh, dt) {
     // Giftpfütze: ätzt alle, die drin stehen
     for (const e of enemies) {
       if (e.dead || e.escaped) continue;
-      if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.r + e.r * 0.5) damage(e, sh.dps * dt, 'poison');
+      if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.r + e.r * 0.5) damage(e, sh.dps * dt, 'poison', false, sh.src);
     }
     if (Math.random() < dt * 8) spawnPart({ kind: 'bubble', x: sh.x + (Math.random() - 0.5) * sh.r * 1.4, y: sh.y + (Math.random() - 0.5) * sh.r * 1.0, vx: 0, vy: -0.4, ttl: 0.5 });
     return sh.t >= sh.ttl;
@@ -642,7 +740,7 @@ function stepShot(sh, dt) {
     sh.x = sh.sx + (sh.tx - sh.sx) * f;
     sh.y = sh.sy + (sh.ty - sh.sy) * f - Math.sin(f * Math.PI) * 1.1;
     if (f >= 1) {
-      shots.push({ kind: 'pool', x: sh.tx, y: sh.ty, r: sh.pool, dps: sh.dps, t: 0, ttl: sh.dur });
+      shots.push({ kind: 'pool', x: sh.tx, y: sh.ty, r: sh.pool, dps: sh.dps, t: 0, ttl: sh.dur, src: sh.src });
       for (let i = 0; i < 6; i++) spawnPart({ kind: 'spark', x: sh.tx, y: sh.ty, vx: (Math.random() - 0.5) * 2.4, vy: -Math.random() * 2, ttl: 0.3, color: '#a8e86a' });
       return true;
     }
@@ -652,7 +750,7 @@ function stepShot(sh, dt) {
     const f = clamp(sh.t / sh.ttl, 0, 1);
     sh.x = sh.sx + (sh.tx - sh.sx) * f;
     sh.y = sh.sy + (sh.ty - sh.sy) * f - Math.sin(f * Math.PI) * 1.2;
-    if (f >= 1) { splashDamage(sh.tx, sh.ty, sh.splash, sh.dmg); return true; }
+    if (f >= 1) { splashDamage(sh.tx, sh.ty, sh.splash, sh.dmg, sh.src); return true; }
     return false;
   }
   if (sh.kind === 'rocket') {
@@ -661,7 +759,7 @@ function stepShot(sh, dt) {
       // weiterfliegen und am letzten Kurs verpuffen
       sh.x += Math.cos(sh.angle) * sh.speed * dt;
       sh.y += Math.sin(sh.angle) * sh.speed * dt;
-      if (sh.t > 1.6) { splashDamage(sh.x, sh.y, sh.splash, sh.dmg * 0.5); return true; }
+      if (sh.t > 1.6) { splashDamage(sh.x, sh.y, sh.splash, sh.dmg * 0.5, sh.src); return true; }
       return false;
     }
     sh.angle = Math.atan2(tg.y - sh.y, tg.x - sh.x);
@@ -669,7 +767,7 @@ function stepShot(sh, dt) {
     sh.y += Math.sin(sh.angle) * sh.speed * dt;
     // Rauchspur hinter der Rakete
     if (Math.random() < dt * 45) spawnPart({ kind: 'smoke', x: sh.x - Math.cos(sh.angle) * 0.2, y: sh.y - Math.sin(sh.angle) * 0.2, vx: 0, vy: -0.25, ttl: 0.55, size: 0.1 });
-    if (Math.hypot(tg.x - sh.x, tg.y - sh.y) < 0.3) { splashDamage(tg.x, tg.y, sh.splash, sh.dmg); return true; }
+    if (Math.hypot(tg.x - sh.x, tg.y - sh.y) < 0.3) { splashDamage(tg.x, tg.y, sh.splash, sh.dmg, sh.src); return true; }
     return false;
   }
   return true;
@@ -717,6 +815,7 @@ function update(dt) {
       if (game.lives <= 0) { game.lives = 0; gameOver(); }
     } else if (e.hp <= 0) {
       e.dead = true;
+      if (e.lastHitBy && towers.includes(e.lastHitBy)) e.lastHitBy.kills = (e.lastHitBy.kills || 0) + 1;
       game.money += e.bounty;
       shots.push({ kind: 'coin', x: e.x, y: e.y, t: 0, ttl: 0.6, v: e.bounty });
       // Todes-Pop: Ring + Konfetti in Gegnerfarbe
@@ -798,7 +897,7 @@ function fireNuke() {
   shots.push({ kind: 'nuke', x: GC / 2, y: GR / 2, t: 0, ttl: 1.5 });
   for (const e of enemies) {
     if (e.dead || e.escaped) continue;
-    damage(e, s.nuke, 'explosive');
+    damage(e, s.nuke, 'explosive', false, c);
     spawnPart({ kind: 'shock', x: e.x, y: e.y, r: 1.0, ttl: 0.4, color: '#ffd8a0' });
   }
   // Feuerball, Pilzstiel und -wolke über der Feldmitte
@@ -826,9 +925,13 @@ function fireSlaser(x, y) {
   const s = towerStats(c);
   game.laserUsed = true;
   game.targeting = null;
-  shots.push({ kind: 'sbeam', x, y, t: 0, ttl: 1.2, hit: false, dmg: s.beam, rad: s.brad });
+  shots.push({ kind: 'sbeam', x, y, t: 0, ttl: 1.2, hit: false, dmg: s.beam, rad: s.brad, src: c });
   updateSupers();
 }
+
+// ---- Abschuss-Zähler-Anzeige (an/aus, bleibt gespeichert) ------------------
+let showKills = false;
+try { showKills = localStorage.getItem('td_kills') === '1'; } catch { /* egal */ }
 
 // ---- Spielstand ------------------------------------------------------------
 // Zwischen den Wellen wird automatisch gesichert: immer lokal (localStorage),
@@ -847,7 +950,7 @@ function saveState() {
     v: 1, ts: Date.now(), diff: diffKey(),
     money: Math.round(game.money), lives: game.lives,
     wave: game.state === 'wave' ? game.wave - 1 : game.wave,   // laufende Welle wird wiederholt
-    towers: towers.map((t) => ({ type: t.type, lvl: t.lvl, x: t.x, y: t.y, spec: t.spec || null })),
+    towers: towers.map((t) => ({ type: t.type, lvl: t.lvl, x: t.x, y: t.y, spec: t.spec || null, kills: t.kills || 0 })),
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch { /* egal */ }
   const h = authHeaders();
@@ -879,7 +982,7 @@ function applySave(d) {
     if (!def) continue;
     const x = td.x | 0, y = td.y | 0, k = x + ',' + y;
     if (x < 0 || x >= GC || y < 0 || y >= GR || towerAt[k] || isPath(x, y) || isPond(x, y)) continue;
-    const t = { type: td.type, lvl: clamp(td.lvl | 0, 0, def.levels.length - 1), x, y, cd: 0, angle: 0, born: 1 };
+    const t = { type: td.type, lvl: clamp(td.lvl | 0, 0, def.levels.length - 1), x, y, cd: 0, angle: 0, born: 1, kills: Math.max(0, td.kills | 0) };
     if (td.spec && (SPECS[td.type] || []).some((o) => o.key === td.spec)) t.spec = td.spec;
     towers.push(t); towerAt[k] = t;
   }
@@ -1036,6 +1139,19 @@ function draw(time) {
 
   // Türme
   for (const t of towers) drawTower(t, time);
+  // Abschuss-Zähler (im Menü umschaltbar)
+  if (showKills) {
+    for (const t of towers) {
+      if (['gold', 'ice', 'wind'].includes(t.type)) continue;
+      const kx = (t.x + 0.5) * T, ky = (t.y + 0.5) * T;
+      ctx.fillStyle = 'rgba(8,16,24,0.72)';
+      roundRectP(kx - T * 0.34, ky + T * 0.4, T * 0.68, T * 0.28, 4); ctx.fill();
+      ctx.fillStyle = '#ffd166'; ctx.font = (T * 0.2) + 'px system-ui';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      fText('💀' + (t.kills || 0), kx, ky + T * 0.55);
+      ctx.textBaseline = 'alphabetic';
+    }
+  }
   // Gegner
   for (const e of enemies) drawEnemy(e, time);
   // Schüsse/Effekte
@@ -1064,12 +1180,38 @@ function drawTower(t, time) {
   ctx.fillStyle = def.color;
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.3 * sock, 0, TAU); ctx.fill();
   // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
-  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray'].includes(t.type)) {
+  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno'].includes(t.type)) {
     const kick = (t.kick || 0) * T * 0.1;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
     ctx.fillStyle = '#22303a';
     ctx.fillRect(-kick, -T * 0.08, T * 0.42, T * 0.16);
     ctx.restore();
+  }
+  // Railgun: zwei Magnetschienen mit Glimmen dazwischen
+  if (t.type === 'railgun') {
+    const kick = (t.kick || 0) * T * 0.12;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
+    ctx.fillStyle = '#22303a';
+    ctx.fillRect(-kick, -T * 0.13, T * 0.55, T * 0.09);
+    ctx.fillRect(-kick, T * 0.04, T * 0.55, T * 0.09);
+    ctx.fillStyle = `rgba(140,200,255,${0.35 + (t.kick || 0) * 0.6})`;
+    ctx.fillRect(-kick + T * 0.08, -T * 0.04, T * 0.44, T * 0.08);
+    ctx.restore();
+  }
+  // Hypnoseturm: rotierende Spiral-Segmente
+  if (t.type === 'hypno') {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate((t.pulse || 0) * 2.6);
+    ctx.strokeStyle = 'rgba(240,190,255,0.75)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      ctx.rotate(TAU / 3);
+      ctx.beginPath(); ctx.arc(0, 0, T * 0.3, 0, 1.6); ctx.stroke();
+    }
+    ctx.restore();
+    if (t.victim && !t.victim.dead && !t.victim.escaped && t.victim.hypnoT > 0) {
+      ctx.strokeStyle = 'rgba(224,168,255,0.4)'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(t.victim.x * T, t.victim.y * T); ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
   // Kommandozentrale: Radar-Sweep + blinkendes Bereitschaftslicht
   if (t.type === 'command') {
@@ -1253,6 +1395,13 @@ function drawEnemy(e, time) {
   if (e.vulnFire > 0) { ctx.strokeStyle = 'rgba(255,140,50,0.9)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.35, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.vulnShock > 0) { ctx.strokeStyle = 'rgba(120,180,255,0.9)'; ctx.setLineDash([2, 4]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.5, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; fText('🔥', cx, cy - e.r * T - T * 0.12); }
+  if (e.hypnoT > 0) {
+    ctx.strokeStyle = `rgba(224,168,255,${0.55 + Math.sin(time * 9) * 0.25})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.3, time * 3, time * 3 + 4.6); ctx.stroke();
+    ctx.font = (T * 0.28) + 'px system-ui'; ctx.textAlign = 'center';
+    fText('💫', cx, cy - e.r * T - T * 0.3);
+  }
   if (e.resist) {
     // kleines Abzeichen über der linken Schulter: wogegen er immun-ish ist
     const bx2 = cx - e.r * T * 0.95, by2 = cy - e.r * T - T * 0.1;
@@ -1393,6 +1542,14 @@ function drawShot(sh) {
     ctx.globalAlpha = 1 - f;
     ctx.fillStyle = '#ffb24d';
     ctx.beginPath(); ctx.arc(sh.x * T, sh.y * T, sh.r * T * (0.4 + f * 0.8), 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  } else if (sh.kind === 'rail') {
+    const a = 1 - sh.t / sh.ttl;
+    ctx.globalAlpha = a * (sh.miss ? 0.55 : 1);
+    for (const w of [[8, 'rgba(120,190,255,0.35)'], [3.2, '#9fd4ff'], [1.3, '#ffffff']]) {
+      ctx.strokeStyle = w[1]; ctx.lineWidth = w[0];
+      ctx.beginPath(); ctx.moveTo(sh.x1 * T, sh.y1 * T); ctx.lineTo(sh.x2 * T, sh.y2 * T); ctx.stroke();
+    }
     ctx.globalAlpha = 1;
   } else if (sh.kind === 'nuke') {
     // Nuke: greller Anfangsblitz, doppelte Druckwelle und ein aufsteigender
@@ -1569,7 +1726,7 @@ function buildTower(type) {
   const k = game.sel.x + ',' + game.sel.y;
   if (towerAt[k] || isPath(game.sel.x, game.sel.y) || isPond(game.sel.x, game.sel.y)) return;
   game.money -= cost;
-  const t = { type, lvl: 0, x: game.sel.x, y: game.sel.y, cd: 0, angle: 0, born: 0 };
+  const t = { type, lvl: 0, x: game.sel.x, y: game.sel.y, cd: 0, angle: 0, born: 0, kills: 0 };
   towers.push(t);
   towerAt[k] = t;
   buildDust(t);
@@ -1605,12 +1762,15 @@ function showUpgpanel(t) {
   if (s.splash) statBits.push('Fläche ' + s.splash);
   if (s.burn) statBits.push('+' + s.burn + '/s Brand');
   if (s.charge) statBits.push('+' + s.charge + '/s Verstrahlung · max ' + s.cap + '/s');
+  if (s.acc) statBits.push('trifft Kleine zu ' + Math.round(s.acc * 100) + '% · Bosse immer, ×' + s.bossMul);
+  if (s.factor) statBits.push('Hypnose ' + s.dur + ' s · Biss ' + Math.round(s.factor * 100) + '% seiner Max-HP/s');
   if (s.chain) statBits.push(s.chain + ' Kettenziele');
   if (s.cone) statBits.push('Kegel ' + Math.round(s.cone * 2 * 180 / Math.PI) + '°');
   if (s.gold) statBits.push('+' + s.gold + ' 💰 alle ' + s.interval + ' s');
   if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
   if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
   if (t.type === 'command') statBits.push('☢️ ' + s.nuke + ' Schaden', '🛰️ ' + s.beam + ' Schaden · Radius ' + s.brad);
+  if (!['gold', 'ice', 'wind'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse');
   info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
   if (next) {
@@ -1738,6 +1898,14 @@ menuEl.addEventListener('click', (e) => { if (e.target === menuEl) menuEl.classL
 document.getElementById('btn-help').addEventListener('click', () => { menuEl.classList.add('hidden'); helpEl.classList.remove('hidden'); });
 document.getElementById('btn-start').addEventListener('click', () => helpEl.classList.add('hidden'));
 document.getElementById('btn-restart').addEventListener('click', () => { menuEl.classList.add('hidden'); newGame(); });
+const killsBtn = document.getElementById('btn-kills');
+function updateKillsBtn() { killsBtn.textContent = '💀 Abschuss-Zähler: ' + (showKills ? 'an' : 'aus'); }
+killsBtn.addEventListener('click', () => {
+  showKills = !showKills;
+  try { localStorage.setItem('td_kills', showKills ? '1' : '0'); } catch { /* egal */ }
+  updateKillsBtn();
+});
+updateKillsBtn();
 
 // ---- Schleife --------------------------------------------------------------
 let last = performance.now();
@@ -1759,7 +1927,7 @@ window.__td = { game, get towers() { return towers; }, get enemies() { return en
     const cost = TOWERS[type].levels[0].cost;
     if (game.money < cost) return null;
     game.money -= cost;
-    const t = { type, lvl: 0, x, y, cd: 0, angle: 0, born: 0 };
+    const t = { type, lvl: 0, x, y, cd: 0, angle: 0, born: 0, kills: 0 };
     towers.push(t); towerAt[k] = t;
     buildDust(t);
     updateSupers();
