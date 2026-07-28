@@ -612,6 +612,23 @@ html, body {
   margin-bottom: 14px;
 }
 
+/* Warnung: Server läuft ohne echte Datenbank */
+.db-warn {
+  background: rgba(180, 90, 20, 0.25);
+  border: 1px solid rgba(255, 170, 80, 0.6);
+  border-radius: 10px;
+  color: #ffd9ae;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.db-warn code {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
 /* Hilfe-Dropdowns (Tower Defense) */
 #help h2 { font-size: 16px; margin: 16px 0 4px; }
 .help-note { margin-top: 0; }

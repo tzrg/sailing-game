@@ -246,6 +246,28 @@ Dockerfile
 railway.json
 ```
 
+## Persistenz auf Railway (wichtig!)
+
+Der Server speichert **nur dann dauerhaft**, wenn die Umgebungsvariable
+`DATABASE_URL` gesetzt ist. Ohne sie läuft er im **In-Memory-Modus**: alles
+Serverseitige (Konten, Logins, Server-Spielstände, Spiel-Historie, Forum,
+Bestenliste) geht bei **jedem Deploy oder Neustart verloren** – die
+Landing-Page zeigt dann ein ⚠️-Warnbanner, und `/api/health` antwortet mit
+`"store": "memory"` statt `"store": "postgres"`.
+
+Einrichtung auf Railway:
+
+1. Im Projekt **„+ New“ → „Database“ → „Add PostgreSQL“** hinzufügen.
+2. Im Spiel-Service unter **Variables** eine Variable `DATABASE_URL` anlegen
+   und als Wert die Referenz `${{Postgres.DATABASE_URL}}` eintragen (Railway
+   bietet die Referenz beim Tippen an).
+3. Redeploy. Im Deploy-Log muss `Speicher: postgres` stehen, und
+   `https://<domain>/api/health` liefert `{"ok":true,"store":"postgres"}`.
+
+Die Tabellen legt der Server beim Start selbst an (`CREATE TABLE IF NOT
+EXISTS`), eine Migration ist nicht nötig. Lokale Browser-Daten (eigene
+Bestwerte, lokaler Spielstand) sind davon unabhängig und bleiben immer.
+
 ## Multiplayer / Backend
 
 Der Node-Dienst bietet:

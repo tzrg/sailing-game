@@ -98,6 +98,24 @@ async function renderLeaderboard() {
 
 /* ------------------------------------------------------- Caterpillars ---- */
 
+// Warnbanner, wenn der Server ohne echte Datenbank läuft (In-Memory):
+// dann überleben Konten, Spielstände & Highscores keinen Neustart/Deploy.
+function renderDbWarning() {
+  let el = $('db-warn');
+  if (!Auth.ephemeral()) { el?.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'db-warn';
+    el.className = 'db-warn';
+    document.querySelector('.lp')?.prepend(el);
+  }
+  el.innerHTML = '⚠️ <b>Keine Datenbank verbunden</b> – der Server läuft im Übergangs-Modus. '
+    + 'Konten, Server-Spielstände und die Bestenliste gehen bei jedem Neustart/Deploy verloren '
+    + '(lokale Speicherung im Browser funktioniert weiter). '
+    + 'Auf Railway: PostgreSQL-Service hinzufügen und im Spiel-Service die Variable '
+    + '<code>DATABASE_URL</code> auf die Postgres-URL setzen.';
+}
+
 function renderNetStatus() {
   const el = $('cat-status');
   const btn = $('cat-lobby');
@@ -146,6 +164,7 @@ async function init() {
   await Auth.probe();      // Server prüfen + Token verifizieren
   renderAuth();
   renderNetStatus();
+  renderDbWarning();
   if (Auth.serverUp && Auth.isLoggedIn()) await Scores.syncUp();
   await renderLeaderboard();
 }

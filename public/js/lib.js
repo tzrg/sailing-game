@@ -60,13 +60,15 @@ function writeUsers(u) { try { localStorage.setItem(USERS_KEY, JSON.stringify(u)
 
 export const Auth = {
   serverUp: false,
+  store: null,        // 'postgres' | 'memory...' – aus /api/health
 
   // Prüft, ob das Backend erreichbar ist, und verifiziert ein vorhandenes Token.
   async probe() {
     try {
       const h = await fetch('/api/health', { cache: 'no-store' });
       this.serverUp = h.ok;
-    } catch { this.serverUp = false; }
+      try { this.store = (await h.json()).store || null; } catch { this.store = null; }
+    } catch { this.serverUp = false; this.store = null; }
     if (this.serverUp && localStorage.getItem(TOKEN_KEY)) {
       try { const me = await api('/api/me'); localStorage.setItem(SESSION_KEY, me.name); }
       catch { this._clear(); }   // Token ungültig -> abmelden
@@ -74,6 +76,8 @@ export const Auth = {
     return this.serverUp;
   },
 
+  // true, wenn der Server läuft, aber OHNE echte Datenbank (alles flüchtig!)
+  ephemeral() { return this.serverUp && this.store !== 'postgres'; },
   current() { try { return localStorage.getItem(SESSION_KEY) || null; } catch { return null; } },
   isLoggedIn() { return !!this.current(); },
   online() { return this.serverUp; },
