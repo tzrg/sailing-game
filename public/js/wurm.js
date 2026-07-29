@@ -169,6 +169,12 @@ const game = {
 const projectiles = [];
 const particles = [];
 
+// Comic-Wolken: treiben gemächlich mit dem Wind über den Himmel
+const clouds = [];
+for (let i = 0; i < 6; i++) {
+  clouds.push({ x: Math.random() * WORLD_W, y: 30 + Math.random() * 170, s: 0.7 + Math.random() * 0.9, spd: 4 + Math.random() * 8 });
+}
+
 // ---- Waffen ----------------------------------------------------------------
 // Jede Waffe: name, icon, ammo, endsTurn, fire(worm). Projektil-Typen steuern
 // Flug/Explosion. Namen bewusst eigenständig (kein geschütztes Original).
@@ -377,6 +383,13 @@ function explode(x, y, r, dmg, dig = true) {
     particles.push({ kind: 'spark', x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, t: 0, ttl: 0.6 });
   }
   particles.push({ kind: 'blast', x, y, r, t: 0, ttl: 0.35 });
+  // Comic-Wumms: weiße Druckwelle, aufsteigender Rauch, kurzer Screenshake
+  particles.push({ kind: 'ring', x, y, r, t: 0, ttl: 0.35 });
+  for (let i = 0; i < Math.round(clamp(r / 7, 3, 8)); i++) {
+    particles.push({ kind: 'smoke', x: x + (Math.random() - 0.5) * r, y: y + (Math.random() - 0.5) * r * 0.5,
+      vx: (Math.random() - 0.5) * 22, vy: -28 - Math.random() * 26, r0: 5 + Math.random() * 6, t: 0, ttl: 0.9 + Math.random() * 0.5 });
+  }
+  cam.shakeT = Math.max(cam.shakeT || 0, clamp(r / 70, 0.12, 0.5));
 }
 
 // Sterbe-Effekt: farbige Funken + aufsteigender Grabstein/Totenkopf.
@@ -391,6 +404,9 @@ function killWorm(wm) {
 
 function damage(wm, amt, kx, ky) {
   const wasAlive = wm.alive;
+  if (wasAlive && amt >= 1) {
+    particles.push({ kind: 'dmg', x: wm.x, y: wm.y - 20, amt: Math.round(amt), t: 0, ttl: 1.1 });
+  }
   wm.hp -= amt;
   wm.vx += kx; wm.vy += ky;
   wm.grounded = false;
@@ -409,6 +425,7 @@ function bodyClear(x, fy) {
 function stepWorm(wm, dt) {
   if (!wm.alive) return;
   if (wm.celebrate > 0) wm.celebrate -= dt;
+  if (wm.squashT > 0) wm.squashT -= dt;
   wm.vy += GRAV * dt;
 
   // horizontale Bewegung mit Stufen-Klettern
@@ -432,6 +449,7 @@ function stepWorm(wm, dt) {
   let support = false;
   for (let d = 1; d <= 4; d++) if (solidAt(wm.x, wm.y + d)) { support = true; break; }
   if (support) {
+    if (wm.vy > 150 && !wm.grounded) wm.squashT = 0.22;   // Comic-Plumps bei der Landung
     if (wm.vy > 260) damage(wm, Math.round((wm.vy - 260) / 22), 0, 0);
     if (wm.vy > 0) wm.vy = 0;
     wm.grounded = true;
@@ -456,6 +474,9 @@ function stepWorm(wm, dt) {
 function stepProjectile(pr, dt) {
   pr.t += dt;
   pr.vy += GRAV * dt;
+  if (pr.type === 'rocket' && Math.random() < dt * 55) {
+    particles.push({ kind: 'smoke', x: pr.x, y: pr.y, vx: 0, vy: -14, r0: 3.5, t: 0, ttl: 0.5 });
+  }
   if (pr.wind) pr.vx += game.wind * 40 * pr.wind * dt;
   let nx = pr.x + pr.vx * dt, ny = pr.y + pr.vy * dt;
 
@@ -654,7 +675,21 @@ function draw(time) {
   ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
 
   ctx.save();
-  ctx.translate(W / 2, H / 2); ctx.scale(cam.scale, cam.scale); ctx.translate(-cam.x, -cam.y);
+  let shx = 0, shy = 0;
+  if (cam.shakeT > 0) { shx = (Math.random() - 0.5) * cam.shakeT * 26; shy = (Math.random() - 0.5) * cam.shakeT * 26; }
+  ctx.translate(W / 2, H / 2); ctx.scale(cam.scale, cam.scale); ctx.translate(-cam.x + shx, -cam.y + shy);
+
+  // Wolken
+  for (const c of clouds) {
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 16 * c.s, 0, TAU);
+    ctx.arc(c.x + 14 * c.s, c.y + 3 * c.s, 12 * c.s, 0, TAU);
+    ctx.arc(c.x - 14 * c.s, c.y + 4 * c.s, 11 * c.s, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 
   // Wasser
   ctx.fillStyle = 'rgba(40,110,170,0.75)';
@@ -711,6 +746,11 @@ function drawWorm(wm, team, time) {
   // Abschluss-Hüpfer: kleine Freudensprünge nach dem eigenen Zug
   const hop = wm.celebrate > 0 ? Math.abs(Math.sin(wm.celebrate * 9)) * 4.5 : 0;
   if (hop) ctx.translate(0, -hop);
+  // Squash & Stretch: im Flug lang und schmal, bei der Landung platt und breit
+  let scX = 1, scY = 1;
+  if (!wm.grounded && Math.abs(wm.vy) > 90) { scY = 1.14; scX = 0.9; }
+  if (wm.squashT > 0) { const sf = wm.squashT / 0.22; scY = 1 - 0.32 * sf; scX = 1 + 0.28 * sf; }
+  if (scX !== 1 || scY !== 1) { ctx.translate(wm.x, wm.y); ctx.scale(scX, scY); ctx.translate(-wm.x, -wm.y); }
   // Beinchen
   ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
   for (let i = 0; i < segN; i++) {
@@ -728,7 +768,10 @@ function drawWorm(wm, team, time) {
     ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU);
     ctx.fillStyle = i % 2 ? team.color : shade(team.color, -22);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.6; ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1.2; ctx.stroke();   // fette Comic-Outline
+    // Glanzlicht auf jedem Segment
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.beginPath(); ctx.arc(sx - r * 0.3, sy - r * 0.35, r * 0.32, 0, TAU); ctx.fill();
   }
   // Kopf-Details (mit gelegentlichem Blinzeln)
   const hx = wm.x, hy = segY(0);
@@ -737,11 +780,20 @@ function drawWorm(wm, team, time) {
     ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(hx + f * 0.8, hy - 1.6); ctx.lineTo(hx + f * 3.6, hy - 1.6); ctx.stroke();
   } else {
+    // großes Glubschauge; die Pupille schaut beim Zielen mit
+    const lookA = (wm === game.active && game.state === 'aim') ? game.aim : 0;
     ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(hx + f * 2, hy - 1.6, 1.9, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(hx + f * 2, hy - 1.8, 2.3, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 0.6; ctx.stroke();
     ctx.fillStyle = '#111';
-    ctx.beginPath(); ctx.arc(hx + f * 2.7, hy - 1.6, 0.95, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(hx + f * (2.4 + Math.cos(lookA) * 0.6), hy - 1.8 - Math.sin(lookA) * 0.9, 1.05, 0, TAU); ctx.fill();
   }
+  // Mund: fröhlich, bei wenig HP besorgt
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 0.8; ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (wm.hp > 25) ctx.arc(hx + f * 1.8, hy + 0.9, 1.7, 0.35, Math.PI - 0.35);
+  else ctx.arc(hx + f * 1.8, hy + 3.4, 1.7, Math.PI + 0.35, TAU - 0.35);
+  ctx.stroke();
   // Fühler
   ctx.strokeStyle = team.color; ctx.lineWidth = 0.9;
   const antW = Math.sin(time * 3 + wm.x) * 1;
@@ -844,6 +896,26 @@ function drawParticle(p) {
   } else if (p.kind === 'tracer') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.strokeStyle = '#fff4c0'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke(); ctx.globalAlpha = 1;
+  } else if (p.kind === 'ring') {
+    const f = p.t / p.ttl;
+    ctx.globalAlpha = (1 - f) * 0.9;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(1, 3.5 * (1 - f));
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.4 + f * 1.5), 0, TAU); ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else if (p.kind === 'smoke') {
+    const f = p.t / p.ttl;
+    ctx.globalAlpha = (1 - f) * 0.4;
+    ctx.fillStyle = '#cfc8bc';
+    ctx.beginPath(); ctx.arc(p.x, p.y, (p.r0 || 5) * (1 + f * 1.8), 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  } else if (p.kind === 'dmg') {
+    const f = p.t / p.ttl;
+    ctx.globalAlpha = 1 - f * f;
+    ctx.font = '900 13px system-ui'; ctx.textAlign = 'center';
+    const y = p.y - f * 26;
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText('-' + p.amt, p.x, y);
+    ctx.fillStyle = '#ffd166'; ctx.fillText('-' + p.amt, p.x, y);
+    ctx.globalAlpha = 1; ctx.textAlign = 'left';
   } else if (p.kind === 'splash') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = '#bfe3ff';
     for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (i - 2) * 0.3; ctx.beginPath(); ctx.arc(p.x + Math.cos(a) * p.t * 60, p.y - Math.sin(-a) * p.t * 40, 2, 0, TAU); ctx.fill(); }
@@ -1058,6 +1130,20 @@ function buildWeaponMenu() {
 }
 wmenu.addEventListener('click', (e) => { if (e.target === wmenu) wmenu.classList.add('hidden'); });
 
+// Tap auf die Waffen-Anzeige unten in der Mitte öffnet ebenfalls das Waffenmenü
+canvas.addEventListener('pointerdown', (e) => {
+  if (game.state !== 'aim') return;
+  const rect = canvas.getBoundingClientRect();
+  let px, py;
+  if (stage.classList.contains('rot')) {
+    // Bühne ist um 90° gedreht: Client- in Canvas-Koordinaten zurückdrehen
+    px = e.clientY; py = window.innerWidth - e.clientX;
+  } else {
+    px = e.clientX - rect.left; py = e.clientY - rect.top;
+  }
+  if (px >= W / 2 - 92 && px <= W / 2 + 92 && py >= H - 128 && py <= H - 82) buildWeaponMenu();
+});
+
 // Raupe wechseln + Zoom
 document.getElementById('b-switch').addEventListener('click', onSwitch);
 document.getElementById('b-zoomin').addEventListener('click', () => setZoom(cam.zoom * 1.25));
@@ -1157,7 +1243,7 @@ document.getElementById('btn-rotate').addEventListener('click', () => {
 });
 resize();
 
-window.__wurm = { game, teams: () => teams, projectiles, WEAPONS, fireWeapon, weaponAmmo,
+window.__wurm = { game, teams: () => teams, projectiles, particles, WEAPONS, fireWeapon, weaponAmmo,
   set weapon(i) { game.weaponIdx = i; }, focus: () => game.active, newGame,
   get mask() { return mask; }, solidAt, explode, cfg, net: () => net, cam,
   startTurn, hitscanRay, gumPop, allWorms };
@@ -1213,7 +1299,14 @@ function applySnap(s) {
   game.active = teams[s.ac.t] ? teams[s.ac.t].worms[s.ac.i] : null;
   projectiles.length = 0;
   for (const p of s.pj) projectiles.push({ type: p.t, x: p.x, y: p.y, r: p.r, vx: p.vx, vy: p.vy, ang: p.ang, t: 0 });
-  if (s.cr) for (const c of s.cr) carveCircle(c.x, c.y, c.r);
+  if (s.cr) {
+    for (const c of s.cr) {
+      carveCircle(c.x, c.y, c.r);
+      particles.push({ kind: 'blast', x: c.x, y: c.y, r: c.r, t: 0, ttl: 0.35 });
+      particles.push({ kind: 'ring', x: c.x, y: c.y, r: c.r, t: 0, ttl: 0.35 });
+      cam.shakeT = Math.max(cam.shakeT || 0, clamp(c.r / 70, 0.12, 0.5));
+    }
+  }
   net.ready = true;
 }
 
@@ -1482,6 +1575,12 @@ if (netMode === 'host' || netMode === 'join' || netMode === 'lobby') {
 
 function updateCamera(dt) {
   cam.scale = cam.base * cam.zoom;   // Zoom live anwenden
+  if (cam.shakeT > 0) cam.shakeT = Math.max(0, cam.shakeT - dt);
+  // Wolken treiben mit dem Wind
+  for (const c of clouds) {
+    c.x += (game.wind * 10 + c.spd) * dt;
+    if (c.x > WORLD_W + 60) c.x = -60;
+  }
   let ft = game.active;
   if (projectiles.length) ft = projectiles[projectiles.length - 1];
   if (ft) { cam.tx = ft.x; cam.ty = ft.y - 40; }
@@ -1513,7 +1612,10 @@ function frame(now) {
       const ad = localAimDir(); if (ad !== net.lastAim) { net.lastAim = ad; net.client.send({ t: 'act', a: { k: 'aim', dir: ad } }); }
     } else { net.lastMove = 0; net.lastAim = 0; }
     for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
-    for (const p of particles) if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+    for (const p of particles) {
+      if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+      else if (p.kind === 'smoke') { p.x += (p.vx || 0) * dt; p.y += (p.vy || -24) * dt; }
+    }
     for (const wmx of allWorms()) if (wmx.celebrate > 0) wmx.celebrate -= dt;
     updateCamera(dt);
     if (net.ready) draw(time); else drawWaiting();
@@ -1538,7 +1640,12 @@ function frame(now) {
   for (const wm of allWorms()) stepWorm(wm, dt);
   for (let i = projectiles.length - 1; i >= 0; i--) { if (stepProjectile(projectiles[i], dt)) projectiles.splice(i, 1); }
   for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
-  if (particles.length) for (const p of particles) if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+  if (particles.length) {
+    for (const p of particles) {
+      if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+      else if (p.kind === 'smoke') { p.x += (p.vx || 0) * dt; p.y += (p.vy || -24) * dt; }
+    }
+  }
 
   if (game.state === 'busy') endTurnAfterSettle(dt);
 

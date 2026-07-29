@@ -175,6 +175,39 @@ try {
   check('6 Teams mit eigenen Farben und Namen', r.n === 6 && r.colors === 6 && r.names.includes('Türkis'), r.names);
   check('Team-Auswahl im Menü geht bis 6', r.selMax === '6');
 
+  // ---- Tap auf die Waffen-Anzeige öffnet das Waffenmenü
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.cfg.teamCount = 2; WU.cfg.wormCount = 2;
+    WU.newGame();
+    const canvas = document.getElementById('game');
+    canvas.dispatchEvent(new PointerEvent('pointerdown', {
+      clientX: window.innerWidth / 2, clientY: window.innerHeight - 105, bubbles: true }));
+    const open = !document.getElementById('wmenu').classList.contains('hidden');
+    document.getElementById('wmenu').classList.add('hidden');
+    // Tap weit weg von der Anzeige darf NICHT öffnen
+    canvas.dispatchEvent(new PointerEvent('pointerdown', {
+      clientX: window.innerWidth / 2, clientY: 200, bubbles: true }));
+    const stillClosed = document.getElementById('wmenu').classList.contains('hidden');
+    return { open, stillClosed };
+  });
+  check('Tap auf die Waffen-Anzeige öffnet das Waffenmenü', r.open && r.stillClosed, JSON.stringify(r));
+
+  // ---- Comic-Feedback: Schadenszahlen + Explosions-Effekte
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const victim = WU.teams()[1].worms[0];
+    const hp0 = victim.hp;
+    WU.explode(victim.x, victim.y - 4, 24, 30, false);
+    const kinds = new Set(WU.particles.map((p) => p.kind));
+    const dmgP = WU.particles.find((p) => p.kind === 'dmg');
+    return { hpDropped: victim.hp < hp0, hasDmg: kinds.has('dmg'), hasRing: kinds.has('ring'),
+      hasSmoke: kinds.has('smoke'), shake: WU.cam.shakeT > 0, amt: dmgP && dmgP.amt };
+  });
+  check('Explosion: Schadenszahl, Druckwelle, Rauch, Screenshake',
+    r.hpDropped && r.hasDmg && r.hasRing && r.hasSmoke && r.shake && r.amt > 0, JSON.stringify(r));
+
   // ---- Abschluss-Hüpfer nach dem Zug
   r = await page.evaluate(() => {
     const WU = window.__wurm;
