@@ -266,17 +266,18 @@ function blowtorch(w) {
   // Bohrwinkel aus der Zielhilfe: auch schräg nach oben oder unten graben
   const ang = clamp(game.aim, -0.9, 0.9);
   const dx = dir * Math.cos(ang), dy = -Math.sin(ang);
-  const sx = w.x, sy = w.y;   // fester Startpunkt: sonst wandert der Bohrpunkt mit und beschleunigt
   game.actionBusy = true;     // hält die Runde, bis der Tunnel gegraben ist
   let step = 0;
   const iv = setInterval(() => {
-    if (step >= 22) { clearInterval(iv); game.actionBusy = false; return; }
-    const px = sx + dx * (16 + step * 6), py = sy - 6 + dy * (16 + step * 6);   // Bohrpunkt gleichmäßig vom Start weg
+    if (step >= 22 || !w.alive) { clearInterval(iv); game.actionBusy = false; return; }
+    // Der Bohrkopf sitzt IMMER direkt vor der Raupe – wo auch immer sie
+    // gerade ist. Der Tunnel beginnt damit garantiert am Wurm, und der
+    // Vortrieb ist konstant 6 px pro Tick (keine Beschleunigung möglich).
+    const px = w.x + dx * 12, py = (w.y - 6) + dy * 12;
     carveCircle(px | 0, py | 0, 12);
     for (const wm of allWorms()) if (wm.alive && wm !== w && Math.hypot(px - wm.x, py - wm.y) < 16) damage(wm, 6, dx * 60, -40);
-    // Wurm folgt konstant durch den Tunnel, keine Beschleunigung
-    w.x = clamp(sx + dx * (step * 6), 4, WORLD_W - 4);
-    w.y = sy + dy * (step * 6);
+    w.x = clamp(w.x + dx * 6, 4, WORLD_W - 4);
+    w.y += dy * 6;
     w.vx = 0; w.vy = 0;
     particles.push({ kind: 'spark', x: px, y: py, vx: (Math.random() - 0.5) * 130, vy: -Math.random() * 110, t: 0, ttl: 0.3 });
     step++;
@@ -470,11 +471,28 @@ function stepProjectile(pr, dt) {
   if (pr.type === 'rocket' || pr.type === 'cluster' || pr.type === 'sheep') {
     for (const wm of allWorms()) if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - (wm.y - 6)) < 13) { detonate(pr, nx, ny); return true; }
   }
-  // Schaf: hüpft über den Boden statt liegen zu bleiben
+  // Schaf: hüpft über den Boden statt liegen zu bleiben. Die Bewegung wird
+  // in kleinen Schritten abgetastet, damit es nie durch Wände oder dünne
+  // Böden hindurchgleitet (Tunneling bei hohem Tempo).
   if (pr.type === 'sheep') {
     pr.hopCd -= dt;
+    const steps = Math.max(1, Math.ceil(Math.hypot(nx - pr.x, ny - pr.y) / 4));
+    let cx2 = pr.x, cy2 = pr.y;
+    for (let i = 1; i <= steps; i++) {
+      const tx = pr.x + (nx - pr.x) * i / steps;
+      const ty = pr.y + (ny - pr.y) * i / steps;
+      if (solidAt(tx, ty)) {
+        // kleine Stufe hochklettern – sonst an der Wand umdrehen
+        let up = 0;
+        while (up <= 10 && solidAt(tx, ty - up)) up++;
+        if (up <= 10) { cx2 = tx; cy2 = ty - up; if (pr.vy > 0) pr.vy = 0; }
+        else { pr.dir *= -1; pr.vx = -pr.vx * 0.5; }
+        break;
+      }
+      cx2 = tx; cy2 = ty;
+    }
+    nx = cx2; ny = cy2;
     if (solidAt(nx, ny + 7)) {                 // steht auf dem Boden
-      while (solidAt(nx, ny) && ny > 40) ny -= 1;  // aus dem Boden schieben
       if (pr.hopCd <= 0) { pr.vy = -250; pr.vx = pr.dir * 135; pr.hopCd = 0.45; }
       else if (pr.vy > 0) pr.vy = 0;
     }

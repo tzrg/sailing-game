@@ -112,6 +112,57 @@ try {
   check('Bohrt schräg nach unten: Raupe folgt dem Tunnel', r.alive && !r.busy && r.y > before.y0 + 30 && Math.abs(r.x - before.x0) > 20,
     `dy=${Math.round(r.y - before.y0)} dx=${Math.round(r.x - before.x0)}`);
 
+  // ---- Schaf gleitet nie durch die Welt (Anti-Tunneling)
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const w = WU.focus();
+    // Schaf mit ordentlich Tempo Richtung Gelände loslassen
+    WU.projectiles.push({ type: 'sheep', x: w.x + 14, y: w.y - 10, vx: 350, vy: -60, t: 0,
+      dir: 1, r: 46, dmg: 62, hopCd: 0.2, fuse: 7 });
+    return true;
+  });
+  {
+    let embedded = 0, samples = 0;
+    for (let i = 0; i < 10; i++) {
+      await page.waitForTimeout(150);
+      const st = await page.evaluate(() => {
+        const WU = window.__wurm;
+        const pr = WU.projectiles.find((p) => p.type === 'sheep');
+        if (!pr) return null;
+        return { inGround: WU.solidAt(pr.x, pr.y - 1) && WU.solidAt(pr.x, pr.y - 5) };
+      });
+      if (st === null) break;
+      samples++;
+      if (st.inGround) embedded++;
+    }
+    check('Schaf steckt nie im Gelände (kein Durchgleiten)', samples > 0 && embedded === 0,
+      `${embedded}/${samples} Proben im Boden`);
+  }
+
+  // ---- Schweißbrenner-Tunnel beginnt an der Raupe
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const idx = WU.WEAPONS.findIndex((w) => w.key === 'brenner');
+    WU.weapon = idx;
+    WU.game.aim = 0;
+    WU.game.power = 0.5;
+    WU.fireWeapon();
+    return true;
+  });
+  await page.waitForTimeout(450);   // mitten im Bohren
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    const w = WU.focus();
+    // Der Bohrkopf sitzt direkt vor der aktuellen Position -> dort ist frisch gebohrt
+    return { busy: WU.game.actionBusy,
+      headClear: !WU.solidAt(w.x + w.facing * 12, w.y - 6),
+      bodyClear: !WU.solidAt(w.x, w.y - 6) };
+  });
+  check('Brenner bohrt direkt vor der Raupe (Tunnel beginnt am Wurm)', r.busy && r.headClear && r.bodyClear, JSON.stringify(r));
+  await page.waitForTimeout(800);   // Bohrvorgang fertig laufen lassen
+
   // ---- 6 Teams
   r = await page.evaluate(() => {
     const WU = window.__wurm;
