@@ -219,10 +219,12 @@ try {
     const grave = WU.graves[WU.graves.length - 1];
     return { dead: !victim.alive, hasBurst: kinds.has('burst'), hasStar: kinds.has('star'),
       ghostNamed: ghost && ghost.name === victim.name,
-      graveCount: WU.graves.length, graveNearby: grave && Math.abs(grave.x - gx) < 30 };
+      graveCount: WU.graves.length, graveNearby: grave && Math.abs(grave.x - gx) < 30,
+      graveCap: grave && grave.color === WU.teams()[1].color };
   });
   check('Tod: POW-Blitz + Sternchen + Geist mit Namen', r.dead && r.hasBurst && r.hasStar && r.ghostNamed, JSON.stringify(r));
-  check('Grabstein plumpst an der Todesstelle hin', r.graveCount === 1 && r.graveNearby, JSON.stringify(r));
+  check('Grabstein plumpst an der Todesstelle hin und trägt die Team-Mütze',
+    r.graveCount === 1 && r.graveNearby && r.graveCap, JSON.stringify(r));
 
   // Wasser-Tod: Geist ja, Grabstein nein; neues Spiel räumt die Gräber
   r = await page.evaluate(() => {
@@ -283,6 +285,32 @@ try {
   }));
   check('Stehende Raupe ist absolut ruhig (kein Zittern)', r.maxDy < 0.01 && r.maxDx < 0.01,
     `dy=${r.maxDy.toFixed(3)} dx=${r.maxDx.toFixed(3)}`);
+
+  // ---- Kamera-Choreografie: Einschlag -> Opfer-Tour -> Salut -> nächster Zug
+  r = await page.evaluate(() => new Promise((res) => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const shooter = WU.game.active;
+    const team0 = WU.game.turnTeam;
+    const victim = WU.teams()[(team0 + 1) % WU.teams().length].worms[0];
+    // "Schuss" simulieren: Treffer + Einschlag, dann Zugende einleiten
+    WU.explode(victim.x, victim.y - 4, 20, 30, false);
+    WU.game.fireDone = true;
+    WU.game.state = 'busy';
+    WU.game.settleT = 0; WU.game.busyT = 0; WU.game.camSeq = null;
+    let sawSalute = false, sawVictimFocus = false, n = 0;
+    const iv = setInterval(() => {
+      if (shooter.saluteT > 0) sawSalute = true;
+      if (Math.abs((WU.cam.tx ?? 0) - victim.x) < 2) sawVictimFocus = true;
+      if (WU.game.turnTeam !== team0 || ++n > 80) {
+        clearInterval(iv);
+        res({ sawSalute, sawVictimFocus, advanced: WU.game.turnTeam !== team0,
+          hadBoom: !!WU.lastBoom || true });
+      }
+    }, 100);
+  }));
+  check('Kamera besucht das Opfer, Schütze salutiert, dann Zugwechsel',
+    r.advanced && r.sawVictimFocus && r.sawSalute, JSON.stringify(r));
 
   // ---- Abschluss-Hüpfer nach dem Zug
   r = await page.evaluate(() => {

@@ -172,6 +172,14 @@ const particles = [];
 // Grabsteine gefallener Raupen (rein visuell, plumpsen rein und bleiben)
 const graves = [];
 
+// Wer hat in diesem Zug wie viel abbekommen? (für die Kamera-Tour danach)
+const hitLog = [];
+let lastBoom = null;
+function logHit(wm, amt) {
+  const e = hitLog.find((h) => h.wm === wm);
+  if (e) e.amt += amt; else hitLog.push({ wm, amt });
+}
+
 // Comic-Wolken: treiben gemächlich mit dem Wind über den Himmel
 const clouds = [];
 for (let i = 0; i < 6; i++) {
@@ -370,6 +378,7 @@ function gumPop(x, y) {
 
 // ---- Explosion -------------------------------------------------------------
 function explode(x, y, r, dmg, dig = true) {
+  lastBoom = { x, y };
   if (dig) carveCircle(x | 0, y | 0, r);
   for (const wm of allWorms()) {
     if (!wm.alive) continue;
@@ -414,7 +423,7 @@ function killWorm(wm) {
   if (wm.y < WATERLINE - 6) {
     let gy = wm.y | 0;
     while (gy < WATERLINE - 2 && !solidAt(wm.x, gy + 1)) gy++;
-    if (gy < WATERLINE - 2) graves.push({ x: wm.x, y: gy, t: 0 });
+    if (gy < WATERLINE - 2) graves.push({ x: wm.x, y: gy, t: 0, color });
   }
 }
 
@@ -422,6 +431,7 @@ function damage(wm, amt, kx, ky) {
   const wasAlive = wm.alive;
   if (wasAlive && amt >= 1) {
     particles.push({ kind: 'dmg', x: wm.x, y: wm.y - 20, amt: Math.round(amt), t: 0, ttl: 1.1 });
+    logHit(wm, amt);
   }
   wm.hp -= amt;
   wm.vx += kx; wm.vy += ky;
@@ -441,6 +451,7 @@ function bodyClear(x, fy) {
 function stepWorm(wm, dt) {
   if (!wm.alive) return;
   if (wm.celebrate > 0) wm.celebrate -= dt;
+  if (wm.saluteT > 0) wm.saluteT -= dt;
   if (wm.squashT > 0) wm.squashT -= dt;
   // Stabiler Stand: wer ruhig auf festem Boden steht, bekommt keine
   // Schwerkraft-Mikroschritte. (Sonst sinkt die Raupe sub-pixelweise ein und
@@ -487,6 +498,7 @@ function stepWorm(wm, dt) {
   if (wm.y > WATERLINE + 4) {
     const wasAlive = wm.alive;
     wm.alive = false; wm.hp = 0;
+    if (wasAlive) logHit(wm, 0);
     particles.push({ kind: 'splash', x: wm.x, y: WATERLINE, t: 0, ttl: 0.6 });
     if (wasAlive) particles.push({ kind: 'death', x: wm.x, y: WATERLINE - 12, name: wm.name || '', t: 0, ttl: 1.9 });
   }
@@ -625,6 +637,7 @@ function startTurn() {
   game.wind = +(Math.random() * 2 - 1).toFixed(2);
   game.aim = 0.6; game.power = 0; game.charging = false;
   game.timer = 45; game.fireDone = false; game.shotgunShots = 0; game.actionBusy = false; game.retreatT = 0;
+  game.camSeq = null; hitLog.length = 0; lastBoom = null;
   net.remote.moveDir = 0; net.remote.aimDir = 0;   // relayed Eingaben zurücksetzen
   game.state = 'aim';
   game.banner = 'Team ' + team.name + ' ist dran'; game.bannerT = 1.6;
@@ -676,15 +689,39 @@ function fireWeapon() {
 
 function endTurnAfterSettle(dt) {
   game.busyT += dt;
-  if (game.busyT > 8) { startTurn(); return; } // Sicherheits-Zeitgrenze
+  if (game.busyT > 16) { startTurn(); return; } // Sicherheits-Zeitgrenze
   if (game.actionBusy) { game.settleT = 0; return; } // Uzi/Brenner noch aktiv
   // warten bis Projektile weg und Würmer wirklich ruhig sind (nur echte
   // Geschwindigkeit prüfen – nicht das grounded-Flag, das sonst hängen bleibt)
   const moving = projectiles.length > 0 ||
     allWorms().some((w) => w.alive && (Math.abs(w.vx) > 6 || Math.abs(w.vy) > 6));
-  if (moving) { game.settleT = 0; return; }
+  if (moving) { game.settleT = 0; game.camSeq = null; return; }
   game.settleT += dt;
-  if (game.settleT > 0.7) startTurn();
+
+  // Zeit abgelaufen ohne Schuss: kurz warten, direkt weiter
+  if (!game.fireDone) { if (game.settleT > 0.7) startTurn(); return; }
+
+  // Kamera-Choreografie: 1) am Einschlag verweilen, 2) jeden getroffenen Wurm
+  // nacheinander besuchen (mit Schadens-Verrechnung), 3) zurück zum Schützen
+  // für einen kleinen Mützen-Salut, 4) erst dann der nächste Zug.
+  if (!game.camSeq) {
+    if (lastBoom && game.settleT < 0.55) { focusCam(lastBoom.x, lastBoom.y); return; }
+    game.camSeq = { steps: hitLog.filter((h) => h.wm !== game.active), i: -1, t: 99 };
+  }
+  const seq = game.camSeq;
+  seq.t += dt;
+  if (seq.t < 0.85) return;
+  seq.t = 0; seq.i++;
+  if (seq.i < seq.steps.length) {
+    const h = seq.steps[seq.i];
+    focusCam(h.wm.x, h.wm.y);
+    if (h.amt >= 1) particles.push({ kind: 'dmg', x: h.wm.x, y: h.wm.y - 24, amt: Math.round(h.amt), t: 0, ttl: 0.9 });
+  } else if (seq.i === seq.steps.length && game.active && game.active.alive) {
+    focusCam(game.active.x, game.active.y);
+    game.active.saluteT = 1;   // Mützen-Salut!
+  } else {
+    startTurn();
+  }
 }
 
 // ---- Kamera ----------------------------------------------------------------
@@ -820,7 +857,10 @@ function drawWorm(wm, team, time) {
   }
   // Team-Mütze: farbige Kappe mit Schirm und Bommel auf dem Kopf
   {
-    const chx = wm.x, chy = segY(0) - 2.6;
+    const chx = wm.x;
+    let chy = segY(0) - 2.6;
+    // Salut: die Mütze wird kurz gelüpft
+    if (wm.saluteT > 0) chy -= Math.sin((1 - clamp(wm.saluteT, 0, 1)) * Math.PI) * 4;
     ctx.fillStyle = team.color; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 0.9;
     ctx.beginPath(); ctx.arc(chx, chy, segR + 0.9, Math.PI + 0.15, -0.15); ctx.closePath();
     ctx.fill(); ctx.stroke();
@@ -838,21 +878,21 @@ function drawWorm(wm, team, time) {
   const blink = earsShut || ((time * 0.9 + wm.crawl * 0.37) % 3.1) < 0.14;
   if (blink) {
     ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(hx + f * 0.8, hy - 1.6); ctx.lineTo(hx + f * 3.6, hy - 1.6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(hx + f * 0.8, hy - 0.5); ctx.lineTo(hx + f * 3.6, hy - 0.5); ctx.stroke();
   } else {
     // großes Glubschauge; die Pupille schaut beim Zielen mit
     const lookA = (wm === game.active && game.state === 'aim') ? game.aim : 0;
     ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(hx + f * 2, hy - 1.8, 2.3, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(hx + f * 2, hy - 0.7, 2.3, 0, TAU); ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 0.6; ctx.stroke();
     ctx.fillStyle = '#111';
-    ctx.beginPath(); ctx.arc(hx + f * (2.4 + Math.cos(lookA) * 0.6), hy - 1.8 - Math.sin(lookA) * 0.9, 1.05, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(hx + f * (2.4 + Math.cos(lookA) * 0.6), hy - 0.7 - Math.sin(lookA) * 0.9, 1.05, 0, TAU); ctx.fill();
   }
   // Mund: fröhlich, bei wenig HP (oder tickendem Dynamit) besorgt
   ctx.strokeStyle = '#111'; ctx.lineWidth = 0.8; ctx.lineCap = 'round';
   ctx.beginPath();
-  if (wm.hp > 25 && !earsShut) ctx.arc(hx + f * 1.8, hy + 0.9, 1.7, 0.35, Math.PI - 0.35);
-  else ctx.arc(hx + f * 1.8, hy + 3.4, 1.7, Math.PI + 0.35, TAU - 0.35);
+  if (wm.hp > 25 && !earsShut) ctx.arc(hx + f * 1.8, hy + 2.2, 1.7, 0.35, Math.PI - 0.35);
+  else ctx.arc(hx + f * 1.8, hy + 4.4, 1.7, Math.PI + 0.35, TAU - 0.35);
   ctx.stroke();
   // Ohren zuhalten: zwei Pfötchen seitlich an den Kopf gepresst
   if (earsShut) {
@@ -970,6 +1010,14 @@ function drawGrave(g) {
   ctx.fillStyle = '#57616a'; ctx.font = '700 5px system-ui'; ctx.textAlign = 'center';
   ctx.fillText('RIP', 0, -7.5);
   ctx.font = '6px system-ui'; ctx.fillText('🌼', 8, 0);
+  // die Team-Mütze des Gefallenen ruht auf dem Stein
+  if (g.color) {
+    ctx.fillStyle = g.color; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(0, -15, 4.6, Math.PI + 0.2, -0.2); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(4.8, -14.4, 2.1, 0.9, 0, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f2f2f2';
+    ctx.beginPath(); ctx.arc(0, -19.2, 1.1, 0, TAU); ctx.fill();
+  }
   ctx.restore();
   ctx.textAlign = 'left';
 }
@@ -1403,7 +1451,8 @@ document.getElementById('btn-rotate').addEventListener('click', () => {
 });
 resize();
 
-window.__wurm = { game, teams: () => teams, projectiles, particles, graves, WEAPONS, fireWeapon, weaponAmmo,
+window.__wurm = { game, teams: () => teams, projectiles, particles, graves, hitLog,
+  get lastBoom() { return lastBoom; }, WEAPONS, fireWeapon, weaponAmmo,
   set weapon(i) { game.weaponIdx = i; }, focus: () => game.active, newGame,
   get mask() { return mask; }, solidAt, explode, cfg, net: () => net, cam,
   startTurn, hitscanRay, gumPop, allWorms };
@@ -1426,7 +1475,7 @@ function sendSnapshot() {
     rt: +(game.retreatT || 0).toFixed(2), fd: game.fireDone ? 1 : 0,
     win: game.winner ? game.winner.name : null, ac: { t: game.turnTeam, i: t ? t.cur : 0 },
     tm: teams.map((tt) => ({ c: tt.cur, au: tt.ammoUsed,
-      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing, n: w.name, g: w.gluePhase || 0, cb: w.celebrate > 0 ? 1 : 0 })) })),
+      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing, n: w.name, g: w.gluePhase || 0, cb: w.celebrate > 0 ? 1 : 0, sl: w.saluteT > 0 ? 1 : 0 })) })),
     pj: projectiles.map((p) => ({ t: p.type, x: Math.round(p.x), y: Math.round(p.y), r: p.r,
       vx: Math.round(p.vx || 0), vy: Math.round(p.vy || 0), ang: p.ang || 0 })),
     cr: net.craters.length ? net.craters.splice(0, net.craters.length) : undefined,
@@ -1449,6 +1498,7 @@ function applySnap(s) {
         o.x = w.x; o.y = w.y; o.hp = w.hp; o.alive = !!w.al; o.facing = w.f; if (w.n) o.name = w.n;
         o.gluePhase = w.g || 0;
         if (w.cb && !(o.celebrate > 0)) o.celebrate = 1.5;
+        if (w.sl && !(o.saluteT > 0)) o.saluteT = 1;
       });
     });
   }
@@ -1743,6 +1793,7 @@ function updateCamera(dt) {
   }
   let ft = game.active;
   if (projectiles.length) ft = projectiles[projectiles.length - 1];
+  else if (game.state === 'busy' && game.fireDone) ft = null;   // Choreografie steuert selbst
   if (ft) { cam.tx = ft.x; cam.ty = ft.y - 40; }
   cam.x += ((cam.tx ?? cam.x) - cam.x) * Math.min(1, dt * 4);
   cam.y += ((cam.ty ?? cam.y) - cam.y) * Math.min(1, dt * 4);
@@ -1777,7 +1828,7 @@ function frame(now) {
       else if (p.kind === 'smoke') { p.x += (p.vx || 0) * dt; p.y += (p.vy || -24) * dt; }
     }
     for (const g of graves) g.t += dt;
-    for (const wmx of allWorms()) if (wmx.celebrate > 0) wmx.celebrate -= dt;
+    for (const wmx of allWorms()) { if (wmx.celebrate > 0) wmx.celebrate -= dt; if (wmx.saluteT > 0) wmx.saluteT -= dt; }
     updateCamera(dt);
     if (net.ready) draw(time); else drawWaiting();
     requestAnimationFrame(frame);
