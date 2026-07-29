@@ -868,7 +868,7 @@ function drawWorm(wm, team, time) {
   ctx.beginPath(); ctx.arc(hx + f * 3.5 + antW, hy - 9.5, 0.9, 0, TAU); ctx.fill();
   ctx.restore();
 
-  const barY = wm.y - segR - amp - 9;
+  const barY = wm.y - segR - amp - 15;   // über der Mütze samt Bommel
   // aktiver Wurm: Pfeil (über Namen/Balken)
   if (wm === game.active && game.state === 'aim') {
     const bob = Math.sin(time * 4) * 2;
