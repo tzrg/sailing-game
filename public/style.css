@@ -671,6 +671,12 @@ html, body {
 .stats-table th:first-child, .stats-table td:first-child { text-align: left; }
 .stats-table th { color: #9fc0d8; font-weight: 600; }
 .stats-table tr.total td { color: #ffd166; font-weight: 700; border-top: 2px solid rgba(255, 255, 255, 0.25); }
+/* aufklappbare Historien-Zeilen (gespeicherte Voll-Statistik je Partie) */
+.stats-table tr.hist-row { cursor: pointer; }
+.stats-table tr.hist-row:hover td { background: rgba(255, 255, 255, 0.06); }
+.hist-caret { display: inline-block; width: 12px; color: #9fc0d8; }
+.stats-table tr.hist-detail > td { background: rgba(255, 255, 255, 0.04); padding: 2px 6px 0 18px; white-space: normal; }
+.stats-table tr.hist-detail .stats-table { margin: 4px 0 8px; }
 .stats-h { font-size: 15px; font-weight: 700; margin: 14px 0 2px; }
 .stats-note { font-size: 12px; color: #9fc0d8; margin-bottom: 8px; }
 .stats-wrap { overflow-x: auto; }

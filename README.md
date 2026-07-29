@@ -80,6 +80,9 @@ Docker-Container deployt.
   welche Monsterart erlegt hat und die Spiel-Historie: jedes Ergebnis
   (Game Over oder aufgegeben) wird mit Welle, Kills, Schaden und Top-Turm
   gespeichert – lokal und eingeloggt in der Datenbank (Slot td_history).
+  Die jüngsten 12 Partien tragen ihre komplette Statistik mit sich
+  (Turmarten-Tabelle + Kill-Matrix) und lassen sich in der Historie per
+  Antippen aufklappen.
   Späte Wellen bringen Resistenzler (Feuer-, Laser- und Blitz-resistent),
   die einen Waffen-Mix erzwingen. Schadensarten + **Panzerung** (Kinetik/Laser knacken
   sie), pro Turm einmalige **Spezialisierungen** (Spezialmunition,

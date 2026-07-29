@@ -1335,8 +1335,16 @@ function recordResult(end) {
     kills += st.kills; dmg += st.dmg;
     if (!top || st.dmg > stats.types[top].dmg) top = k;
   }
-  history.unshift({ ts: Date.now(), diff: diffKey(), wave: reached, end, kills, dmg: Math.round(dmg), top });
+  // volle Statistik der Partie mitspeichern (Kopie, Schaden gerundet), damit
+  // sie in der Historie aufklappbar ist – nur für die jüngsten Partien,
+  // sonst sprengt es irgendwann den 32-KB-Slot in der Datenbank
+  const st = { types: {}, vs: {} };
+  for (const [k, v] of Object.entries(stats.types)) st.types[k] = { kills: v.kills, dmg: Math.round(v.dmg) };
+  for (const [k, v] of Object.entries(stats.vs)) st.vs[k] = { ...v };
+  history.unshift({ ts: Date.now(), diff: diffKey(), wave: reached, end, kills, dmg: Math.round(dmg), top,
+    st: Object.keys(st.types).length ? st : undefined });
   history = history.slice(0, 50);
+  for (let i = 12; i < history.length; i++) delete history[i].st;
   try { localStorage.setItem(HIST_KEY, JSON.stringify(history)); } catch { /* egal */ }
   pushHistoryToServer();
 }
@@ -2320,56 +2328,78 @@ const EINFO = {
   blitzer: ['⚡', 'Geerdeter'], boss: ['👹', 'Boss'],
 };
 const statsEl = document.getElementById('stats');
-function historyHtml() {
-  if (!history.length) return '';
-  let html = '<div class="stats-h">📜 Spiel-Historie</div>'
-    + '<div class="stats-wrap"><table class="stats-table"><tr><th>Datum</th><th>Grad</th><th>Welle</th><th>💀</th><th>💥</th><th>Top</th></tr>';
-  for (const run of history.slice(0, 15)) {
-    const d = new Date(run.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    const icon = run.top && TOWERS[run.top] ? tInfo(run.top).icon : '–';
-    html += `<tr><td>${run.end === 'over' ? '💀' : '🚪'} ${d}</td><td>${(DIFFS[run.diff] || { label: run.diff }).label}</td>`
-      + `<td>${run.wave}</td><td>${run.kills}</td><td>${fmtCount(run.dmg)}</td><td>${icon}</td></tr>`;
-  }
-  html += '</table></div><p class="stats-note">💀 Game Over · 🚪 aufgegeben · Top = Turmart mit dem meisten Schaden. '
-    + 'Die letzten ' + Math.min(history.length, 15) + ' von max. 50 Partien – eingeloggt wandert die Historie mit in die Datenbank.</p>';
-  return html;
-}
-function renderStats() {
-  const body = document.getElementById('stats-body');
-  const types = Object.keys(stats.types).filter((k) => TOWERS[k]);
-  if (!types.length) {
-    body.innerHTML = '<p class="stats-note">Noch keine Daten – erst mal ballern! Kills und Schaden werden pro Turmart gesammelt (auch von inzwischen verkauften Türmen).</p>' + historyHtml();
-    return;
-  }
-  types.sort((a, b) => (stats.types[b].dmg - stats.types[a].dmg) || (stats.types[b].kills - stats.types[a].kills));
+// Vergleichstabelle + Kill-Matrix für ein Statistik-Objekt – für die laufende
+// Partie (withActive: Spalte mit aktuell gebauten Türmen) und für jede in der
+// Historie gespeicherte Partie
+function statsTablesHtml(st, withActive) {
+  const types = Object.keys(st.types || {}).filter((k) => TOWERS[k]);
+  if (!types.length) return '';
+  types.sort((a, b) => (st.types[b].dmg - st.types[a].dmg) || (st.types[b].kills - st.types[a].kills));
   let totalKills = 0, totalDmg = 0;
-  let html = '<div class="stats-h">Turmarten im Vergleich</div>'
-    + '<p class="stats-note">Zählt alles seit Spielstart, auch verkaufte Türme. Einzelne Türme zeigen ihre Werte im Upgrade-Panel.</p>'
-    + '<div class="stats-wrap"><table class="stats-table"><tr><th>Turmart</th><th>aktiv</th><th>💀 Kills</th><th>💥 Schaden</th></tr>';
+  let html = '<div class="stats-wrap"><table class="stats-table"><tr><th>Turmart</th>'
+    + (withActive ? '<th>aktiv</th>' : '') + '<th>💀 Kills</th><th>💥 Schaden</th></tr>';
   for (const k of types) {
-    const st = stats.types[k];
-    totalKills += st.kills; totalDmg += st.dmg;
-    const active = towers.filter((t) => t.type === k).length;
-    html += `<tr><td>${tInfo(k).icon} ${tInfo(k).name}</td><td>${active}×</td><td>${st.kills}</td><td>${fmtCount(st.dmg)}</td></tr>`;
+    const s = st.types[k];
+    totalKills += s.kills; totalDmg += s.dmg;
+    const active = withActive ? `<td>${towers.filter((t) => t.type === k).length}×</td>` : '';
+    html += `<tr><td>${tInfo(k).icon} ${tInfo(k).name}</td>${active}<td>${s.kills}</td><td>${fmtCount(s.dmg)}</td></tr>`;
   }
-  html += `<tr class="total"><td>Gesamt</td><td>${towers.length}×</td><td>${totalKills}</td><td>${fmtCount(totalDmg)}</td></tr></table></div>`;
+  html += `<tr class="total"><td>Gesamt</td>${withActive ? `<td>${towers.length}×</td>` : ''}`
+    + `<td>${totalKills}</td><td>${fmtCount(totalDmg)}</td></tr></table></div>`;
 
   // Matrix: welche Turmart hat welche Monsterart erledigt?
-  const killers = types.filter((k) => stats.vs[k] && Object.keys(stats.vs[k]).length);
-  const monsters = Object.keys(EINFO).filter((m) => killers.some((k) => stats.vs[k][m]));
+  const vs = st.vs || {};
+  const killers = types.filter((k) => vs[k] && Object.keys(vs[k]).length);
+  const monsters = Object.keys(EINFO).filter((m) => killers.some((k) => vs[k][m]));
   if (killers.length && monsters.length) {
     html += '<div class="stats-h">Wer erlegt welche Monster?</div>'
       + '<div class="stats-wrap"><table class="stats-table"><tr><th></th>'
       + monsters.map((m) => `<th title="${EINFO[m][1]}">${EINFO[m][0]}</th>`).join('') + '</tr>';
     for (const k of killers) {
       html += `<tr><td>${tInfo(k).icon} ${tInfo(k).name}</td>`
-        + monsters.map((m) => `<td>${stats.vs[k][m] || '–'}</td>`).join('') + '</tr>';
+        + monsters.map((m) => `<td>${vs[k][m] || '–'}</td>`).join('') + '</tr>';
     }
     const legend = monsters.map((m) => `${EINFO[m][0]} ${EINFO[m][1]}`).join(' · ');
     html += `</table></div><p class="stats-note">${legend}</p>`;
   }
-  html += historyHtml();
-  body.innerHTML = html;
+  return html;
+}
+function historyHtml() {
+  if (!history.length) return '';
+  let html = '<div class="stats-h">📜 Spiel-Historie</div>'
+    + '<div class="stats-wrap"><table class="stats-table"><tr><th>Datum</th><th>Grad</th><th>Welle</th><th>💀</th><th>💥</th><th>Top</th></tr>';
+  history.slice(0, 15).forEach((run, i) => {
+    const d = new Date(run.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const icon = run.top && TOWERS[run.top] ? tInfo(run.top).icon : '–';
+    // Partien mit gespeicherter Voll-Statistik lassen sich aufklappen
+    const hasSt = run.st && Object.keys(run.st.types || {}).length;
+    html += `<tr${hasSt ? ` class="hist-row" data-i="${i}"` : ''}><td>${hasSt ? '<span class="hist-caret">▸</span> ' : ''}`
+      + `${run.end === 'over' ? '💀' : '🚪'} ${d}</td><td>${(DIFFS[run.diff] || { label: run.diff }).label}</td>`
+      + `<td>${run.wave}</td><td>${run.kills}</td><td>${fmtCount(run.dmg)}</td><td>${icon}</td></tr>`;
+    if (hasSt) html += `<tr class="hist-detail hidden" data-d="${i}"><td colspan="6">${statsTablesHtml(run.st, false)}</td></tr>`;
+  });
+  html += '</table></div><p class="stats-note">💀 Game Over · 🚪 aufgegeben · Top = Turmart mit dem meisten Schaden. '
+    + '▸-Zeile antippen: volle Statistik der Partie (wird für die letzten 12 Partien gespeichert). '
+    + 'Die letzten ' + Math.min(history.length, 15) + ' von max. 50 Partien – eingeloggt wandert die Historie mit in die Datenbank.</p>';
+  return html;
+}
+function renderStats() {
+  const body = document.getElementById('stats-body');
+  const tables = statsTablesHtml(stats, true);
+  body.innerHTML = (tables
+    ? '<div class="stats-h">Turmarten im Vergleich</div>'
+      + '<p class="stats-note">Zählt alles seit Spielstart, auch verkaufte Türme. Einzelne Türme zeigen ihre Werte im Upgrade-Panel.</p>' + tables
+    : '<p class="stats-note">Noch keine Daten – erst mal ballern! Kills und Schaden werden pro Turmart gesammelt (auch von inzwischen verkauften Türmen).</p>')
+    + historyHtml();
+  // Historien-Zeilen mit Voll-Statistik auf-/zuklappen
+  for (const row of body.querySelectorAll('.hist-row')) {
+    row.addEventListener('click', () => {
+      const d = body.querySelector(`.hist-detail[data-d="${row.dataset.i}"]`);
+      if (!d) return;
+      d.classList.toggle('hidden');
+      row.querySelector('.hist-caret').textContent = d.classList.contains('hidden') ? '▸' : '▾';
+    });
+  }
 }
 document.getElementById('btn-stats').addEventListener('click', () => {
   menuEl.classList.add('hidden');

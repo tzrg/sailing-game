@@ -995,6 +995,64 @@ check('Panel nennt die Boss-Stärke der Superwaffen', r.info.includes('gegen Bos
 check('Nuke trifft Boss 3-fach direkt (Panzerung bleibt)', r.nukeDelta === r.nuke * 3 && r.bossArmor === 500, JSON.stringify(r));
 check('Orbital-Laser trifft Boss 3-fach direkt', r.beamDelta === r.beam * 3 && r.b2Armor === 500, JSON.stringify(r));
 
+// ---- 12) Historie: Voll-Statistik je Partie, aufklappbar -------------------
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  // schnelle Partie mit einem MG-Abschuss, dann aufgeben -> Historien-Eintrag
+  TD.newGame();
+  TD.game.money = 2000;
+  TD.place('mg', 4, 3);
+  TD.game.wave = 3;
+  TD.game.nextT = 999;   // Auto-Start der nächsten Welle unterbinden
+  window.mkEnemy(5, 2, 10);
+  let guard = 0;
+  while (TD.enemies.length && guard++ < 200) TD.update(0.05);
+  TD.newGame();
+  const run = TD.history[0];
+  return { hasSt: !!(run && run.st), mgKills: run && run.st && run.st.types.mg && run.st.types.mg.kills,
+    vsBlob: run && run.st && run.st.vs.mg && run.st.vs.mg.blob, wave: run && run.wave };
+});
+check('Historien-Eintrag trägt die volle Partie-Statistik (Kills + Matrix)',
+  r.hasSt && r.mgKills === 1 && r.vsBlob === 1 && r.wave === 3, JSON.stringify(r));
+
+r = await page.evaluate(() => {
+  document.getElementById('btn-stats').click();
+  const body = document.getElementById('stats-body');
+  const row = body.querySelector('.hist-row');
+  const detail = row && body.querySelector(`.hist-detail[data-d="${row.dataset.i}"]`);
+  const hiddenBefore = !!detail && detail.classList.contains('hidden');
+  if (row) row.click();
+  const visible = !!detail && !detail.classList.contains('hidden');
+  const hasMg = !!detail && detail.innerHTML.includes('MG') && detail.innerHTML.includes('Gesamt');
+  if (row) row.click();
+  const closedAgain = !!detail && detail.classList.contains('hidden');
+  document.getElementById('btn-stats-close').click();
+  return { hasRow: !!row, hiddenBefore, visible, hasMg, closedAgain };
+});
+check('Historien-Zeile klappt die Partie-Statistik auf und wieder zu',
+  r.hasRow && r.hiddenBefore && r.visible && r.hasMg && r.closedAgain, JSON.stringify(r));
+
+// Nur die jüngsten 12 Partien behalten die Voll-Statistik (32-KB-Slot!)
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  for (let i = 0; i < 14; i++) {
+    TD.newGame();
+    TD.game.money = 2000;
+    TD.place('mg', 4, 3);
+    window.mkEnemy(5, 2, 5);
+    let guard = 0;
+    while (TD.enemies.length && guard++ < 100) TD.update(0.05);
+    TD.game.wave = 1;
+  }
+  TD.newGame();
+  const h = TD.history;
+  const size = JSON.stringify({ v: 1, runs: h }).length;
+  return { n: h.length, newest: !!h[0].st, at11: !!h[11].st, at12: !!(h[12] && h[12].st),
+    at13: !!(h[13] && h[13].st), size };
+});
+check('Voll-Statistik nur für die letzten 12 Partien, Slot bleibt klein',
+  r.newest && r.at11 && !r.at12 && !r.at13 && r.size < 32000, JSON.stringify(r));
+
 // Kids-Modus übersteht einen Reload (localStorage)
 await page.evaluate(() => window.__td.setKidsMode(true));
 await page.reload();
