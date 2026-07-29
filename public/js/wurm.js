@@ -78,12 +78,23 @@ function recolorRegion(x0, y0, x1, y1) {
     for (let x = x0; x < x1; x++) {
       const i = idx(x, y), p = i * 4;
       if (mask[i] !== 1) { d[p + 3] = 0; continue; }
-      // Gras, wenn innerhalb 6px Luft darüber liegt
-      let grass = false;
-      for (let k = 1; k <= 6; k++) { if (y - k < 0 || mask[idx(x, y - k)] !== 1) { grass = true; break; } }
+      // Abstand zur Luft nach oben bestimmt Gras/Erde und die Tiefenschattierung
+      let airDist = 25;
+      for (let k = 1; k <= 24; k++) { if (y - k < 0 || mask[idx(x, y - k)] !== 1) { airDist = k; break; } }
       const nz = ((x * 13 + y * 7) % 17) / 17 * 14;
-      if (grass) { d[p] = 96 + nz; d[p + 1] = 156 + nz; d[p + 2] = 66; }
-      else { d[p] = 120 + nz; d[p + 1] = 86 + nz * 0.6; d[p + 2] = 54; }
+      // dunkle Kontur, wo Land seitlich/unten an Luft grenzt (Comic-Outline)
+      const edge = (x > 0 && !mask[idx(x - 1, y)]) || (x < WORLD_W - 1 && !mask[idx(x + 1, y)]) ||
+        (y < WORLD_H - 1 && !mask[idx(x, y + 1)]);
+      if (edge && airDist > 2) { d[p] = 62; d[p + 1] = 46; d[p + 2] = 30; d[p + 3] = 255; continue; }
+      if (airDist <= 2) { d[p] = 128 + nz; d[p + 1] = 196 + nz; d[p + 2] = 88; }        // Gras-Highlight
+      else if (airDist <= 6) { d[p] = 88 + nz; d[p + 1] = 150 + nz; d[p + 2] = 60; }    // sattes Gras
+      else {
+        // Erde: wird mit der Tiefe dunkler, mit Steinchen-Sprenkeln
+        const depth = Math.min(1, (airDist - 6) / 60) * 34;
+        const stone = ((((x * 73856093) ^ (y * 19349663)) >>> 0) % 223) < 4;
+        if (stone) { const s = 118 + nz; d[p] = s; d[p + 1] = s - 8; d[p + 2] = s - 14; }
+        else { d[p] = 124 + nz - depth; d[p + 1] = 88 + nz * 0.6 - depth * 0.7; d[p + 2] = 56 - depth * 0.5; }
+      }
       d[p + 3] = 255;
     }
   }
@@ -516,7 +527,9 @@ function stepProjectile(pr, dt) {
       particles.push({ kind: 'star', x: pr.x + (Math.random() - 0.5) * 12, y: pr.y - 4,
         vx: (Math.random() - 0.5) * 30, vy: -70 - Math.random() * 40, rot: Math.random() * TAU, t: 0, ttl: 0.8 });
     }
-    if (Math.random() < dt * 3) {
+    pr.holyT = (pr.holyT || 0) + dt;
+    if (pr.holyT >= 0.45) {   // verlässlich alle 0,45 s eine Taube
+      pr.holyT = 0;
       particles.push({ kind: 'holy', x: pr.x, y: pr.y - 10, t: 0, ttl: 1.2 });
     }
   }
@@ -736,20 +749,52 @@ const ctx = canvas.getContext('2d');
 
 function worldToScreen(x, y) { return { x: (x - cam.x) * cam.scale + W / 2, y: (y - cam.y) * cam.scale + H / 2 }; }
 
+// ferne Hügelketten mit Parallaxe (rein dekorativ, in Bildschirm-Koordinaten)
+function drawHillLayer(col, par, base, amp, f1, f2) {
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(-2, H + 2);
+  for (let sx = 0; sx <= W + 10; sx += 10) {
+    const wx = cam.x * par + sx;
+    const y = base + Math.sin(wx * f1) * amp + Math.sin(wx * f2 + 2.1) * amp * 0.5
+      - (cam.y - WORLD_H / 2) * par * 0.4;
+    ctx.lineTo(sx, y);
+  }
+  ctx.lineTo(W + 2, H + 2); ctx.closePath(); ctx.fill();
+}
+
+let vigGrad = null;
+
 function draw(time) {
-  // Himmel
+  // Himmel: warmer Verlauf mit Sonne und fernen Hügelketten
   const sky = ctx.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, '#5b86b5'); sky.addColorStop(1, '#9fc0d8');
+  sky.addColorStop(0, '#4a7ab2'); sky.addColorStop(0.55, '#7fa8cd'); sky.addColorStop(1, '#c8ddec');
   ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+  const sunX = W * 0.82, sunY = H * 0.13;
+  const sg = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 95);
+  sg.addColorStop(0, 'rgba(255,246,214,0.95)');
+  sg.addColorStop(0.3, 'rgba(255,240,190,0.5)');
+  sg.addColorStop(1, 'rgba(255,240,190,0)');
+  ctx.fillStyle = sg; ctx.fillRect(sunX - 100, sunY - 100, 200, 200);
+  ctx.fillStyle = '#fff8dc';
+  ctx.beginPath(); ctx.arc(sunX, sunY, 21, 0, TAU); ctx.fill();
+  drawHillLayer('rgba(136,164,198,0.65)', 0.22, H * 0.5, 44, 0.004, 0.011);
+  drawHillLayer('rgba(100,136,172,0.75)', 0.42, H * 0.64, 58, 0.006, 0.015);
 
   ctx.save();
   let shx = 0, shy = 0;
   if (cam.shakeT > 0) { shx = (Math.random() - 0.5) * cam.shakeT * 26; shy = (Math.random() - 0.5) * cam.shakeT * 26; }
   ctx.translate(W / 2, H / 2); ctx.scale(cam.scale, cam.scale); ctx.translate(-cam.x + shx, -cam.y + shy);
 
-  // Wolken
+  // Wolken (mit sanft schattierter Unterseite)
   for (const c of clouds) {
     ctx.globalAlpha = 0.85;
+    ctx.fillStyle = '#cfdeeb';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y + 2.5 * c.s, 16 * c.s, 0, TAU);
+    ctx.arc(c.x + 14 * c.s, c.y + 5.5 * c.s, 12 * c.s, 0, TAU);
+    ctx.arc(c.x - 14 * c.s, c.y + 6.5 * c.s, 11 * c.s, 0, TAU);
+    ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(c.x, c.y, 16 * c.s, 0, TAU);
@@ -759,13 +804,23 @@ function draw(time) {
     ctx.globalAlpha = 1;
   }
 
-  // Wasser
-  ctx.fillStyle = 'rgba(40,110,170,0.75)';
+  // Wasser: mit der Tiefe dunkler, zwei versetzte Wellenlinien
+  const wg = ctx.createLinearGradient(0, WATERLINE, 0, WORLD_H);
+  wg.addColorStop(0, 'rgba(72,152,206,0.8)');
+  wg.addColorStop(1, 'rgba(16,58,102,0.95)');
+  ctx.fillStyle = wg;
   ctx.fillRect(-200, WATERLINE, WORLD_W + 400, WORLD_H);
-  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 2;
   ctx.beginPath();
   for (let x = -200; x < WORLD_W + 400; x += 20) {
     const yy = WATERLINE + Math.sin((x + waveT * 60) * 0.05) * 3;
+    if (x === -200) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(210,235,255,0.22)'; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  for (let x = -200; x < WORLD_W + 400; x += 20) {
+    const yy = WATERLINE + 7 + Math.sin((x - waveT * 45) * 0.045 + 1.7) * 3.5;
     if (x === -200) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
   }
   ctx.stroke();
@@ -789,6 +844,15 @@ function draw(time) {
   if (game.state === 'aim' && game.active && curWeapon().aimed && !game.fireDone) drawAim(game.active);
 
   ctx.restore();
+
+  // sanfte Vignette erdet das Bild
+  if (!vigGrad) {
+    vigGrad = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.55, W / 2, H / 2, Math.max(W, H) * 0.78);
+    vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    vigGrad.addColorStop(1, 'rgba(10,22,36,0.26)');
+  }
+  ctx.fillStyle = vigGrad;
+  ctx.fillRect(0, 0, W, H);
 
   drawHUD(time);
 }
@@ -814,6 +878,12 @@ function drawWorm(wm, team, time) {
   const segY = (i) => wm.y - segR + Math.sin(wm.crawl - i * 0.95) * amp;
 
   ctx.save();
+  // weicher Bodenschatten verankert die Raupe optisch
+  if (wm.grounded) {
+    ctx.globalAlpha = 0.22; ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(wm.x - f * 6, wm.y + 1.6, 12, 2.6, 0, 0, TAU); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   // Kaugummi-Pfütze unter festgeklebten Raupen
   if (wm.gluePhase) {
     ctx.fillStyle = 'rgba(255,120,200,0.5)';
@@ -1024,13 +1094,20 @@ function drawGrave(g) {
 
 function drawParticle(p) {
   if (p.kind === 'blast') {
+    // additiv gezeichnet: glüht richtig, mit weißheißem Kern
     const f = p.t / p.ttl;
-    ctx.globalAlpha = 1 - f; ctx.fillStyle = p.pink ? '#ff9ad5' : '#ffb24d';
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = (1 - f) * 0.9;
+    ctx.fillStyle = p.pink ? '#ff9ad5' : '#ffb24d';
     ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.5 + f * 0.8), 0, TAU); ctx.fill();
-    ctx.globalAlpha = 1;
+    ctx.fillStyle = p.pink ? '#ffe0f2' : '#fff0c8';
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.28 + f * 0.4), 0, TAU); ctx.fill();
+    ctx.restore();
   } else if (p.kind === 'spark') {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = '#ffd27f';
-    ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, TAU); ctx.fill();
+    ctx.restore();
   } else if (p.kind === 'gum') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = '#ff8ad0';
     ctx.beginPath(); ctx.arc(p.x, p.y, 2.4, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
@@ -1081,8 +1158,15 @@ function drawParticle(p) {
     ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.restore(); ctx.globalAlpha = 1;
   } else if (p.kind === 'tracer') {
-    ctx.globalAlpha = 1 - p.t / p.ttl; ctx.strokeStyle = '#fff4c0'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke(); ctx.globalAlpha = 1;
+    // Leuchtspur: breiter Glow + heller Kern
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = (1 - p.t / p.ttl) * 0.4;
+    ctx.strokeStyle = '#ffca7a'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke();
+    ctx.globalAlpha = 1 - p.t / p.ttl;
+    ctx.strokeStyle = '#fff4c0'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke();
+    ctx.restore();
   } else if (p.kind === 'ring') {
     const f = p.t / p.ttl;
     ctx.globalAlpha = (1 - f) * 0.9;
@@ -1113,13 +1197,29 @@ function drawParticle(p) {
 function drawAim(wm) {
   const a = game.aim, dir = wm.facing;
   const dx = dir * Math.cos(a), dy = -Math.sin(a);
-  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(wm.x, wm.y - 8);
-  for (let i = 1; i <= 6; i++) { ctx.lineTo(wm.x + dx * i * 12, wm.y - 8 + dy * i * 12); }
-  ctx.stroke(); ctx.setLineDash([]);
-  // Fadenkreuz
-  ctx.fillStyle = curWeapon() ? teams[game.turnTeam].color : '#fff';
-  ctx.beginPath(); ctx.arc(wm.x + dx * 80, wm.y - 8 + dy * 80, 3, 0, TAU); ctx.fill();
+  // auslaufende Punktreihe statt starrer Strichellinie
+  ctx.fillStyle = '#fff';
+  for (let i = 1; i <= 6; i++) {
+    ctx.globalAlpha = 0.75 - i * 0.1;
+    ctx.beginPath();
+    ctx.arc(wm.x + dx * i * 12, wm.y - 8 + dy * i * 12, 2 - i * 0.18, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // pulsierendes Fadenkreuz in Teamfarbe
+  const col = curWeapon() ? teams[game.turnTeam].color : '#fff';
+  const cx2 = wm.x + dx * 80, cy2 = wm.y - 8 + dy * 80;
+  const pulse = 1 + Math.sin(waveT * 6) * 0.18;
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(cx2, cy2, 6.5 * pulse, 0, TAU); ctx.stroke();
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(cx2, cy2, 2.6, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx2 - 10 * pulse, cy2); ctx.lineTo(cx2 - 5 * pulse, cy2);
+  ctx.moveTo(cx2 + 5 * pulse, cy2); ctx.lineTo(cx2 + 10 * pulse, cy2);
+  ctx.moveTo(cx2, cy2 - 10 * pulse); ctx.lineTo(cx2, cy2 - 5 * pulse);
+  ctx.moveTo(cx2, cy2 + 5 * pulse); ctx.lineTo(cx2, cy2 + 10 * pulse);
+  ctx.stroke();
 }
 
 // Pfeile am Rand zu allen anderen Raupen (außerhalb des Bildes), mit Entfernung.
@@ -1443,6 +1543,7 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   cam.base = clamp(H / (WORLD_H * 0.62), 0.5, 1.1);
   cam.scale = cam.base * cam.zoom;
+  vigGrad = null;   // Vignette an die neue Größe anpassen
 }
 window.addEventListener('resize', resize);
 document.getElementById('btn-rotate').addEventListener('click', () => {
