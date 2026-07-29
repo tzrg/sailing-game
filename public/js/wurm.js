@@ -191,7 +191,7 @@ const WEAPONS = [
     fire: (w) => launch(w, 'cluster', 640, { r: 24, dmg: 26, fuse: 3, bounce: 0.5, wind: 1, cluster: 6 }) },
   { key: 'allmacht', name: 'Allmachtsgranate', icon: '✨', ammo: 1, aimed: true, retreat: true,
     fire: (w) => launch(w, 'grenade', 600, { r: 100, dmg: 115, fuse: 3.5, bounce: 0.45, wind: 0.5, holy: 1 }) },
-  { key: 'brenner', name: 'Schweißbrenner', icon: '🔥', ammo: 2, aimed: false, endsTurn: true,
+  { key: 'brenner', name: 'Schweißbrenner', icon: '🔥', ammo: Infinity, aimed: true, endsTurn: true,
     fire: (w) => blowtorch(w) },
   { key: 'bat', name: 'Baseballschläger', icon: '🏏', ammo: Infinity, aimed: true, melee: true,
     fire: (w) => bat(w) },
@@ -263,16 +263,22 @@ function uzi(w) {
 
 function blowtorch(w) {
   const dir = w.facing;
+  // Bohrwinkel aus der Zielhilfe: auch schräg nach oben oder unten graben
+  const ang = clamp(game.aim, -0.9, 0.9);
+  const dx = dir * Math.cos(ang), dy = -Math.sin(ang);
   const sx = w.x, sy = w.y;   // fester Startpunkt: sonst wandert der Bohrpunkt mit und beschleunigt
   game.actionBusy = true;     // hält die Runde, bis der Tunnel gegraben ist
   let step = 0;
   const iv = setInterval(() => {
     if (step >= 22) { clearInterval(iv); game.actionBusy = false; return; }
-    const px = sx + dir * (16 + step * 6), py = sy - 6;   // Bohrpunkt gleichmäßig vom Start weg
+    const px = sx + dx * (16 + step * 6), py = sy - 6 + dy * (16 + step * 6);   // Bohrpunkt gleichmäßig vom Start weg
     carveCircle(px | 0, py | 0, 12);
-    for (const wm of allWorms()) if (wm.alive && wm !== w && Math.hypot(px - wm.x, py - wm.y) < 16) damage(wm, 6, dir * 60, -40);
-    w.x = clamp(sx + dir * (step * 6), 4, WORLD_W - 4);   // Wurm folgt konstant, keine Beschleunigung
+    for (const wm of allWorms()) if (wm.alive && wm !== w && Math.hypot(px - wm.x, py - wm.y) < 16) damage(wm, 6, dx * 60, -40);
+    // Wurm folgt konstant durch den Tunnel, keine Beschleunigung
+    w.x = clamp(sx + dx * (step * 6), 4, WORLD_W - 4);
+    w.y = sy + dy * (step * 6);
     w.vx = 0; w.vy = 0;
+    particles.push({ kind: 'spark', x: px, y: py, vx: (Math.random() - 0.5) * 130, vy: -Math.random() * 110, t: 0, ttl: 0.3 });
     step++;
   }, 45);
 }

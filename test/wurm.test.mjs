@@ -85,6 +85,33 @@ try {
   check('Im eigenen Zug festgeklebt (Phase 2), danach wieder frei',
     r.found && r.duringTurn === 2 && r.afterTurn === 0, JSON.stringify(r));
 
+  // ---- Schweißbrenner: unendlich + bohrt in Zielrichtung
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const idx = WU.WEAPONS.findIndex((w) => w.key === 'brenner');
+    const def = WU.WEAPONS[idx];
+    const w = WU.focus();
+    const y0 = w.y, x0 = w.x;
+    WU.weapon = idx;
+    WU.game.aim = -0.8;        // steil nach unten bohren
+    WU.game.power = 0.5;
+    WU.fireWeapon();
+    return { infinite: def.ammo === Infinity, aimed: def.aimed === true,
+      ammoShown: WU.weaponAmmo(idx) === Infinity, y0, x0, busy: WU.game.actionBusy };
+  });
+  check('Schweißbrenner: unendlich Munition, zielbar', r.infinite && r.aimed && r.ammoShown && r.busy, JSON.stringify(r));
+
+  const before = r;
+  await page.waitForTimeout(1500);   // 22 Bohrschritte à 45 ms + Puffer
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    const w = WU.focus();
+    return { y: w.y, x: w.x, busy: WU.game.actionBusy, alive: w.alive };
+  });
+  check('Bohrt schräg nach unten: Raupe folgt dem Tunnel', r.alive && !r.busy && r.y > before.y0 + 30 && Math.abs(r.x - before.x0) > 20,
+    `dy=${Math.round(r.y - before.y0)} dx=${Math.round(r.x - before.x0)}`);
+
   // ---- 6 Teams
   r = await page.evaluate(() => {
     const WU = window.__wurm;
