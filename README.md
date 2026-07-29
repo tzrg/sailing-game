@@ -56,13 +56,17 @@ Docker-Container deployt.
   immer schneller; Bonus-Kirsche alle 5 Äpfel; Modi „Wände tödlich" oder
   „Durchgang" (Wrap). Highscore für die Bestenliste.
 - **`td.html` – 🏰 Tower Defense**: endlose Wellen auf einem
-  Schlangenlinien-Parcours, drei Schwierigkeitsgrade, dreizehn Turmtypen
+  Schlangenlinien-Parcours, drei Schwierigkeitsgrade, achtzehn Turmtypen
   (MG, Kanone, Granatkanone, Laser, Flammenwerfer mit Feuerkegel, Raketen,
   Vereiser, Blitzturm, Bestrahlungsturm mit permanenter panzerignorierender
-  Verstrahlung, Anti-Boss-Railgun, Hypnoseturm, passiver Auto-Lader,
+  Verstrahlung, Anti-Boss-Railgun, Hypnoseturm, Fernsehturm (lenkt Zuschauer
+  ab und hält sie fest, danach kurz immun), passiver Auto-Lader,
   Unwahrscheinlichkeitskanone, Giftschleuder, Windmaschine, Goldmine,
   Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.
+  🧸 **Kids-Modus** (☰-Menü, gespeichert): alle Türme werden zu Spielzeug –
+  Kartoffelkanone, Pupsmaschine, Riesenflitsche, Juckpulver-Werfer,
+  Oma-Parfüm-Zerstäuber & Co. – reine Optik, identische Spielwerte.
   Abschüsse (Todesstoß-Regel) und Schaden werden pro Turm und Turmart
   gezählt; die 📊-Statistik im Menü zeigt den Turmarten-Vergleich, wer
   welche Monsterart erlegt hat und die Spiel-Historie: jedes Ergebnis
@@ -258,11 +262,12 @@ railway.json
   Spielstand- und Historien-Slots, Auth-/Validierungs-Wächter.
 - **`test/landing.test.mjs`** – Landing-Page im Headless-Browser:
   Datenbank-Warnbanner im In-Memory-Modus, aufklappbare Top-10-Liste.
-- **`test/td.test.mjs`** – Tower Defense komplett (85+ Checks) über den
+- **`test/td.test.mjs`** – Tower Defense komplett (95+ Checks) über den
   Test-Hook `window.__td`: Spezialisierungen, Flammen-/Strahlenkegel,
   Superwaffen, Windmaschinen-Regel, Querformat-Eingaben, Stufe-4-Ausbau,
-  Resistenzen, Railgun/Hypnose, Abschuss-/Schadenszähler, Statistik,
-  Spiel-Historie und der Spielstand-Roundtrip über einen Seiten-Reload.
+  Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
+  Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
+  Spielstand-Roundtrip über einen Seiten-Reload.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
 zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird

@@ -1,6 +1,7 @@
 // Tower Defense: die komplette Spiellogik-Suite (Spezialisierungen, Kegel,
 // Superwaffen, Bestrahlung, Wind-Regel, Querformat, Stufe 4, Resistenzen,
-// Railgun, Hypnose, Zähler, Statistik, Historie, Spielstand-Roundtrip).
+// Railgun, Hypnose, Fernsehturm, Kids-Modus, Zähler, Statistik, Historie,
+// Spielstand-Roundtrip).
 // Läuft über den Test-Hook window.__td gegen einen frischen Server.
 
 import { startServer, launchBrowser, checker } from './helpers.mjs';
@@ -826,6 +827,128 @@ r = await page.evaluate(() => {
   return { raw: localStorage.getItem('td_save') };
 });
 check('Neues Spiel löscht den Spielstand', r.raw === null);
+
+// ---- 9) Fernsehturm: fesselt Zuschauer, danach kurz immun ------------------
+// (der Reload in Abschnitt 8 hat die Seiten-Helfer verworfen -> neu anlegen)
+await page.evaluate(() => {
+  window.mkEnemy = (tx, ty, hp, armor = 0) => {
+    const pathI = window.__td.PATH.findIndex((p) => p[0] === tx && p[1] === ty);
+    if (pathI < 0) throw new Error('kein Pfadfeld: ' + tx + ',' + ty);
+    const e = { type: 'blob', hp, maxHp: hp, speed: 0, pathI, frac: 0, x: tx + 0.5, y: ty + 0.5,
+      slowT: 0, slowF: 0, burnT: 0, burnDps: 0, bounty: 0, boss: false, regen: 0,
+      armorHp: armor, maxArmor: armor, vulnFire: 0, vulnShock: 0, windCd: 0,
+      r: 0.28, color: '#fff', wob: 0 };
+    window.__td.enemies.push(e);
+    return e;
+  };
+  window.tapTile = (x, y) => {
+    const T = Math.min(innerWidth / 12, (innerHeight - 210) / 17);
+    const OX = (innerWidth - 12 * T) / 2, OY = 92;
+    document.getElementById('game').dispatchEvent(new PointerEvent('pointerdown', {
+      clientX: OX + (x + 0.5) * T, clientY: OY + (y + 0.5) * T, bubbles: true }));
+  };
+});
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 5000;
+  const tv = TD.place('tv', 4, 3);
+  const s = TD.effStats(tv);
+  // drei Gegner auf der oberen Pfadreihe, alle in Reichweite – Stufe 1 hat
+  // aber nur 2 Zuschauerplätze
+  const a = window.mkEnemy(5, 2, 1e6);
+  const b = window.mkEnemy(4, 2, 1e6);
+  const c = window.mkEnemy(3, 2, 1e6);
+  TD.update(0.05);
+  const dazed = [a.dazeT > 0, b.dazeT > 0, c.dazeT > 0];
+  // Festgehalten: trotz Tempo keine Bewegung
+  a.speed = 1.5;
+  const p0 = a.pathI + a.frac;
+  for (let i = 0; i < 10; i++) TD.update(0.05);
+  const pFrozen = a.pathI + a.frac;
+  // Programm zu Ende schauen -> kurz immun, läuft weiter
+  let guard = 0;
+  while (a.dazeT > 0 && guard++ < 400) TD.update(0.05);
+  const cdAfter = a.dazeCd;
+  const p1 = a.pathI + a.frac;
+  for (let i = 0; i < 10; i++) TD.update(0.05);
+  const moved = a.pathI + a.frac - p1;
+  return { dur: s.dur, aud: s.aud, dazed, p0, pFrozen, cdAfter, moved };
+});
+check('Fernsehturm fesselt die vordersten 2 Zuschauer (Stufe 1: aud=2)',
+  r.aud === 2 && r.dazed[0] && r.dazed[1] && !r.dazed[2], JSON.stringify(r.dazed));
+check('Zuschauer bleibt trotz Tempo stehen', r.pFrozen === r.p0, 'p0=' + r.p0 + ' p=' + r.pFrozen);
+check('Nach dem Programm: kurz immun und läuft weiter', r.cdAfter > 0 && r.moved > 0.5, JSON.stringify(r));
+
+// Boss schaut nur kurz hin, Spezialisierungen wirken
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 5000;
+  const tv = TD.place('tv', 4, 3);
+  const s = TD.effStats(tv);
+  const boss = window.mkEnemy(4, 2, 1e6);
+  boss.boss = true;
+  TD.update(0.05);   // Gegner tickt vor dem Turm, daher noch unverbraucht
+  const bossDaze = boss.dazeT;
+  tv.spec = 'binge';
+  const dBinge = TD.effStats(tv).dur - s.dur;
+  tv.spec = 'big';
+  const sBig = TD.effStats(tv);
+  window.tapTile(4, 3);
+  const info = document.getElementById('upg-info').textContent;
+  return { dur: s.dur, bossDaze, dBinge, dAud: sBig.aud - s.aud, dRange: sBig.range - s.range, info };
+});
+check('Boss schaut nur 30% der Zeit zu', Math.abs(r.bossDaze - r.dur * 0.3) < 1e-9, JSON.stringify(r));
+check('TV-Spezialisierungen: 🍿 +1,2s Programm, 🖥️ +2 Plätze +0,5 Reichweite',
+  Math.abs(r.dBinge - 1.2) < 1e-9 && r.dAud === 2 && Math.abs(r.dRange - 0.5) < 1e-9, JSON.stringify(r));
+check('Upgrade-Panel nennt Zuschauer und Programmdauer', r.info.includes('Zuschauer') && r.info.includes('Programm'), r.info);
+
+// ---- 10) Kids-Modus: reine Anzeige-Ebene per Toggle ------------------------
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 500;
+  const cannon = TD.place('cannon', 7, 6);
+  const dmgNormal = TD.effStats(cannon).dmg;
+  window.tapTile(5, 3);   // freies Feld -> Bau-Leiste
+  const names = () => [...document.querySelectorAll('#buildbar .tn')].map((el) => el.textContent);
+  const normal = names();
+  TD.setKidsMode(true);
+  const kids = names();
+  const stored = localStorage.getItem('td_kids');
+  const helpHtml = document.getElementById('help-towers').innerHTML;
+  const menuTxt = document.getElementById('btn-kids').textContent;
+  const nukeIcon = document.getElementById('btn-nuke').textContent;
+  const dmgKids = TD.effStats(cannon).dmg;
+  TD.setKidsMode(false);
+  const back = names();
+  return { normal, kids, back, stored, menuTxt, nukeIcon, dmgSame: dmgKids === dmgNormal,
+    helpKids: helpHtml.includes('Pupsmaschine') && helpHtml.includes('Kartoffelkanone'),
+    backStored: localStorage.getItem('td_kids') };
+});
+check('Normalmodus zeigt Kanone, Flammenwerfer und Fernsehturm',
+  r.normal.includes('Kanone') && r.normal.includes('Flammenwerfer') && r.normal.includes('Fernsehturm'), JSON.stringify(r.normal));
+check('Kids-Modus: Kartoffelkanone, Pupsmaschine, Riesenflitsche, Kasperletheater',
+  r.kids.includes('Kartoffelkanone') && r.kids.includes('Pupsmaschine')
+  && r.kids.includes('Riesenflitsche') && r.kids.includes('Kasperletheater'), JSON.stringify(r.kids));
+check('Toggle bleibt gespeichert, Hilfe + Superwaffen wechseln mit',
+  r.stored === '1' && r.helpKids && r.nukeIcon === '🪅' && r.menuTxt.includes('an'), JSON.stringify(r));
+check('Spielwerte bleiben im Kids-Modus identisch', r.dmgSame);
+check('Zurückschalten stellt Originalnamen wieder her',
+  r.back.includes('Kanone') && r.back.includes('Flammenwerfer') && r.backStored === '0', JSON.stringify(r.back));
+
+// Kids-Modus übersteht einen Reload (localStorage)
+await page.evaluate(() => window.__td.setKidsMode(true));
+await page.reload();
+await page.waitForFunction(() => window.__td, null, { timeout: 5000 });
+r = await page.evaluate(() => {
+  const on = window.__td.kidsMode;
+  const helpKids = document.getElementById('help-towers').innerHTML.includes('Kasperletheater');
+  window.__td.setKidsMode(false);   // aufräumen für spätere Läufe
+  return { on, helpKids };
+});
+check('Kids-Modus bleibt nach Reload aktiv', r.on && r.helpKids, JSON.stringify(r));
 
 await browser.close();
 srv.stop();

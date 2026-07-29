@@ -1,6 +1,7 @@
 // Tower Defense – Monster laufen den Parcours entlang, Türme halten sie auf.
-// Siebzehn Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
+// Achtzehn Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
 // endlose Wellen. Die Kommandozentrale schaltet Nuke + Orbital-Laser frei.
+// Kids-Modus: alle Türme werden zu Spielzeug (nur Optik, gleiche Werte).
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const TAU = Math.PI * 2;
@@ -132,6 +133,12 @@ const TOWERS = {
       { cost: 170, dur: 5, factor: 0.07, range: 3.1 },
       { cost: 300, dur: 6, factor: 0.09, range: 3.4 },
       { cost: 1600, dur: 8, factor: 0.13, range: 3.8 }] },
+  tv: { name: 'Fernsehturm', icon: '📺', color: '#8ab8e0', desc: 'lenkt Gegner mit dem laufenden Programm ab: Zuschauer bleiben stehen, sind danach kurz immun (Bosse schauen nur kurz hin)',
+    levels: [
+      { cost: 120, dur: 1.6, aud: 2, range: 2.6 },
+      { cost: 130, dur: 2.0, aud: 3, range: 2.9 },
+      { cost: 230, dur: 2.5, aud: 4, range: 3.2 },
+      { cost: 1500, dur: 3.4, aud: 6, range: 3.6 }] },
   command: { name: 'Kommandozentrale', icon: '🛰️', color: '#c0c8e8', desc: 'schaltet ☢️ Nuke + 🛰️ Orbital-Laser frei (je 1× pro Welle); Upgrades machen beide stärker',
     levels: [
       { cost: 400, nuke: 340, beam: 600, brad: 1.25 },
@@ -177,6 +184,10 @@ const SPECS = {
   railgun: [
     { key: 'focus', icon: '🎯', name: 'Fokus', cost: 200, desc: 'zielsicher: trifft kleine Gegner zu 90%', mod: (s) => { s.acc = 0.9; } },
     { key: 'hyper', icon: '⚡', name: 'Hypercharge', cost: 200, desc: 'streut doppelt so stark, aber 6× Schaden an Bossen', mod: (s) => { s.acc *= 0.5; s.bossMul = 6; } },
+  ],
+  tv: [
+    { key: 'binge', icon: '🍿', name: 'Serienmarathon', cost: 130, desc: '+1,2 s Programm', mod: (s) => { s.dur += 1.2; } },
+    { key: 'big', icon: '🖥️', name: 'Großbildleinwand', cost: 130, desc: '+2 Zuschauerplätze, +0,5 Reichweite', mod: (s) => { s.aud += 2; s.range += 0.5; } },
   ],
 };
 // Effektive Werte inkl. gewählter Spezialisierung
@@ -313,7 +324,7 @@ function spawnEnemy(type) {
     x: sx + 0.5, y: sy + 0.5, slowT: 0, slowF: 0, burnT: 0, burnDps: 0,
     bounty: bounty(game.wave, t.mult), boss: !!t.boss, regen: t.regen || 0,
     armorHp: t.armor ? hp * t.armor : 0, maxArmor: t.armor ? hp * t.armor : 0,
-    vulnFire: 0, vulnShock: 0, windCd: 0, radDps: 0, resist: t.resist || null,
+    vulnFire: 0, vulnShock: 0, windCd: 0, dazeT: 0, dazeCd: 0, radDps: 0, resist: t.resist || null,
     r: t.r, color: t.color, wob: Math.random() * TAU,
   });
 }
@@ -326,6 +337,7 @@ function stepEnemy(e, dt) {
   if (e.vulnFire > 0) e.vulnFire -= dt;
   if (e.vulnShock > 0) e.vulnShock -= dt;
   if (e.windCd > 0) e.windCd -= dt;
+  if (e.dazeCd > 0) e.dazeCd -= dt;
   if (e.burnT > 0) { e.burnT -= dt; damage(e, e.burnDps * dt, 'fire', false, e.burnSrc); }
   if (e.radDps > 0) {   // Verstrahlung: ignoriert Panzerung, klingt nie ab
     const dealt = Math.min(Math.max(e.hp, 0), e.radDps * dt);
@@ -351,6 +363,13 @@ function stepEnemy(e, dt) {
         spawnPart({ kind: 'spark', x: tgt.x, y: tgt.y - 0.2, vx: (Math.random() - 0.5) * 2, vy: -1.4, ttl: 0.3, color: '#f0a8ff' });
       }
     }
+    return;
+  }
+  if (e.dazeT > 0) {
+    // Abgelenkt vom Fernsehprogramm: bleibt stehen und glotzt. Danach kurz
+    // immun, damit ihn niemand ewig festhalten kann.
+    e.dazeT -= dt;
+    if (e.dazeT <= 0) e.dazeCd = 2.5;
     return;
   }
   const spd = e.speed * (1 - e.slowF);
@@ -656,6 +675,31 @@ function stepTower(t, dt) {
       const mx = cx + Math.cos(oa) * s.range * 0.9, my = cy + Math.sin(oa) * s.range * 0.9;
       shots.push({ kind: 'rail', x1: cx, y1: cy, x2: mx, y2: my, t: 0, ttl: 0.12, miss: true });
       spawnPart({ kind: 'smoke', x: mx, y: my, vx: 0, vy: -0.3, ttl: 0.5, size: 0.12, dust: true });
+    }
+    return;
+  }
+
+  if (t.type === 'tv') {
+    t.pulse = (t.pulse || 0) + dt;
+    // Fernsehturm: das laufende Programm fesselt die vordersten Zuschauer im
+    // Umkreis (bis zur Platzzahl). Wer schon zuschaut, belegt einen Platz;
+    // wer gerade ausgeschaut hat (dazeCd), ist noch immun. Bosse finden das
+    // Programm nur kurz spannend.
+    let watching = 0;
+    const cand = [];
+    for (const e of enemies) {
+      if (e.dead || e.escaped) continue;
+      if (Math.hypot(e.x - cx, e.y - cy) > s.range) continue;
+      if (e.dazeT > 0) { watching++; continue; }
+      if (e.dazeCd > 0 || e.hypnoT > 0) continue;
+      cand.push(e);
+    }
+    cand.sort((a, b) => progress(b) - progress(a));
+    for (const e of cand) {
+      if (watching >= s.aud) break;
+      e.dazeT = e.boss ? s.dur * 0.3 : s.dur;
+      watching++;
+      spawnPart({ kind: 'pop', x: e.x, y: e.y, r: e.r * 2.0, ttl: 0.3, color: '#8ad0ff' });
     }
     return;
   }
@@ -1045,7 +1089,7 @@ function fireNuke() {
     const a = Math.random() * TAU, sp = 3 + Math.random() * 4;
     spawnPart({ kind: 'debris', x: nx, y: ny, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 3, ttl: 0.6 + Math.random() * 0.4, rot: Math.random() * TAU });
   }
-  game.banner = '☢️ NUKE!'; game.bannerT = 1.2;
+  game.banner = kidsMode ? '🪅 RIESEN-PIÑATA!' : '☢️ NUKE!'; game.bannerT = 1.2;
   updateSupers();
 }
 
@@ -1062,6 +1106,36 @@ function fireSlaser(x, y) {
 // ---- Abschuss-Zähler-Anzeige (an/aus, bleibt gespeichert) ------------------
 let showKills = false;
 try { showKills = localStorage.getItem('td_kills') === '1'; } catch { /* egal */ }
+
+// ---- Kids-Modus: alles wird zum Spielzeug ----------------------------------
+// Reine Anzeige-Ebene (Namen, Icons, Beschreibungen) – Werte und Spiellogik
+// bleiben exakt gleich. Per ☰-Menü umschaltbar, bleibt gespeichert.
+const KIDS = {
+  mg: { name: 'Nerf-Blaster', icon: '🎯', desc: 'feuert superschnell Schaumstoffpfeile – plopp plopp plopp' },
+  cannon: { name: 'Kartoffelkanone', icon: '🥔', desc: 'wumst dicke Kartoffeln – die machen ordentlich Beulen' },
+  grenade: { name: 'Wasserbomben-Katapult', icon: '🎈', desc: 'katapultiert platschende Wasserbomben in die Gruppe' },
+  laser: { name: 'Kitzel-Laserpointer', icon: '🔦', desc: 'kitzelt alle auf einer Linie mit dem Lichtpunkt' },
+  flame: { name: 'Pupsmaschine', icon: '💨', desc: 'pupst grüne Wolken – und der Geruch bleibt hängen' },
+  rocket: { name: 'Silvesterrakete', icon: '🎆', desc: 'zischt mit Ziel-Automatik hinterher und macht BUMM in bunt' },
+  ice: { name: 'Klebeschleim-Verteiler', icon: '🐌', desc: 'verteilt zähen Glibberschleim – da kommt keiner schnell durch' },
+  tesla: { name: 'Juckpulver-Werfer', icon: '🪶', desc: 'wirft Juckpulver, das von Monster zu Monster staubt' },
+  ray: { name: 'Oma-Parfüm-Zerstäuber', icon: '🧴', desc: 'sprüht Omas Parfüm – der Duft geht NIE wieder raus' },
+  gift: { name: 'Spinat-Katapult', icon: '🥦', desc: 'schleudert Spinatpfützen auf den Weg – bäh, da will keiner durch' },
+  wind: { name: 'Riesen-Föhn', icon: '🌬️', desc: 'föhnt den Vordersten ein Stück zurück Richtung Start' },
+  gold: { name: 'Taschengeld-Sparschwein', icon: '🐷', desc: 'sammelt fleißig Taschengeld (tut niemandem weh)' },
+  loader: { name: 'Zuckerschub-Bude', icon: '🍭', desc: 'passiv: Nerf-Blaster, Kartoffelkanone & Riesenflitsche daneben ballern nach der Zuckerration viel schneller' },
+  improb: { name: 'Zauberhut', icon: '🎩', desc: 'Simsalabim: verwandelt ein Monster in ein zufälliges anderes' },
+  railgun: { name: 'Riesenflitsche', icon: '🪃', desc: 'die Mega-Steinschleuder: trifft die ganz Großen mit Karacho, kleine flutschen oft durch' },
+  hypno: { name: 'Seifenblasen-Turm', icon: '🫧', desc: 'schillernde Seifenblasen: ein Monster bleibt stehen und schubst die anderen' },
+  tv: { name: 'Kasperletheater', icon: '🎭', desc: 'Tri tra trallala: wer zuschaut, vergisst das Weiterlaufen' },
+  command: { name: 'Baumhaus-Zentrale', icon: '🏡', desc: 'schaltet 🪅 Riesen-Piñata + 🚿 Mega-Wasserstrahl frei (je 1× pro Welle)' },
+};
+let kidsMode = false;
+try { kidsMode = localStorage.getItem('td_kids') === '1'; } catch { /* egal */ }
+// Anzeige-Infos je Turmart: im Kids-Modus Name/Icon/Beschreibung getauscht
+const KIDS_FULL = {};
+for (const [k, v] of Object.entries(KIDS)) KIDS_FULL[k] = { ...TOWERS[k], ...v };
+function tInfo(type) { return kidsMode && KIDS_FULL[type] ? KIDS_FULL[type] : TOWERS[type]; }
 
 // ---- Spielstand ------------------------------------------------------------
 // Zwischen den Wellen wird automatisch gesichert: immer lokal (localStorage),
@@ -1323,7 +1397,7 @@ function draw(time) {
   // Abschuss-Zähler (im Menü umschaltbar)
   if (showKills) {
     for (const t of towers) {
-      if (['gold', 'ice', 'wind', 'loader', 'improb'].includes(t.type)) continue;
+      if (['gold', 'ice', 'wind', 'loader', 'improb', 'tv'].includes(t.type)) continue;
       const kx = (t.x + 0.5) * T, ky = (t.y + 0.5) * T;
       ctx.fillStyle = 'rgba(8,16,24,0.72)';
       roundRectP(kx - T * 0.62, ky + T * 0.4, T * 1.24, T * 0.28, 4); ctx.fill();
@@ -1344,7 +1418,7 @@ function draw(time) {
 }
 
 function drawTower(t, time) {
-  const def = TOWERS[t.type], s = effStats(t);
+  const def = tInfo(t.type), s = effStats(t);
   const cx = (t.x + 0.5) * T, cy = (t.y + 0.5) * T;
   // Aufbau-Animation: kurz überschwingen, dann setzen
   const b = clamp((t.born ?? 1) / 0.35, 0, 1);
@@ -1361,7 +1435,7 @@ function drawTower(t, time) {
   ctx.fillStyle = def.color;
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.3 * sock, 0, TAU); ctx.fill();
   // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
-  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno', 'loader'].includes(t.type)) {
+  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno', 'loader', 'tv'].includes(t.type)) {
     const kick = (t.kick || 0) * T * 0.1;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
     ctx.fillStyle = '#22303a';
@@ -1403,6 +1477,17 @@ function drawTower(t, time) {
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(t.victim.x * T, t.victim.y * T); ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+  // Fernsehturm: Sendewellen + flackernder Bildschirmschein
+  if (t.type === 'tv') {
+    const f = (t.pulse || 0) % 1.4 / 1.4;
+    ctx.strokeStyle = `rgba(140,190,255,${0.45 * (1 - f)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, s.range * T * f, 0, TAU); ctx.stroke();
+    // Bildzeilen-Flackern hinter dem Icon (Programm läuft immer)
+    const flick = 0.25 + Math.abs(Math.sin((t.pulse || 0) * 7 + Math.sin((t.pulse || 0) * 3))) * 0.3;
+    ctx.fillStyle = `rgba(180,225,255,${flick})`;
+    ctx.beginPath(); ctx.arc(cx, cy, T * 0.26, 0, TAU); ctx.fill();
   }
   // Kommandozentrale: Radar-Sweep + blinkendes Bereitschaftslicht
   if (t.type === 'command') {
@@ -1586,6 +1671,14 @@ function drawEnemy(e, time) {
   if (e.vulnFire > 0) { ctx.strokeStyle = 'rgba(255,140,50,0.9)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.35, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.vulnShock > 0) { ctx.strokeStyle = 'rgba(120,180,255,0.9)'; ctx.setLineDash([2, 4]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.5, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; fText('🔥', cx, cy - e.r * T - T * 0.12); }
+  if (e.dazeT > 0) {
+    // gebannt vorm Programm: Bildschirm überm Kopf + Sterne in den Augen
+    ctx.font = (T * 0.28) + 'px system-ui'; ctx.textAlign = 'center';
+    fText(kidsMode ? '🎭' : '📺', cx, cy - e.r * T - T * 0.3);
+    ctx.strokeStyle = `rgba(140,190,255,${0.5 + Math.sin(time * 8) * 0.25})`;
+    ctx.lineWidth = 1.6; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.25, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  }
   if (e.hypnoT > 0) {
     ctx.strokeStyle = `rgba(224,168,255,${0.55 + Math.sin(time * 9) * 0.25})`;
     ctx.lineWidth = 2;
@@ -1865,7 +1958,7 @@ function drawHUD() {
 
   if (game.targeting === 'slaser') {
     ctx.fillStyle = '#ff8a6a'; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText('🛰️ Ziel fürs Orbital-Laser antippen!', CW / 2, OY - 10);
+    ctx.fillText(kidsMode ? '🚿 Ziel für den Mega-Wasserstrahl antippen!' : '🛰️ Ziel fürs Orbital-Laser antippen!', CW / 2, OY - 10);
   }
 
   // Countdown zur nächsten Welle
@@ -1920,7 +2013,8 @@ function hidePanels() { buildbar.classList.add('hidden'); upgpanel.classList.add
 
 function showBuildbar() {
   buildbar.innerHTML = '';
-  for (const [key, def] of Object.entries(TOWERS)) {
+  for (const key of Object.keys(TOWERS)) {
+    const def = tInfo(key);
     const cost = def.levels[0].cost;
     const b = document.createElement('button');
     b.className = 'tdt' + (game.money < cost ? ' broke' : '');
@@ -1965,7 +2059,7 @@ function sellValue(t) {
 
 function showUpgpanel(t) {
   buildbar.classList.add('hidden');
-  const def = TOWERS[t.type], s = effStats(t);
+  const def = tInfo(t.type), s = effStats(t);
   const next = def.levels[t.lvl + 1];
   const info = document.getElementById('upg-info');
   const statBits = [];
@@ -1981,13 +2075,14 @@ function showUpgpanel(t) {
   if (t.type === 'improb') statBits.push('verwürfelt 1 Monster pro Schuss (je nur 1×, keine Bosse)');
   if (s.acc) statBits.push('trifft Kleine zu ' + Math.round(s.acc * 100) + '% · Bosse immer, ×' + s.bossMul);
   if (s.factor) statBits.push('Hypnose ' + s.dur + ' s · Biss ' + Math.round(s.factor * 100) + '% seiner Max-HP/s');
+  if (s.aud) statBits.push('fesselt ' + s.aud + ' Zuschauer · ' + s.dur + ' s Programm');
   if (s.chain) statBits.push(s.chain + ' Kettenziele');
   if (s.cone) statBits.push('Kegel ' + Math.round(s.cone * 2 * 180 / Math.PI) + '°');
   if (s.gold) statBits.push('+' + s.gold + ' 💰 alle ' + s.interval + ' s');
   if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
   if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
   if (t.type === 'command') statBits.push('☢️ ' + s.nuke + ' Schaden', '🛰️ ' + s.beam + ' Schaden · Radius ' + s.brad);
-  if (!['gold', 'ice', 'wind', 'loader', 'improb'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse · 💥 ' + fmtCount(t.dmgDone || 0) + ' Schaden');
+  if (!['gold', 'ice', 'wind', 'loader', 'improb', 'tv'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse · 💥 ' + fmtCount(t.dmgDone || 0) + ' Schaden');
   info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
   if (next) {
@@ -2096,6 +2191,11 @@ function updateSupers() {
   slaserBtn.classList.toggle('hidden', !has);
   nukeBtn.disabled = game.nukeUsed;
   slaserBtn.disabled = game.laserUsed || game.targeting === 'slaser';
+  // Kids-Modus: aus Nuke wird Piñata, aus Orbital-Laser der Wasserstrahl
+  nukeBtn.textContent = kidsMode ? '🪅' : '☢️';
+  slaserBtn.textContent = kidsMode ? '🚿' : '🛰️';
+  nukeBtn.title = (kidsMode ? 'Riesen-Piñata' : 'Nuke') + ' – 1× pro Welle';
+  slaserBtn.title = (kidsMode ? 'Mega-Wasserstrahl' : 'Orbital-Laser') + ' – 1× pro Welle';
 }
 nukeBtn.addEventListener('click', () => {
   if (!hasCommand() || game.nukeUsed || game.state === 'over') return;
@@ -2128,7 +2228,7 @@ function historyHtml() {
     + '<div class="stats-wrap"><table class="stats-table"><tr><th>Datum</th><th>Grad</th><th>Welle</th><th>💀</th><th>💥</th><th>Top</th></tr>';
   for (const run of history.slice(0, 15)) {
     const d = new Date(run.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    const icon = run.top && TOWERS[run.top] ? TOWERS[run.top].icon : '–';
+    const icon = run.top && TOWERS[run.top] ? tInfo(run.top).icon : '–';
     html += `<tr><td>${run.end === 'over' ? '💀' : '🚪'} ${d}</td><td>${(DIFFS[run.diff] || { label: run.diff }).label}</td>`
       + `<td>${run.wave}</td><td>${run.kills}</td><td>${fmtCount(run.dmg)}</td><td>${icon}</td></tr>`;
   }
@@ -2152,7 +2252,7 @@ function renderStats() {
     const st = stats.types[k];
     totalKills += st.kills; totalDmg += st.dmg;
     const active = towers.filter((t) => t.type === k).length;
-    html += `<tr><td>${TOWERS[k].icon} ${TOWERS[k].name}</td><td>${active}×</td><td>${st.kills}</td><td>${fmtCount(st.dmg)}</td></tr>`;
+    html += `<tr><td>${tInfo(k).icon} ${tInfo(k).name}</td><td>${active}×</td><td>${st.kills}</td><td>${fmtCount(st.dmg)}</td></tr>`;
   }
   html += `<tr class="total"><td>Gesamt</td><td>${towers.length}×</td><td>${totalKills}</td><td>${fmtCount(totalDmg)}</td></tr></table></div>`;
 
@@ -2164,7 +2264,7 @@ function renderStats() {
       + '<div class="stats-wrap"><table class="stats-table"><tr><th></th>'
       + monsters.map((m) => `<th title="${EINFO[m][1]}">${EINFO[m][0]}</th>`).join('') + '</tr>';
     for (const k of killers) {
-      html += `<tr><td>${TOWERS[k].icon} ${TOWERS[k].name}</td>`
+      html += `<tr><td>${tInfo(k).icon} ${tInfo(k).name}</td>`
         + monsters.map((m) => `<td>${stats.vs[k][m] || '–'}</td>`).join('') + '</tr>';
     }
     const legend = monsters.map((m) => `${EINFO[m][0]} ${EINFO[m][1]}`).join(' · ');
@@ -2196,6 +2296,7 @@ const TIPS = {
   improb: 'Glücksspiel: verwandelt Panzer in Blobs – oder in Renner. Am besten auf dicke Brocken.',
   railgun: 'Der Boss-Killer: trifft Bosse immer, 3× Schaden, durch jede Panzerung. Kleine verfehlt sie oft.',
   hypno: 'Hypnotisierte stehen still und beißen Nachbarn – je fetter das Opfer, desto härter der Biss.',
+  tv: 'Hält die Vordersten vor der Kill-Zone fest, während die Türme dahinter arbeiten. Niemand hängt ewig: nach dem Programm ist jeder kurz immun.',
   gift: 'Pfützen liegen auf dem Weg und ätzen jeden, der durchläuft. Länge vor Fläche an Engstellen.',
   wind: 'Verzögert den Vordersten (¾-Regel: niemand hängt ewig fest). Gut vor der Kill-Zone.',
   gold: 'Früh gebaut zahlt sie sich über die Wellen aus. In eine ruhige Ecke stellen.',
@@ -2210,6 +2311,7 @@ const MAINSTAT = {
   ray: ['charge', 'Verstrahlung/s'], gold: ['gold', 'Gold'],
   loader: ['boost', 'Feuerrate', (v) => '×' + v],
   hypno: ['factor', 'Biss', (v) => Math.round(v * 100) + '% MaxHP/s'],
+  tv: ['dur', 'Ablenkung', (v) => v + ' s'],
   command: ['nuke', '☢️-Schaden'],
 };
 const EHELP = {
@@ -2220,7 +2322,7 @@ const EHELP = {
   ember: { wave: 10, desc: 'Feuerresistent: nimmt nur 10 % Feuerschaden, auch vom Brand.', tip: 'Flammenwerfer sparen – alles andere wirkt normal.' },
   prisma: { wave: 12, desc: 'Laserresistent: Laserstrahlen wirken fast gar nicht.', tip: 'Kinetik, Explosion oder Blitz nehmen – der 📡 Laser darf Pause machen.' },
   blitzer: { wave: 14, desc: 'Geerdet: Blitzschaden verpufft (10 %), und flott ist er auch noch.', tip: 'Der ⚡ Blitzturm überspringt ihn gefühlt – MG, Kanone oder Flächenschaden nutzen.' },
-  boss: { wave: 8, desc: 'Alle 8 Wellen, riesig, kostet 5 ❤️, ab Welle 16 im Rudel und meist dick gepanzert. Immun gegen Hypnose und Verwandlung.', tip: '🧲 Railgun (3–6× Schaden, immer Treffer) plus ☢️/🛰️ Superwaffen bereithalten.' },
+  boss: { wave: 8, desc: 'Alle 8 Wellen, riesig, kostet 5 ❤️, ab Welle 16 im Rudel und meist dick gepanzert. Immun gegen Hypnose und Verwandlung, Fernsehen findet er nur kurz spannend.', tip: '🧲 Railgun (3–6× Schaden, immer Treffer) plus ☢️/🛰️ Superwaffen bereithalten.' },
 };
 function renderHelp() {
   const chain = (k, def) => {
@@ -2230,7 +2332,8 @@ function renderHelp() {
     return ' · ' + m[1] + ': ' + def.levels.map((l) => fmt(l[m[0]])).join(' → ');
   };
   let html = '';
-  for (const [k, def] of Object.entries(TOWERS)) {
+  for (const k of Object.keys(TOWERS)) {
+    const def = tInfo(k);
     const costs = def.levels.map((l) => l.cost).join(' → ');
     const specs = (SPECS[k] || [])
       .map((sp) => `${sp.icon} <b>${sp.name}</b> (${sp.cost} 💰): ${sp.desc}`).join('<br>');
@@ -2276,6 +2379,25 @@ killsBtn.addEventListener('click', () => {
 });
 updateKillsBtn();
 
+// Kids-Modus umschalten: nur die Anzeige wechselt, das Spiel läuft weiter
+const kidsBtn = document.getElementById('btn-kids');
+function updateKidsBtn() { kidsBtn.textContent = '🧸 Kids-Modus: ' + (kidsMode ? 'an' : 'aus'); }
+function setKidsMode(on) {
+  kidsMode = !!on;
+  try { localStorage.setItem('td_kids', kidsMode ? '1' : '0'); } catch { /* egal */ }
+  updateKidsBtn();
+  updateSupers();
+  renderHelp();
+  if (!buildbar.classList.contains('hidden')) showBuildbar();
+  if (!upgpanel.classList.contains('hidden')) {
+    const t = game.sel && towerAt[game.sel.x + ',' + game.sel.y];
+    if (t) showUpgpanel(t); else hidePanels();
+  }
+  if (!statsEl.classList.contains('hidden')) renderStats();
+}
+kidsBtn.addEventListener('click', () => setKidsMode(!kidsMode));
+updateKidsBtn();
+
 // ---- Schleife --------------------------------------------------------------
 let last = performance.now();
 function frame(now) {
@@ -2289,8 +2411,9 @@ window.__td = { game, get towers() { return towers; }, get enemies() { return en
   get geom() { return { T, OX, OY, ROT }; },
   get stats() { return stats; },
   get history() { return history; },
-  TOWERS, SPECS, PATH, isPath, startWave, newGame, update, effStats, fireNuke, fireSlaser,
-  saveState, applySave, tryRestore,
+  TOWERS, SPECS, KIDS, PATH, isPath, startWave, newGame, update, effStats, fireNuke, fireSlaser,
+  saveState, applySave, tryRestore, tInfo, setKidsMode,
+  get kidsMode() { return kidsMode; },
   get shots() { return shots; },
   place(type, x, y) {
     const k = x + ',' + y;
