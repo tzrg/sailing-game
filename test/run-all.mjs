@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const files = ['api.test.mjs', 'landing.test.mjs', 'td.test.mjs'];
+const files = ['api.test.mjs', 'landing.test.mjs', 'wurm.test.mjs', 'td.test.mjs'];
 
 let failed = 0;
 for (const f of files) {

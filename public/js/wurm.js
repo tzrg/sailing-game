@@ -109,8 +109,8 @@ function carveCircle(cx, cy, rad, rebuild = true) {
 }
 
 // ---- Teams & Würmer --------------------------------------------------------
-const TEAM_COLORS = ['#e0453e', '#3d8ee0', '#3fb14e', '#e0a92e'];
-const TEAM_NAMES = ['Rot', 'Blau', 'Grün', 'Gelb'];
+const TEAM_COLORS = ['#e0453e', '#3d8ee0', '#3fb14e', '#e0a92e', '#9b59b6', '#1abc9c'];
+const TEAM_NAMES = ['Rot', 'Blau', 'Grün', 'Gelb', 'Lila', 'Türkis'];
 const WORM_NAMES = ['Kalle', 'Rudi', 'Emma', 'Fritz', 'Berta', 'Otto', 'Lotti', 'Egon',
   'Hilde', 'Kurt', 'Wanda', 'Bruno', 'Gundi', 'Manni', 'Resi', 'Ferdi', 'Olga', 'Heinz',
   'Trudi', 'Sepp', 'Mia', 'Balu', 'Nala', 'Pepe'];
@@ -181,8 +181,12 @@ const WEAPONS = [
     fire: (w) => shotgun(w) },
   { key: 'mp', name: 'MP (Uzi)', icon: '🔩', ammo: Infinity, aimed: true, hitscan: true,
     fire: (w) => uzi(w) },
-  { key: 'dynamit', name: 'Dynamit', icon: '🧨', ammo: 3, aimed: false, retreat: true,
-    fire: (w) => drop(w, 'dynamite', { r: 52, dmg: 62, fuse: 4 }) },
+  { key: 'dynamit', name: 'Dynamit', icon: '🧨', ammo: 3, aimed: false, retreat: 8,
+    fire: (w) => drop(w, 'dynamite', { r: 52, dmg: 62, fuse: 10 }) },
+  { key: 'sniper', name: 'Scharfschütze', icon: '🔭', ammo: 2, aimed: true, hitscan: true,
+    fire: (w) => sniper(w) },
+  { key: 'gum', name: 'Kaugummikanone', icon: '🍬', ammo: 3, aimed: true,
+    fire: (w) => launch(w, 'gum', 620, { r: 20, dmg: 12, wind: 0.4 }) },
   { key: 'cluster', name: 'Streubombe', icon: '🍒', ammo: 2, aimed: true, retreat: true,
     fire: (w) => launch(w, 'cluster', 640, { r: 24, dmg: 26, fuse: 3, bounce: 0.5, wind: 1, cluster: 6 }) },
   { key: 'allmacht', name: 'Allmachtsgranate', icon: '✨', ammo: 1, aimed: true, retreat: true,
@@ -317,6 +321,37 @@ function minigun(w) {
 
 function spawnTracer(x1, y1, x2, y2) { particles.push({ kind: 'tracer', x1, y1, x2, y2, t: 0, ttl: 0.12 }); }
 
+// Scharfschütze: ein einzelner, haargenauer Schuss über die ganze Karte.
+// Kein Wind, keine Ballistik – wo das Fadenkreuz hinzeigt, schlägt er ein.
+function sniper(w) {
+  const a = game.aim, dir = w.facing;
+  const dirx = dir * Math.cos(a), diry = -Math.sin(a);
+  const sx = w.x + dir * 14, sy = w.y - 8;
+  const res = hitscanRay(sx, sy, dirx, diry, 4000);
+  particles.push({ kind: 'tracer', x1: sx, y1: sy, x2: res.x, y2: res.y, t: 0, ttl: 0.35 });
+  const onWorm = res.hit && res.hit !== 'edge' && res.hit !== 'ground';
+  if (onWorm) explode(res.x, res.y, 9, 55, false);        // präziser Volltreffer, kaum Krater
+  else if (res.hit === 'ground') explode(res.x, res.y, 5, 0, true);
+  else { game.banner = 'Daneben!'; game.bannerT = 0.8; }
+}
+
+// Kaugummi platzt: wenig Schaden, kein Krater – aber wer klebt, kann in
+// seinem nächsten Zug nicht mehr laufen.
+function gumPop(x, y) {
+  for (const wm of allWorms()) {
+    if (!wm.alive) continue;
+    const d = Math.hypot(wm.x - x, (wm.y - 6) - y);
+    if (d < 34) {
+      damage(wm, Math.round(12 * clamp(1 - d / 44, 0.4, 1)), 0, -30);
+      wm.gluePhase = Math.max(wm.gluePhase || 0, 1);
+    }
+  }
+  for (let i = 0; i < 14; i++) {
+    particles.push({ kind: 'gum', x, y, vx: (Math.random() - 0.5) * 170, vy: -Math.random() * 150, t: 0, ttl: 0.5 + Math.random() * 0.3 });
+  }
+  particles.push({ kind: 'blast', x, y, r: 18, t: 0, ttl: 0.3, pink: 1 });
+}
+
 // ---- Explosion -------------------------------------------------------------
 function explode(x, y, r, dmg, dig = true) {
   if (dig) carveCircle(x | 0, y | 0, r);
@@ -366,6 +401,7 @@ function bodyClear(x, fy) {
 
 function stepWorm(wm, dt) {
   if (!wm.alive) return;
+  if (wm.celebrate > 0) wm.celebrate -= dt;
   wm.vy += GRAV * dt;
 
   // horizontale Bewegung mit Stufen-Klettern
@@ -418,6 +454,12 @@ function stepProjectile(pr, dt) {
 
   // Wasser
   if (ny > WATERLINE) { particles.push({ kind: 'splash', x: nx, y: WATERLINE, t: 0, ttl: 0.5 }); return true; }
+  // Kaugummi klebt direkt am getroffenen Wurm fest
+  if (pr.type === 'gum') {
+    for (const wm of allWorms()) {
+      if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - (wm.y - 6)) < 13) { gumPop(nx, ny); return true; }
+    }
+  }
   // Wurm getroffen (Raketen/Cluster/Schaf explodieren bei Kontakt) – Körpermitte
   if (pr.type === 'rocket' || pr.type === 'cluster' || pr.type === 'sheep') {
     for (const wm of allWorms()) if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - (wm.y - 6)) < 13) { detonate(pr, nx, ny); return true; }
@@ -436,6 +478,16 @@ function stepProjectile(pr, dt) {
   }
   // Gelände
   if (solidAt(nx, ny)) {
+    if (pr.type === 'dynamite' || pr.type === 'gum') {
+      // liegen bleiben statt sofort explodieren – gezündet wird über die Lunte
+      pr.vx = 0; pr.vy = 0; pr.rest = true;
+      if (pr.type === 'gum') {
+        if (pr.landT == null) pr.landT = pr.t;
+        if (pr.t - pr.landT >= 1) { gumPop(pr.x, pr.y); return true; }   // klebt 1 s, dann platzt er
+      }
+      if (pr.fuse != null && pr.t >= pr.fuse) { detonate(pr, pr.x, pr.y); return true; }
+      return false;
+    }
     if (pr.bounce && pr.type !== 'rocket') {
       // Normale grob aus Maskengradient, abprallen
       const n = terrainNormal(nx, ny);
@@ -480,6 +532,8 @@ function livingTeams() { return teams.filter((t) => t.worms.some((w) => w.alive)
 function startTurn() {
   const lt = livingTeams();
   if (lt.length <= 1) { game.state = 'over'; game.winner = lt[0] || null; game.banner = game.winner ? game.winner.name + ' gewinnt!' : 'Unentschieden'; game.bannerT = 999; return; }
+  // Abschluss-Hüpfer: die Raupe, die gerade dran war, freut sich sichtbar
+  if (game.active && game.active.alive) game.active.celebrate = 1.5;
   // nächstes lebendes Team ab turnTeam+1
   for (let k = 1; k <= teams.length; k++) {
     const t = (game.turnTeam + k) % teams.length;
@@ -498,6 +552,12 @@ function startTurn() {
   net.remote.moveDir = 0; net.remote.aimDir = 0;   // relayed Eingaben zurücksetzen
   game.state = 'aim';
   game.banner = 'Team ' + team.name + ' ist dran'; game.bannerT = 1.6;
+  // Kaugummi: alter Kleber löst sich, frischer wird jetzt wirksam
+  for (const wmx of allWorms()) if (wmx.gluePhase === 2) wmx.gluePhase = 0;
+  if (game.active.gluePhase === 1) {
+    game.active.gluePhase = 2;
+    game.banner = game.active.name + ' klebt fest – laufen unmöglich!'; game.bannerT = 2;
+  }
   // Waffe mit Munition wählen, falls aktuelle leer
   if (weaponAmmo(game.weaponIdx) <= 0) game.weaponIdx = 0;
   focusCam(game.active.x, game.active.y);
@@ -528,8 +588,8 @@ function fireWeapon() {
   if (r === 'more') return; // Schrot: zweiter Schuss folgt
   if (w.ammo !== Infinity) { const u = teamAmmoUsed(); u[w.key] = (u[w.key] || 0) + 1; }
   if (w.retreat) {
-    // Nach Granate/Dynamit & Co. noch kurz weglaufen dürfen.
-    game.retreatT = 3.5;
+    // Nach Granate/Dynamit & Co. noch weglaufen dürfen (Dynamit: 8 s!).
+    game.retreatT = w.retreat === true ? 3.5 : w.retreat;
     game.banner = 'Rückzug!'; game.bannerT = 1.2;
   } else {
     game.state = 'busy';
@@ -619,6 +679,14 @@ function drawWorm(wm, team, time) {
   const segY = (i) => wm.y - segR + Math.sin(wm.crawl - i * 0.95) * amp;
 
   ctx.save();
+  // Kaugummi-Pfütze unter festgeklebten Raupen
+  if (wm.gluePhase) {
+    ctx.fillStyle = 'rgba(255,120,200,0.5)';
+    ctx.beginPath(); ctx.ellipse(wm.x, wm.y - 0.5, 11, 4.5, 0, 0, TAU); ctx.fill();
+  }
+  // Abschluss-Hüpfer: kleine Freudensprünge nach dem eigenen Zug
+  const hop = wm.celebrate > 0 ? Math.abs(Math.sin(wm.celebrate * 9)) * 4.5 : 0;
+  if (hop) ctx.translate(0, -hop);
   // Beinchen
   ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
   for (let i = 0; i < segN; i++) {
@@ -638,12 +706,18 @@ function drawWorm(wm, team, time) {
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.6; ctx.stroke();
   }
-  // Kopf-Details
+  // Kopf-Details (mit gelegentlichem Blinzeln)
   const hx = wm.x, hy = segY(0);
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(hx + f * 2, hy - 1.6, 1.9, 0, TAU); ctx.fill();
-  ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.arc(hx + f * 2.7, hy - 1.6, 0.95, 0, TAU); ctx.fill();
+  const blink = ((time * 0.9 + wm.crawl * 0.37) % 3.1) < 0.14;
+  if (blink) {
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(hx + f * 0.8, hy - 1.6); ctx.lineTo(hx + f * 3.6, hy - 1.6); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(hx + f * 2, hy - 1.6, 1.9, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(hx + f * 2.7, hy - 1.6, 0.95, 0, TAU); ctx.fill();
+  }
   // Fühler
   ctx.strokeStyle = team.color; ctx.lineWidth = 0.9;
   const antW = Math.sin(time * 3 + wm.x) * 1;
@@ -662,16 +736,28 @@ function drawWorm(wm, team, time) {
     ctx.moveTo(wm.x, ay); ctx.lineTo(wm.x - 5, ay - 8); ctx.lineTo(wm.x + 5, ay - 8);
     ctx.closePath(); ctx.fill();
   }
-  // Name + HP-Zahl über dem Balken
+  // Name + HP-Zahl über dem Balken (groß und gut lesbar)
   ctx.textAlign = 'center';
-  ctx.font = '600 7px system-ui';
+  ctx.font = '700 10px system-ui';
   const label = `${wm.name || ''} ${wm.hp}`.trim();
-  ctx.lineWidth = 2.4; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.strokeText(label, wm.x, barY - 4);
-  ctx.fillStyle = '#fff'; ctx.fillText(label, wm.x, barY - 4);
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.strokeText(label, wm.x, barY - 5);
+  ctx.fillStyle = '#fff'; ctx.fillText(label, wm.x, barY - 5);
+  if (wm.gluePhase) { ctx.font = '10px system-ui'; ctx.fillText('🍬', wm.x + 18, barY - 4); }
   // HP-Balken (farbcodiert: grün -> orange -> rot)
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(wm.x - 12, barY, 24, 4);
   ctx.fillStyle = wm.hp > 50 ? team.color : (wm.hp > 25 ? '#e0a92e' : '#e0453e');
   ctx.fillRect(wm.x - 12, barY, 24 * clamp(wm.hp, 0, 100) / 100, 4);
+  // Sprechblase zum Abschluss-Hüpfer: „Zug fertig!"
+  if (wm.celebrate > 0.25) {
+    ctx.globalAlpha = clamp(wm.celebrate, 0, 1);
+    const bx = wm.x + 12, by = wm.y - 32;
+    ctx.fillStyle = '#fff';
+    roundRect(bx, by - 10, 52, 14, 6); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(bx + 5, by + 3); ctx.lineTo(bx + 1, by + 9); ctx.lineTo(bx + 12, by + 3); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.font = '700 8px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('Zug fertig!', bx + 26, by);
+    ctx.globalAlpha = 1;
+  }
   ctx.textAlign = 'left';
 }
 
@@ -687,6 +773,12 @@ function drawProjectile(pr, time) {
     ctx.fillStyle = '#c0392b'; ctx.fillRect(-3, -8, 6, 16);
     const on = Math.floor(time * 10) % 2 === 0;
     ctx.fillStyle = on ? '#ffcc33' : '#883'; ctx.beginPath(); ctx.arc(0, -9, 2, 0, TAU); ctx.fill();
+  } else if (pr.type === 'gum') {
+    const r = pr.rest ? 7 : 5;
+    ctx.fillStyle = '#ff8ad0';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.3, r * 0.32, 0, TAU); ctx.fill();
   } else if (pr.type === 'sheep') {
     ctx.font = '20px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('🐑', 0, 0);
@@ -703,12 +795,15 @@ function drawProjectile(pr, time) {
 function drawParticle(p) {
   if (p.kind === 'blast') {
     const f = p.t / p.ttl;
-    ctx.globalAlpha = 1 - f; ctx.fillStyle = '#ffb24d';
+    ctx.globalAlpha = 1 - f; ctx.fillStyle = p.pink ? '#ff9ad5' : '#ffb24d';
     ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (0.5 + f * 0.8), 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
   } else if (p.kind === 'spark') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = '#ffd27f';
     ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+  } else if (p.kind === 'gum') {
+    ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = '#ff8ad0';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2.4, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
   } else if (p.kind === 'deadspark') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = p.color || '#fff';
     ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
@@ -718,8 +813,8 @@ function drawParticle(p) {
     ctx.font = '16px system-ui'; ctx.textAlign = 'center';
     ctx.fillText('💀', p.x, p.y - f * 20);
     if (p.name) {
-      ctx.font = '600 8px system-ui'; ctx.fillStyle = '#fff';
-      ctx.fillText(p.name, p.x, p.y - f * 20 + 11);
+      ctx.font = '700 10px system-ui'; ctx.fillStyle = '#fff';
+      ctx.fillText(p.name, p.x, p.y - f * 20 + 12);
     }
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
   } else if (p.kind === 'tracer') {
@@ -874,6 +969,7 @@ function releaseFire() {
 }
 
 function actJump() {
+  if (game.active && game.active.gluePhase === 2) return;   // festgeklebt
   if (canMove() && game.active && game.active.grounded) {   // Springen auch im Rückzug
     game.active.vy = -230; game.active.vx = game.active.facing * 90; game.active.grounded = false;
   }
@@ -984,6 +1080,7 @@ function readInput(dt) {
   } else {
     moveDir = localMoveDir(); aimDir = localAimDir();
   }
+  if (wm.gluePhase === 2) moveDir = 0;   // festgeklebt: kein Schritt möglich
   if (moveDir < 0) { wm.vx = -70; wm.facing = -1; }
   else if (moveDir > 0) { wm.vx = 70; wm.facing = 1; }
   else if (wm.grounded) wm.vx *= 0.4;
@@ -1038,7 +1135,8 @@ resize();
 
 window.__wurm = { game, teams: () => teams, projectiles, WEAPONS, fireWeapon, weaponAmmo,
   set weapon(i) { game.weaponIdx = i; }, focus: () => game.active, newGame,
-  get mask() { return mask; }, solidAt, explode, cfg, net: () => net, cam };
+  get mask() { return mask; }, solidAt, explode, cfg, net: () => net, cam,
+  startTurn, hitscanRay, gumPop, allWorms };
 
 // ==========================================================================
 //  Online-Multiplayer (Caterpillars) – Host-autoritativ
@@ -1058,7 +1156,7 @@ function sendSnapshot() {
     rt: +(game.retreatT || 0).toFixed(2), fd: game.fireDone ? 1 : 0,
     win: game.winner ? game.winner.name : null, ac: { t: game.turnTeam, i: t ? t.cur : 0 },
     tm: teams.map((tt) => ({ c: tt.cur, au: tt.ammoUsed,
-      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing, n: w.name })) })),
+      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing, n: w.name, g: w.gluePhase || 0, cb: w.celebrate > 0 ? 1 : 0 })) })),
     pj: projectiles.map((p) => ({ t: p.type, x: Math.round(p.x), y: Math.round(p.y), r: p.r,
       vx: Math.round(p.vx || 0), vy: Math.round(p.vy || 0), ang: p.ang || 0 })),
     cr: net.craters.length ? net.craters.splice(0, net.craters.length) : undefined,
@@ -1071,7 +1169,7 @@ function applySnap(s) {
   if (!teams.length || teams.length !== s.tm.length || teams[0].worms.length !== s.tm[0].w.length) {
     teams = s.tm.map((tt, i) => ({ color: TEAM_COLORS[i], name: TEAM_NAMES[i], cur: tt.c, ammoUsed: tt.au || {},
       worms: tt.w.map((w) => ({ x: w.x, y: w.y, vx: 0, vy: 0, hp: w.hp, alive: !!w.al, facing: w.f,
-        team: i, grounded: true, fall: 0, crawl: Math.random() * TAU, name: w.n })) }));
+        team: i, grounded: true, fall: 0, crawl: Math.random() * TAU, name: w.n, gluePhase: w.g || 0 })) }));
   } else {
     s.tm.forEach((tt, i) => {
       teams[i].cur = tt.c; teams[i].ammoUsed = tt.au || {};
@@ -1079,6 +1177,8 @@ function applySnap(s) {
         const o = teams[i].worms[j];
         if (o.alive && !w.al) killWorm(o);   // gerade gestorben -> Sterbe-Effekt
         o.x = w.x; o.y = w.y; o.hp = w.hp; o.alive = !!w.al; o.facing = w.f; if (w.n) o.name = w.n;
+        o.gluePhase = w.g || 0;
+        if (w.cb && !(o.celebrate > 0)) o.celebrate = 1.5;
       });
     });
   }
@@ -1389,7 +1489,8 @@ function frame(now) {
       const ad = localAimDir(); if (ad !== net.lastAim) { net.lastAim = ad; net.client.send({ t: 'act', a: { k: 'aim', dir: ad } }); }
     } else { net.lastMove = 0; net.lastAim = 0; }
     for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
-    for (const p of particles) if (p.kind === 'spark' || p.kind === 'deadspark') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+    for (const p of particles) if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+    for (const wmx of allWorms()) if (wmx.celebrate > 0) wmx.celebrate -= dt;
     updateCamera(dt);
     if (net.ready) draw(time); else drawWaiting();
     requestAnimationFrame(frame);
@@ -1413,7 +1514,7 @@ function frame(now) {
   for (const wm of allWorms()) stepWorm(wm, dt);
   for (let i = projectiles.length - 1; i >= 0; i--) { if (stepProjectile(projectiles[i], dt)) projectiles.splice(i, 1); }
   for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
-  if (particles.length) for (const p of particles) if (p.kind === 'spark' || p.kind === 'deadspark') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+  if (particles.length) for (const p of particles) if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
 
   if (game.state === 'busy') endTurnAfterSettle(dt);
 

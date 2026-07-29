@@ -28,8 +28,11 @@ Docker-Container deployt.
   lehnen, rechte Hälfte Gas/Bremse.
 - **`wurm.html` – 🐛 Raupen · Caterpillars**: rundenbasiertes
   Artillerie-Spiel mit kriechenden Raupen, zerstörbarem Gelände, Wind und
-  vielen Waffen (inkl. Baseballschläger, Explosivschaf, Minigun); Hotseat
-  am selben Gerät **oder online** über Lobby/Code, Querformat-Drehung.
+  vielen Waffen (inkl. Baseballschläger, Explosivschaf, Minigun,
+  Scharfschütze mit kartenweitem Präzisionsschuss und Kaugummikanone, die
+  Gegner für ihren nächsten Zug festklebt); Dynamit mit 10-s-Lunte und
+  8 s Rückzugszeit. 2–6 Teams im Hotseat am selben Gerät **oder online**
+  über Lobby/Code (ein Team pro Spieler), Querformat-Drehung.
 - **`lemminge.html` – 🐭 Lemminge**: Puzzle im Stil des Genre-Klassikers
   (eigenständig umgesetzt). Kleine Kerlchen laufen stur los; per Fähigkeit
   (Kletterer, Schirm, Sprenger, Blocker, Bauer, Graben, Schräg-Graben,

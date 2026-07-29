@@ -102,7 +102,7 @@ export function handleMessage(ws, raw) {
     const key = (ws.name || 'Gast').toLowerCase();
     const room = {
       code, hostName: ws.name || 'Gast', password: (msg.password || '').toString().slice(0, 40) || null,
-      teams: clamp(msg.teams, 2, 4), worms: clamp(msg.worms, 1, 6),
+      teams: clamp(msg.teams, 2, 6), worms: clamp(msg.worms, 1, 6),
       started: false, seed: 0, members: new Map(), createdAt: now, emptySince: 0,
     };
     const m = { key, name: ws.name || 'Gast', isHost: true, teamIdx: 0, ws, connected: true };
