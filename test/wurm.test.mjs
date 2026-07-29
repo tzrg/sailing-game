@@ -208,6 +208,38 @@ try {
   check('Explosion: Schadenszahl, Druckwelle, Rauch, Screenshake',
     r.hpDropped && r.hasDmg && r.hasRing && r.hasSmoke && r.shake && r.amt > 0, JSON.stringify(r));
 
+  // ---- Comic-Sterbeanimation: POW, Sternchen, Geist, Grabstein
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const victim = WU.teams()[1].worms[0];
+    const gx = victim.x;
+    WU.explode(victim.x, victim.y - 4, 30, 300, false);   // sicher tödlich
+    const kinds = new Set(WU.particles.map((p) => p.kind));
+    const ghost = WU.particles.find((p) => p.kind === 'death');
+    const grave = WU.graves[WU.graves.length - 1];
+    return { dead: !victim.alive, hasBurst: kinds.has('burst'), hasStar: kinds.has('star'),
+      ghostNamed: ghost && ghost.name === victim.name,
+      graveCount: WU.graves.length, graveNearby: grave && Math.abs(grave.x - gx) < 30 };
+  });
+  check('Tod: POW-Blitz + Sternchen + Geist mit Namen', r.dead && r.hasBurst && r.hasStar && r.ghostNamed, JSON.stringify(r));
+  check('Grabstein plumpst an der Todesstelle hin', r.graveCount === 1 && r.graveNearby, JSON.stringify(r));
+
+  // Wasser-Tod: Geist ja, Grabstein nein; neues Spiel räumt die Gräber
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    const gravesBefore = WU.graves.length;
+    const w2 = WU.teams()[1].worms[1];
+    w2.y = 10000;   // tief unter die Wasserlinie
+    return new Promise((res) => setTimeout(() => {
+      const drowned = !w2.alive;
+      const gravesAfter = WU.graves.length;
+      WU.newGame();
+      res({ drowned, noNewGrave: gravesAfter === gravesBefore, cleared: WU.graves.length === 0 });
+    }, 250));
+  });
+  check('Ertrinken: kein Grabstein, Neues Spiel räumt Gräber', r.drowned && r.noNewGrave && r.cleared, JSON.stringify(r));
+
   // ---- Abschluss-Hüpfer nach dem Zug
   r = await page.evaluate(() => {
     const WU = window.__wurm;

@@ -169,6 +169,9 @@ const game = {
 const projectiles = [];
 const particles = [];
 
+// Grabsteine gefallener Raupen (rein visuell, plumpsen rein und bleiben)
+const graves = [];
+
 // Comic-Wolken: treiben gemächlich mit dem Wind über den Himmel
 const clouds = [];
 for (let i = 0; i < 6; i++) {
@@ -392,14 +395,27 @@ function explode(x, y, r, dmg, dig = true) {
   cam.shakeT = Math.max(cam.shakeT || 0, clamp(r / 70, 0.12, 0.5));
 }
 
-// Sterbe-Effekt: farbige Funken + aufsteigender Grabstein/Totenkopf.
+// Comic-Sterbeanimation: POW-Blitz, Sternchen, farbige Funken, ein Geist
+// steigt auf – und an Land plumpst ein Grabstein hin, der liegen bleibt.
 function killWorm(wm) {
   const color = (teams[wm.team] && teams[wm.team].color) || '#fff';
-  for (let i = 0; i < 16; i++) {
+  particles.push({ kind: 'burst', x: wm.x, y: wm.y - 8, t: 0, ttl: 0.35 });
+  for (let i = 0; i < 7; i++) {
+    const a = Math.random() * TAU, sp = 60 + Math.random() * 130;
+    particles.push({ kind: 'star', x: wm.x, y: wm.y - 8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 90, rot: Math.random() * TAU, t: 0, ttl: 0.7 + Math.random() * 0.3 });
+  }
+  for (let i = 0; i < 12; i++) {
     const a = Math.random() * TAU, sp = 40 + Math.random() * 150;
     particles.push({ kind: 'deadspark', x: wm.x, y: wm.y - 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 70, t: 0, ttl: 0.6 + Math.random() * 0.5, color });
   }
-  particles.push({ kind: 'death', x: wm.x, y: wm.y - 8, name: wm.name || '', t: 0, ttl: 1.4 });
+  particles.push({ kind: 'death', x: wm.x, y: wm.y - 8, name: wm.name || '', t: 0, ttl: 1.9 });
+  cam.shakeT = Math.max(cam.shakeT || 0, 0.2);
+  // Grabstein nur an Land: auf den Boden unterhalb der Todesstelle setzen
+  if (wm.y < WATERLINE - 6) {
+    let gy = wm.y | 0;
+    while (gy < WATERLINE - 2 && !solidAt(wm.x, gy + 1)) gy++;
+    if (gy < WATERLINE - 2) graves.push({ x: wm.x, y: gy, t: 0 });
+  }
 }
 
 function damage(wm, amt, kx, ky) {
@@ -467,7 +483,7 @@ function stepWorm(wm, dt) {
     const wasAlive = wm.alive;
     wm.alive = false; wm.hp = 0;
     particles.push({ kind: 'splash', x: wm.x, y: WATERLINE, t: 0, ttl: 0.6 });
-    if (wasAlive) particles.push({ kind: 'death', x: wm.x, y: WATERLINE - 12, name: wm.name || '', t: 0, ttl: 1.4 });
+    if (wasAlive) particles.push({ kind: 'death', x: wm.x, y: WATERLINE - 12, name: wm.name || '', t: 0, ttl: 1.9 });
   }
 }
 
@@ -705,6 +721,9 @@ function draw(time) {
   // Gelände
   ctx.drawImage(terrainCanvas, 0, 0);
 
+  // Grabsteine gefallener Raupen
+  for (const g of graves) drawGrave(g);
+
   // Projektile
   for (const pr of projectiles) drawProjectile(pr, time);
 
@@ -868,6 +887,29 @@ function drawProjectile(pr, time) {
   ctx.restore();
 }
 
+// Grabstein: fällt von oben ein, plumpst mit Squash und bleibt stehen
+function drawGrave(g) {
+  const t = g.t;
+  const fall = t < 0.35 ? (0.35 - t) / 0.35 : 0;
+  const yOff = fall * fall * 90;
+  let sq = 1;
+  if (t >= 0.35 && t < 0.55) sq = 1 - 0.3 * Math.sin((t - 0.35) / 0.2 * Math.PI);
+  ctx.save();
+  ctx.translate(g.x, g.y - yOff);
+  ctx.scale(2 - sq, sq);   // Comic-Plumps: breit und platt beim Aufprall
+  ctx.fillStyle = '#a9b2ba'; ctx.strokeStyle = '#4a545c'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-7, 0); ctx.lineTo(-7, -9);
+  ctx.arc(0, -9, 7, Math.PI, 0);
+  ctx.lineTo(7, 0); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#57616a'; ctx.font = '700 5px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText('RIP', 0, -7.5);
+  ctx.font = '6px system-ui'; ctx.fillText('🌼', 8, 0);
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
 function drawParticle(p) {
   if (p.kind === 'blast') {
     const f = p.t / p.ttl;
@@ -884,15 +926,39 @@ function drawParticle(p) {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = p.color || '#fff';
     ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
   } else if (p.kind === 'death') {
+    // Geist schwebt schlängelnd gen Himmel, der Name winkt hinterher
     const f = p.t / p.ttl;
+    const wig = Math.sin(p.t * 6.5) * 5;
     ctx.globalAlpha = 1 - f * f;
-    ctx.font = '16px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText('💀', p.x, p.y - f * 20);
+    ctx.font = '18px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('👻', p.x + wig, p.y - f * 38);
     if (p.name) {
-      ctx.font = '700 10px system-ui'; ctx.fillStyle = '#fff';
-      ctx.fillText(p.name, p.x, p.y - f * 20 + 12);
+      ctx.font = '700 10px system-ui';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(p.name, p.x + wig, p.y - f * 38 + 12);
+      ctx.fillStyle = '#fff'; ctx.fillText(p.name, p.x + wig, p.y - f * 38 + 12);
     }
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  } else if (p.kind === 'burst') {
+    // POW!-Blitz: gezackter Comic-Stern
+    const f = p.t / p.ttl;
+    const R = 10 + f * 26, r2 = R * 0.45;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(f * 0.6);
+    ctx.globalAlpha = 1 - f;
+    ctx.fillStyle = '#fff2a8'; ctx.strokeStyle = '#e0453e'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) { const a = i / 16 * TAU; const rr = i % 2 ? r2 : R; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore(); ctx.globalAlpha = 1;
+  } else if (p.kind === 'star') {
+    // herumwirbelnde Cartoon-Sternchen
+    const f = p.t / p.ttl;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate((p.rot || 0) + p.t * 8);
+    ctx.globalAlpha = 1 - f;
+    ctx.fillStyle = '#ffd93b'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) { const a = i / 10 * TAU - Math.PI / 2; const rr = i % 2 ? 2 : 4.5; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore(); ctx.globalAlpha = 1;
   } else if (p.kind === 'tracer') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.strokeStyle = '#fff4c0'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(p.x2, p.y2); ctx.stroke(); ctx.globalAlpha = 1;
@@ -1218,7 +1284,7 @@ document.getElementById('btn-newgame').addEventListener('click', () => {
 function newGame() {
   generateTerrain((Math.random() * 1e9) | 0);
   spawnTeams();  // jedes Team startet mit vollem, eigenem Munitionsvorrat
-  projectiles.length = 0; particles.length = 0;
+  projectiles.length = 0; particles.length = 0; graves.length = 0;
   game.turnTeam = -1; game.weaponIdx = 0; game.winner = null;
   startTurn();
 }
@@ -1243,7 +1309,7 @@ document.getElementById('btn-rotate').addEventListener('click', () => {
 });
 resize();
 
-window.__wurm = { game, teams: () => teams, projectiles, particles, WEAPONS, fireWeapon, weaponAmmo,
+window.__wurm = { game, teams: () => teams, projectiles, particles, graves, WEAPONS, fireWeapon, weaponAmmo,
   set weapon(i) { game.weaponIdx = i; }, focus: () => game.active, newGame,
   get mask() { return mask; }, solidAt, explode, cfg, net: () => net, cam,
   startTurn, hitscanRay, gumPop, allWorms };
@@ -1315,7 +1381,7 @@ function beginMatch(m) {
   net.on = true; net.you = m.you; net.host = !!m.host; net.players = m.players;
   cfg.teamCount = m.players.length; cfg.wormCount = m.worms;
   hideLobby(); hideHelp(); hideChat();   // Chat aus (per 💬 wieder öffnbar), Toasts zeigen Nachrichten
-  projectiles.length = 0; particles.length = 0; net.craters = [];
+  projectiles.length = 0; particles.length = 0; graves.length = 0; net.craters = [];
   if (net.host) {
     generateTerrain(m.seed | 0);
     spawnTeams();
@@ -1613,9 +1679,10 @@ function frame(now) {
     } else { net.lastMove = 0; net.lastAim = 0; }
     for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
     for (const p of particles) {
-      if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+      if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum' || p.kind === 'star') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
       else if (p.kind === 'smoke') { p.x += (p.vx || 0) * dt; p.y += (p.vy || -24) * dt; }
     }
+    for (const g of graves) g.t += dt;
     for (const wmx of allWorms()) if (wmx.celebrate > 0) wmx.celebrate -= dt;
     updateCamera(dt);
     if (net.ready) draw(time); else drawWaiting();
@@ -1642,10 +1709,11 @@ function frame(now) {
   for (let i = particles.length - 1; i >= 0; i--) { particles[i].t += dt; if (particles[i].t >= particles[i].ttl) particles.splice(i, 1); }
   if (particles.length) {
     for (const p of particles) {
-      if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
+      if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum' || p.kind === 'star') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
       else if (p.kind === 'smoke') { p.x += (p.vx || 0) * dt; p.y += (p.vy || -24) * dt; }
     }
   }
+  for (const g of graves) g.t += dt;
 
   if (game.state === 'busy') endTurnAfterSettle(dt);
 
