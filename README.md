@@ -64,9 +64,14 @@ Docker-Container deployt.
   Unwahrscheinlichkeitskanone, Giftschleuder, Windmaschine, Goldmine,
   Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.
+  Nur die Kommandozentrale ist **endlos ausbaubar** (jede weitere Stufe
+  wird extrem teuer, Nuke + Orbital-Laser wachsen mit); beide Superwaffen
+  treffen Bosse 3-fach und ignorieren jede Panzerung.
   🧸 **Kids-Modus** (☰-Menü, gespeichert): alle Türme werden zu Spielzeug –
   Kartoffelkanone, Pupsmaschine, Riesenflitsche, Juckpulver-Werfer,
-  Oma-Parfüm-Zerstäuber & Co. – reine Optik, identische Spielwerte.
+  Oma-Parfüm-Zerstäuber & Co., inklusive Spezialisierungen (aus der
+  Taktischen Nuke wird die 🎊 Mega-Konfettibombe) und Hilfe-Tipps –
+  reine Optik, identische Spielwerte.
   Abschüsse (Todesstoß-Regel) und Schaden werden pro Turm und Turmart
   gezählt; die 📊-Statistik im Menü zeigt den Turmarten-Vergleich, wer
   welche Monsterart erlegt hat und die Spiel-Historie: jedes Ergebnis

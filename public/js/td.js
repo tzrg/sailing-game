@@ -139,7 +139,7 @@ const TOWERS = {
       { cost: 130, dur: 2.0, aud: 3, range: 2.9 },
       { cost: 230, dur: 2.5, aud: 4, range: 3.2 },
       { cost: 1500, dur: 3.4, aud: 6, range: 3.6 }] },
-  command: { name: 'Kommandozentrale', icon: '🛰️', color: '#c0c8e8', desc: 'schaltet ☢️ Nuke + 🛰️ Orbital-Laser frei (je 1× pro Welle); Upgrades machen beide stärker',
+  command: { name: 'Kommandozentrale', icon: '🛰️', color: '#c0c8e8', desc: 'schaltet ☢️ Nuke + 🛰️ Orbital-Laser frei (je 1× pro Welle, gegen Bosse 3× und durch jede Panzerung) – endlos ausbaubar, jede Stufe teurer und stärker',
     levels: [
       { cost: 400, nuke: 340, beam: 600, brad: 1.25 },
       { cost: 300, nuke: 520, beam: 950, brad: 1.45 },
@@ -425,7 +425,23 @@ function firstInRange(t, range) {
   return best;
 }
 
-function towerStats(t) { return TOWERS[t.type].levels[t.lvl]; }
+// Endlos-Ausbau der Kommandozentrale: über Stufe 4 hinaus gibt es immer eine
+// weitere Stufe – jede wird extrem teurer und pumpt Nuke + Orbital-Laser
+// kräftig weiter auf (Ende offen).
+function commandLevel(lvl) {
+  const base = TOWERS.command.levels[3];
+  const n = lvl - 3;
+  return {
+    cost: Math.round(2500 * Math.pow(2.5, n)),
+    nuke: Math.round(base.nuke * Math.pow(1.7, n)),
+    beam: Math.round(base.beam * Math.pow(1.7, n)),
+    brad: Math.round((base.brad + n * 0.15) * 100) / 100,
+  };
+}
+function levelStats(type, lvl) {
+  return TOWERS[type].levels[lvl] || (type === 'command' ? commandLevel(lvl) : undefined);
+}
+function towerStats(t) { return levelStats(t.type, t.lvl); }
 
 // Turm dreht weich in Zielrichtung (statt zu springen)
 function aimAt(t, x, y, dt) {
@@ -872,7 +888,7 @@ function stepShot(sh, dt) {
       game.shakeT = Math.max(game.shakeT, 0.35);
       for (const e of enemies) {
         if (e.dead || e.escaped) continue;
-        if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.rad + e.r) damage(e, sh.dmg, 'laser', false, sh.src);
+        if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.rad + e.r) superDamage(e, sh.dmg, 'laser', sh.src);
       }
       spawnPart({ kind: 'shock', x: sh.x, y: sh.y, r: sh.rad * 1.4, ttl: 0.35, color: '#cfe8ff' });
       for (let i = 0; i < 14; i++) {
@@ -1060,18 +1076,28 @@ function commandTower() {
   return best;
 }
 
+// Superwaffen wirken gegen Bosse 3-fach und direkt auf die Lebenspunkte –
+// keine Panzerung hält Nuke oder Orbital-Laser auf. Kleinere Gegner werden
+// wie üblich verrechnet (Panzerung schluckt Explosionen weitgehend).
+function superDamage(e, amt, type, src) {
+  if (!e.boss) { damage(e, amt, type, false, src); return; }
+  const hit = amt * 3;
+  if (src) creditDmg(src, Math.min(Math.max(e.hp, 0), hit));
+  e.hp -= hit;
+  if (e.hp <= 0 && !e.killedBy && src) e.killedBy = src;
+}
+
 function fireNuke() {
   const c = commandTower();
   if (!c) return;
   const s = towerStats(c);
   game.nukeUsed = true;
   game.shakeT = 0.6;
-  // Riesen-Flächenschlag auf ALLES, was gerade unterwegs ist. Panzerung
-  // schluckt davon wie üblich das meiste – Bosse überleben den Blitz.
+  // Riesen-Flächenschlag auf ALLES, was gerade unterwegs ist
   shots.push({ kind: 'nuke', x: GC / 2, y: GR / 2, t: 0, ttl: 1.5 });
   for (const e of enemies) {
     if (e.dead || e.escaped) continue;
-    damage(e, s.nuke, 'explosive', false, c);
+    superDamage(e, s.nuke, 'explosive', c);
     spawnPart({ kind: 'shock', x: e.x, y: e.y, r: 1.0, ttl: 0.4, color: '#ffd8a0' });
   }
   // Feuerball, Pilzstiel und -wolke über der Feldmitte
@@ -1136,6 +1162,76 @@ try { kidsMode = localStorage.getItem('td_kids') === '1'; } catch { /* egal */ }
 const KIDS_FULL = {};
 for (const [k, v] of Object.entries(KIDS)) KIDS_FULL[k] = { ...TOWERS[k], ...v };
 function tInfo(type) { return kidsMode && KIDS_FULL[type] ? KIDS_FULL[type] : TOWERS[type]; }
+// Auch die Spezialisierungen werden zum Spielzeug (aus der Taktischen Nuke
+// wird die Mega-Konfettibombe) – Schlüssel, Kosten und Wirkung bleiben gleich.
+const KIDS_SPECS = {
+  mg: {
+    fire: { icon: '🌶️', name: 'Chili-Pulver', desc: '+50% Stink-Schaden auf Getroffene (4 s)' },
+    shock: { icon: '🪶', name: 'Kitzel-Staub', desc: '+50% Juckpulver-Schaden auf Getroffene (4 s)' },
+    tungsten: { icon: '🎱', name: 'Murmelkern', desc: '+60% Schaden, knackt sogar Ritterrüstungen' },
+  },
+  grenade: {
+    dmg: { icon: '💦', name: 'XXL-Ballons', desc: '+50% Platsch-Schaden, größere Fläche' },
+    range: { icon: '🦾', name: 'Weitwurf-Arm', desc: '+1,0 Reichweite' },
+  },
+  rocket: {
+    dmg: { icon: '🧨', name: 'Extra-Böller', desc: '+50% Schaden' },
+    range: { icon: '💨', name: 'Turbo-Treibsatz', desc: '+1,0 Reichweite' },
+    tnuke: { icon: '🎊', name: 'Mega-Konfettibombe', desc: 'Riesen-Knaller: 6× Schaden im Zentrum, nach außen stark abnehmend, Radius 2,3' },
+  },
+  tesla: {
+    chain: { icon: '🌪️', name: 'Extra-Staubwolke', desc: '+2 Kettenziele' },
+    range: { icon: '🪁', name: 'Weitpuster', desc: '+0,9 Reichweite' },
+  },
+  flame: {
+    wide: { icon: '🫘', name: 'Bohnen-Diät', desc: 'fast doppelt so breite Pupswolke' },
+    range: { icon: '💨', name: 'Druckpups', desc: '+0,8 Reichweite' },
+  },
+  gift: {
+    dur: { icon: '🥣', name: 'Extra matschig', desc: 'Pfützen halten 3 s länger' },
+    pool: { icon: '🍲', name: 'Familienportion', desc: '+40% Pfützenradius' },
+  },
+  ray: {
+    charge: { icon: '🌹', name: 'Extra-starker-Flakon', desc: '+50% Duft & Limit' },
+    range: { icon: '🌬️', name: 'Turbo-Düse', desc: '+0,8 Reichweite' },
+  },
+  railgun: {
+    focus: { icon: '👓', name: 'Zielbrille', desc: 'zielsicher: trifft kleine Gegner zu 90%' },
+    hyper: { icon: '🦵', name: 'Doppelt gespannt', desc: 'streut doppelt so stark, aber 6× Schaden an den ganz Großen' },
+  },
+  tv: {
+    binge: { icon: '👏', name: 'Zugabe! Zugabe!', desc: '+1,2 s Vorstellung' },
+    big: { icon: '🎪', name: 'Große Bühne', desc: '+2 Sitzplätze, +0,5 Reichweite' },
+  },
+};
+KIDS_SPECS.cannon = KIDS_SPECS.mg;   // gleiche Munitionsarten wie der Nerf-Blaster
+function sInfo(type, sp) {
+  const o = kidsMode && KIDS_SPECS[type] && KIDS_SPECS[type][sp.key];
+  return o ? { ...sp, ...o } : sp;
+}
+// Hilfe-Tipps in Kids-Sprache (gleiche Taktik, anderes Vokabular)
+const KIDS_TIPS = {
+  mg: 'Früh billig; mit 🍭 Zuckerschub daneben wird er zur Plopp-Maschine. 🎱 Murmelkern knackt Ritterrüstungen.',
+  cannon: 'Lange Reichweite – wirkt über mehrere Pfadschleifen. Erste Wahl gegen Ritterrüstungen.',
+  grenade: 'An Kurven und Doppelpfaden stellen, wo Gruppen dicht laufen. An Rüstungen platschen die Ballons nur ab.',
+  laser: 'An lange Geraden bauen – kitzelt alles auf der Linie, sogar durch die Rüstung.',
+  flame: 'Die Wolke schwenkt zum nächsten Gegner; der Geruch wirkt nach. Gegen 🔥 Glutläufer nutzlos – die riechen nichts.',
+  rocket: 'Zielsuchend, verfehlt nie. Mit der 🎊 Mega-Konfettibombe die dickste Party-Waffe.',
+  ice: 'Macht keinen Schaden, ist aber Gold wert: an Kurven festkleben, dahinter draufhauen.',
+  tesla: 'Stark gegen Pulks – das Juckpulver staubt weiter. ⚡ Geerdete juckt es nicht.',
+  ray: 'Der Duft bleibt für immer und zieht durch jede Rüstung – vorne einsprühen, hinten schlappmachen lassen.',
+  loader: 'Passiv! Direkt neben Nerf-Blaster, Kartoffelkanone oder Riesenflitsche stellen – nur die beste Bude daneben zählt.',
+  improb: 'Glücksspiel: verwandelt Panzer in Blobs – oder in Renner. Am besten auf dicke Brocken.',
+  railgun: 'Der Riesen-Schreck: trifft die ganz Großen immer, 3× Schaden, durch jede Rüstung. Kleine flutschen oft durch.',
+  hypno: 'Verzauberte stehen still und schubsen Nachbarn – je fetter das Opfer, desto doller.',
+  tv: 'Hält die Vordersten vor der Kill-Zone fest, während die Türme dahinter arbeiten. Niemand hängt ewig: nach der Vorstellung ist jeder kurz immun.',
+  gift: 'Pfützen liegen auf dem Weg – wer durchläuft, kriegt Bauchweh. Länge vor Fläche an Engstellen.',
+  wind: 'Föhnt den Vordersten zurück (¾-Regel: niemand hängt ewig fest). Gut vor der Kill-Zone.',
+  gold: 'Früh gebaut zahlt es sich über die Wellen aus. In eine ruhige Ecke stellen.',
+  command: 'Schaltet 🪅 Riesen-Piñata und 🚿 Mega-Wasserstrahl frei (je 1× pro Welle, gegen die ganz Großen 3× und durch jede Rüstung). Endlos ausbaubar – jede weitere Stufe kostet ein Vermögen.',
+};
+// Stufen-Beschriftungen, die im Kids-Modus anders heißen
+const KIDS_MAINLBL = { ray: 'Duft/s', gift: 'Spinat/s', hypno: 'Schubs', command: '🪅-Schaden' };
 
 // ---- Spielstand ------------------------------------------------------------
 // Zwischen den Wellen wird automatisch gesichert: immer lokal (localStorage),
@@ -1187,7 +1283,8 @@ function applySave(d) {
     if (!def) continue;
     const x = td.x | 0, y = td.y | 0, k = x + ',' + y;
     if (x < 0 || x >= GC || y < 0 || y >= GR || towerAt[k] || isPath(x, y) || isPond(x, y)) continue;
-    const t = { type: td.type, lvl: clamp(td.lvl | 0, 0, def.levels.length - 1), x, y, cd: 0, angle: 0, born: 1, kills: Math.max(0, td.kills | 0), dmgDone: Math.max(0, td.dmg | 0) };
+    const maxLvl = td.type === 'command' ? 99 : def.levels.length - 1;   // Zentrale: Ende offen
+    const t = { type: td.type, lvl: clamp(td.lvl | 0, 0, maxLvl), x, y, cd: 0, angle: 0, born: 1, kills: Math.max(0, td.kills | 0), dmgDone: Math.max(0, td.dmg | 0) };
     if (td.spec && (SPECS[td.type] || []).some((o) => o.key === td.spec)) t.spec = td.spec;
     towers.push(t); towerAt[k] = t;
   }
@@ -1556,7 +1653,7 @@ function drawTower(t, time) {
   ctx.font = (T * (t.type === 'command' ? 0.62 : 0.42)) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   fText(def.icon, cx, cy - T * 0.02);
   ctx.font = (T * 0.24) + 'px system-ui';
-  fText(t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl), cx, cy + T * 0.34);
+  fText(t.lvl >= 4 ? '👑' + (t.lvl - 2) : t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl), cx, cy + T * 0.34);
   if (scale !== 1) ctx.restore();
 }
 
@@ -2053,14 +2150,14 @@ function buildDust(t) {
 
 function sellValue(t) {
   let paid = 0;
-  for (let i = 0; i <= t.lvl; i++) paid += TOWERS[t.type].levels[i].cost;
+  for (let i = 0; i <= t.lvl; i++) paid += levelStats(t.type, i).cost;
   return Math.round(paid * 0.7);
 }
 
 function showUpgpanel(t) {
   buildbar.classList.add('hidden');
   const def = tInfo(t.type), s = effStats(t);
-  const next = def.levels[t.lvl + 1];
+  const next = levelStats(t.type, t.lvl + 1);
   const info = document.getElementById('upg-info');
   const statBits = [];
   if (s.dmg) statBits.push('Schaden ' + Math.round(s.dmg));
@@ -2068,20 +2165,20 @@ function showUpgpanel(t) {
   if (s.rate && t.type !== 'gift') statBits.push(s.rate + ' Schuss/s');
   if (s.slow) statBits.push('-' + Math.round(s.slow * 100) + '% Tempo');
   if (s.splash) statBits.push('Fläche ' + s.splash);
-  if (s.burn) statBits.push('+' + s.burn + '/s Brand');
-  if (s.charge) statBits.push('+' + s.charge + '/s Verstrahlung · max ' + s.cap + '/s');
-  if (s.boost) statBits.push('Feuerrate ×' + s.boost + ' für MG, Kanone & Railgun daneben');
-  if (s.boosted) statBits.push('⚙️ Auto-Lader aktiv: Feuerrate ×' + s.boosted);
+  if (s.burn) statBits.push('+' + s.burn + '/s ' + (kidsMode ? 'Nachgeruch' : 'Brand'));
+  if (s.charge) statBits.push('+' + s.charge + '/s ' + (kidsMode ? 'Duft' : 'Verstrahlung') + ' · max ' + s.cap + '/s');
+  if (s.boost) statBits.push('Feuerrate ×' + s.boost + ' für ' + tInfo('mg').name + ', ' + tInfo('cannon').name + ' & ' + tInfo('railgun').name + ' daneben');
+  if (s.boosted) statBits.push(tInfo('loader').icon + ' ' + tInfo('loader').name + ' aktiv: Feuerrate ×' + s.boosted);
   if (t.type === 'improb') statBits.push('verwürfelt 1 Monster pro Schuss (je nur 1×, keine Bosse)');
   if (s.acc) statBits.push('trifft Kleine zu ' + Math.round(s.acc * 100) + '% · Bosse immer, ×' + s.bossMul);
-  if (s.factor) statBits.push('Hypnose ' + s.dur + ' s · Biss ' + Math.round(s.factor * 100) + '% seiner Max-HP/s');
+  if (s.factor) statBits.push((kidsMode ? 'Zauber ' : 'Hypnose ') + s.dur + ' s · ' + (kidsMode ? 'Schubs ' : 'Biss ') + Math.round(s.factor * 100) + '% seiner Max-HP/s');
   if (s.aud) statBits.push('fesselt ' + s.aud + ' Zuschauer · ' + s.dur + ' s Programm');
   if (s.chain) statBits.push(s.chain + ' Kettenziele');
   if (s.cone) statBits.push('Kegel ' + Math.round(s.cone * 2 * 180 / Math.PI) + '°');
   if (s.gold) statBits.push('+' + s.gold + ' 💰 alle ' + s.interval + ' s');
   if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
   if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
-  if (t.type === 'command') statBits.push('☢️ ' + s.nuke + ' Schaden', '🛰️ ' + s.beam + ' Schaden · Radius ' + s.brad);
+  if (t.type === 'command') statBits.push((kidsMode ? '🪅 ' : '☢️ ') + s.nuke + ' Schaden', (kidsMode ? '🚿 ' : '🛰️ ') + s.beam + ' Schaden · Radius ' + s.brad, 'gegen Bosse 3× · durch jede Panzerung');
   if (!['gold', 'ice', 'wind', 'loader', 'improb', 'tv'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse · 💥 ' + fmtCount(t.dmgDone || 0) + ' Schaden');
   info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
@@ -2119,13 +2216,14 @@ function renderSpecs(t) {
   if (!list) { box.classList.add('hidden'); return; }
   box.innerHTML = '';
   if (t.spec) {
-    const a = list.find((o) => o.key === t.spec);
+    const a = sInfo(t.type, list.find((o) => o.key === t.spec));
     const div = document.createElement('div');
     div.className = 'ammo-chosen';
     div.textContent = `${a.icon} ${a.name} gewählt – ${a.desc}`;
     box.appendChild(div);
   } else {
-    for (const a of list) {
+    for (const a0 of list) {
+      const a = sInfo(t.type, a0);
       const b = document.createElement('button');
       b.className = 'ammo-btn';
       b.textContent = `${a.icon} ${a.name} (${a.cost} 💰)`;
@@ -2134,7 +2232,7 @@ function renderSpecs(t) {
       b.addEventListener('click', () => {
         if (game.money < a.cost || t.spec) return;
         game.money -= a.cost;
-        t.spec = a.key;
+        t.spec = a0.key;
         saveState();
         showUpgpanel(t);   // Stats & Anzeige auffrischen
       });
@@ -2300,7 +2398,7 @@ const TIPS = {
   gift: 'Pfützen liegen auf dem Weg und ätzen jeden, der durchläuft. Länge vor Fläche an Engstellen.',
   wind: 'Verzögert den Vordersten (¾-Regel: niemand hängt ewig fest). Gut vor der Kill-Zone.',
   gold: 'Früh gebaut zahlt sie sich über die Wellen aus. In eine ruhige Ecke stellen.',
-  command: 'Schaltet ☢️ Nuke und 🛰️ Orbital-Laser frei (je 1× pro Welle). Upgrades stärken beide massiv.',
+  command: 'Schaltet ☢️ Nuke und 🛰️ Orbital-Laser frei (je 1× pro Welle, gegen Bosse 3× und durch jede Panzerung). Endlos ausbaubar – jede weitere Stufe kostet ein Vermögen.',
 };
 const MAINSTAT = {
   mg: ['dmg', 'Schaden'], cannon: ['dmg', 'Schaden'], grenade: ['dmg', 'Schaden'],
@@ -2325,21 +2423,23 @@ const EHELP = {
   boss: { wave: 8, desc: 'Alle 8 Wellen, riesig, kostet 5 ❤️, ab Welle 16 im Rudel und meist dick gepanzert. Immun gegen Hypnose und Verwandlung, Fernsehen findet er nur kurz spannend.', tip: '🧲 Railgun (3–6× Schaden, immer Treffer) plus ☢️/🛰️ Superwaffen bereithalten.' },
 };
 function renderHelp() {
+  // Kommandozentrale: Ende offen – die Stufenketten enden mit "…"
   const chain = (k, def) => {
     const m = MAINSTAT[k];
     if (!m || def.levels[0][m[0]] === undefined) return '';
     const fmt = m[2] || ((v) => v);
-    return ' · ' + m[1] + ': ' + def.levels.map((l) => fmt(l[m[0]])).join(' → ');
+    const label = (kidsMode && KIDS_MAINLBL[k]) || m[1];
+    return ' · ' + label + ': ' + def.levels.map((l) => fmt(l[m[0]])).join(' → ') + (k === 'command' ? ' → …' : '');
   };
   let html = '';
   for (const k of Object.keys(TOWERS)) {
     const def = tInfo(k);
-    const costs = def.levels.map((l) => l.cost).join(' → ');
+    const costs = def.levels.map((l) => l.cost).join(' → ') + (k === 'command' ? ' → …' : '');
     const specs = (SPECS[k] || [])
-      .map((sp) => `${sp.icon} <b>${sp.name}</b> (${sp.cost} 💰): ${sp.desc}`).join('<br>');
+      .map((sp0) => { const sp = sInfo(k, sp0); return `${sp.icon} <b>${sp.name}</b> (${sp.cost} 💰): ${sp.desc}`; }).join('<br>');
     html += `<details class="hd"><summary>${def.icon} ${def.name}</summary><div class="hd-body">`
       + `<p>${def.desc}.</p>`
-      + `<p>💡 ${TIPS[k] || ''}</p>`
+      + `<p>💡 ${(kidsMode && KIDS_TIPS[k]) || TIPS[k] || ''}</p>`
       + `<p>⬆ Stufen: ${costs} 💰${chain(k, def)}</p>`
       + (specs ? `<p>🎛 Spezialisierung (einmalig, entweder/oder):<br>${specs}</p>` : '')
       + '</div></details>';
@@ -2428,7 +2528,7 @@ window.__td = { game, get towers() { return towers; }, get enemies() { return en
     return t;
   },
   upgrade(t) {
-    const next = TOWERS[t.type].levels[t.lvl + 1];
+    const next = levelStats(t.type, t.lvl + 1);
     if (!next || game.money < next.cost) return false;
     game.money -= next.cost; t.lvl++;
     return true;

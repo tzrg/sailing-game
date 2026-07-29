@@ -938,6 +938,63 @@ check('Spielwerte bleiben im Kids-Modus identisch', r.dmgSame);
 check('Zurückschalten stellt Originalnamen wieder her',
   r.back.includes('Kanone') && r.back.includes('Flammenwerfer') && r.backStored === '0', JSON.stringify(r.back));
 
+// Spezialisierungen werden mit-übersetzt: aus der Taktischen Nuke wird die
+// Mega-Konfettibombe, und die Kids-Hilfe ist frei von Militär-Vokabular
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.game.money = 5000;
+  TD.place('rocket', 6, 3);
+  window.tapTile(6, 3);
+  const specTexts = () => [...document.querySelectorAll('#upg-ammo .ammo-btn')].map((b) => b.textContent);
+  const normal = specTexts();
+  TD.setKidsMode(true);
+  const kids = specTexts();
+  const helpKids = document.getElementById('help-towers').innerHTML;
+  TD.setKidsMode(false);
+  return { normal, kids,
+    kidsWords: helpKids.includes('Mega-Konfettibombe') && helpKids.includes('Bohnen-Diät') && helpKids.includes('Murmelkern'),
+    leaks: ['Nuke', 'Wolframkern', 'Hypercharge', 'Gefechtskopf'].filter((w) => helpKids.includes(w)) };
+});
+check('Raketen-Specs normal mit Taktischer Nuke', r.normal.some((s) => s.includes('Taktische Nuke')), JSON.stringify(r.normal));
+check('Kids-Modus: aus der Nuke wird die Mega-Konfettibombe',
+  r.kids.some((s) => s.includes('Mega-Konfettibombe')) && !r.kids.some((s) => s.includes('Nuke')), JSON.stringify(r.kids));
+check('Kids-Hilfe komplett übersetzt (kein Nuke/Wolframkern/Hypercharge)',
+  r.kidsWords && r.leaks.length === 0, JSON.stringify(r.leaks));
+
+// ---- 11) Kommandozentrale: Ende offen, Superwaffen boss-stark --------------
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 1e6;
+  const c = TD.place('command', 4, 6);
+  for (let i = 0; i < 5; i++) TD.upgrade(c);   // 2 Stufen über das alte Maximum hinaus
+  const s = TD.effStats(c);
+  window.tapTile(4, 6);
+  const info = document.getElementById('upg-info').textContent;
+  const upTxt = document.getElementById('upg-up').textContent;
+  const spent = 1e6 - TD.game.money;
+  // Boss: Nuke trifft 3-fach direkt auf die HP, Panzerung bleibt unberührt
+  const boss = window.mkEnemy(5, 8, 1e6, 500);
+  boss.boss = true;
+  TD.fireNuke();
+  const nukeDelta = 1e6 - boss.hp, bossArmor = boss.armorHp;
+  TD.startWave();   // Superwaffen zurücksetzen
+  const boss2 = window.mkEnemy(6, 8, 1e6, 500);
+  boss2.boss = true;
+  TD.fireSlaser(6.5, 8.5);
+  let guard = 0;
+  while (TD.shots.some((sh) => sh.kind === 'sbeam') && guard++ < 100) TD.update(0.05);
+  return { lvl: c.lvl, nuke: s.nuke, beam: s.beam, spent, upTxt, info,
+    nukeDelta, bossArmor, beamDelta: 1e6 - boss2.hp, b2Armor: boss2.armorHp };
+});
+check('Kommandozentrale über Stufe 4 hinaus: Werte wachsen ×1,7 je Stufe',
+  r.lvl === 5 && r.nuke === Math.round(1400 * 1.7 * 1.7) && r.beam === Math.round(2600 * 1.7 * 1.7), JSON.stringify(r));
+check('Endlos-Stufen extrem teuer (6250 → 15625 → …)', r.spent === 25625 && r.upTxt.includes('39063'),
+  'spent=' + r.spent + ' up=' + r.upTxt);
+check('Panel nennt die Boss-Stärke der Superwaffen', r.info.includes('gegen Bosse 3×'), r.info);
+check('Nuke trifft Boss 3-fach direkt (Panzerung bleibt)', r.nukeDelta === r.nuke * 3 && r.bossArmor === 500, JSON.stringify(r));
+check('Orbital-Laser trifft Boss 3-fach direkt', r.beamDelta === r.beam * 3 && r.b2Armor === 500, JSON.stringify(r));
+
 // Kids-Modus übersteht einen Reload (localStorage)
 await page.evaluate(() => window.__td.setKidsMode(true));
 await page.reload();
