@@ -266,6 +266,24 @@ try {
   });
   check('Panzerfaust segelt mit 2.5x Wind', r.windy, JSON.stringify(r));
 
+  // ---- Absoluter Stillstand: keine Mikro-Bewegung im Stehen
+  r = await page.evaluate(() => new Promise((res) => {
+    const WU = window.__wurm;
+    WU.newGame();
+    setTimeout(() => {   // erst in Ruhe kommen lassen
+      const w = WU.focus();
+      const y0 = w.y, x0 = w.x;
+      let maxDy = 0, maxDx = 0, n = 0;
+      const iv = setInterval(() => {
+        maxDy = Math.max(maxDy, Math.abs(w.y - y0));
+        maxDx = Math.max(maxDx, Math.abs(w.x - x0));
+        if (++n >= 12) { clearInterval(iv); res({ maxDy, maxDx }); }
+      }, 70);
+    }, 600);
+  }));
+  check('Stehende Raupe ist absolut ruhig (kein Zittern)', r.maxDy < 0.01 && r.maxDx < 0.01,
+    `dy=${r.maxDy.toFixed(3)} dx=${r.maxDx.toFixed(3)}`);
+
   // ---- Abschluss-Hüpfer nach dem Zug
   r = await page.evaluate(() => {
     const WU = window.__wurm;

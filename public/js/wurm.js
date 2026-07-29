@@ -442,7 +442,13 @@ function stepWorm(wm, dt) {
   if (!wm.alive) return;
   if (wm.celebrate > 0) wm.celebrate -= dt;
   if (wm.squashT > 0) wm.squashT -= dt;
-  wm.vy += GRAV * dt;
+  // Stabiler Stand: wer ruhig auf festem Boden steht, bekommt keine
+  // Schwerkraft-Mikroschritte. (Sonst sinkt die Raupe sub-pixelweise ein und
+  // wird ganzzahlig wieder hochgeschoben -> sichtbares Auf-und-ab-Zittern.)
+  const resting = wm.grounded && Math.abs(wm.vx) < 1 && wm.vy <= 0 &&
+    (solidAt(wm.x, wm.y + 1) || solidAt(wm.x, wm.y + 2));
+  if (resting) wm.vy = 0;
+  else wm.vy += GRAV * dt;
 
   // horizontale Bewegung mit Stufen-Klettern
   if (Math.abs(wm.vx) > 1) {
@@ -879,10 +885,22 @@ function drawWorm(wm, team, time) {
   ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.strokeText(label, wm.x, barY - 5);
   ctx.fillStyle = '#fff'; ctx.fillText(label, wm.x, barY - 5);
   if (wm.gluePhase) { ctx.font = '10px system-ui'; ctx.fillText('🍬', wm.x + 18, barY - 4); }
-  // HP-Balken (farbcodiert: grün -> orange -> rot)
-  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(wm.x - 12, barY, 24, 4);
-  ctx.fillStyle = wm.hp > 50 ? team.color : (wm.hp > 25 ? '#e0a92e' : '#e0453e');
-  ctx.fillRect(wm.x - 12, barY, 24 * clamp(wm.hp, 0, 100) / 100, 4);
+  // HP-Balken: plastische Pille – dunkle Mulde, Farbverlauf, Glanzstreifen
+  const hbW = 26, hbH = 5, hbX = wm.x - hbW / 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(hbX - 0.8, barY - 0.8, hbW + 1.6, hbH + 1.6, 3.4); ctx.fill();
+  const hpF = clamp(wm.hp, 0, 100) / 100;
+  if (hpF > 0) {
+    const hpCol = wm.hp > 50 ? team.color : (wm.hp > 25 ? '#e0a92e' : '#e0453e');
+    const hpG = ctx.createLinearGradient(0, barY, 0, barY + hbH);
+    hpG.addColorStop(0, shade(hpCol, 55));
+    hpG.addColorStop(0.45, hpCol);
+    hpG.addColorStop(1, shade(hpCol, -45));
+    ctx.fillStyle = hpG;
+    roundRect(hbX, barY, Math.max(2, hbW * hpF), hbH, 2.4); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    roundRect(hbX + 1, barY + 0.7, Math.max(1, hbW * hpF - 2), 1.5, 1); ctx.fill();
+  }
   // Sprechblase zum Abschluss-Hüpfer: „Zug fertig!"
   if (wm.celebrate > 0.25) {
     ctx.globalAlpha = clamp(wm.celebrate, 0, 1);
@@ -1097,7 +1115,18 @@ function drawHUD(time) {
     const max = t.worms.length * 100;
     const x = 14 + i * (bw + 10), y = 64; // unter der Toolbar
     ctx.fillStyle = 'rgba(8,25,42,0.55)'; roundRect(x, y, bw, 30, 8); ctx.fill();
-    ctx.fillStyle = t.color; roundRect(x + 4, y + 18, (bw - 8) * total / max, 8, 3); ctx.fill();
+    // dunkle Mulde, darin der glänzende Füllbalken
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(x + 3, y + 16.5, bw - 6, 11, 4.5); ctx.fill();
+    const tw = (bw - 8) * total / max;
+    if (tw > 0.5) {
+      const tg = ctx.createLinearGradient(0, y + 18, 0, y + 26);
+      tg.addColorStop(0, shade(t.color, 55));
+      tg.addColorStop(0.45, t.color);
+      tg.addColorStop(1, shade(t.color, -45));
+      ctx.fillStyle = tg; roundRect(x + 4, y + 18, tw, 8, 3.2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      roundRect(x + 5, y + 19, Math.max(1, tw - 2), 2.5, 1.2); ctx.fill();
+    }
     ctx.fillStyle = i === game.turnTeam ? '#fff' : 'rgba(255,255,255,0.7)';
     ctx.font = (i === game.turnTeam ? 'bold ' : '') + '12px system-ui'; ctx.textAlign = 'left';
     ctx.fillText('Team ' + t.name, x + 6, y + 13);
