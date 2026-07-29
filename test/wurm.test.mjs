@@ -26,7 +26,7 @@ try {
   });
   check('Scharfschütze & Kaugummikanone im Arsenal', !!r.sniper && !!r.gum, r.keys.join(','));
   check('Scharfschütze: 2 Schuss, Hitscan', r.sniper.ammo === 2 && r.sniper.hitscan === true);
-  check('Dynamit: 8 s Rückzug konfiguriert', r.dyn.retreat === 8);
+  check('Dynamit: 4 s Rückzug, Tipp reicht', r.dyn.retreat === 4 && r.dyn.tap === true);
 
   // ---- Scharfschützen-Reichweite: Strahl fliegt durch den freien Himmel
   r = await page.evaluate(() => {
@@ -45,8 +45,8 @@ try {
     const pr = WU.projectiles.find((p) => p.type === 'dynamite');
     return { placed: !!pr, fuse: pr && pr.fuse, retreatT: WU.game.retreatT, state: WU.game.state };
   });
-  check('Dynamit gelegt: Lunte 10 s, Rückzug ~8 s, Zug läuft weiter',
-    r.placed && r.fuse === 10 && r.retreatT > 7.5 && r.state === 'aim', JSON.stringify(r));
+  check('Dynamit gelegt: Lunte 5 s, Rückzug ~4 s, Zug läuft weiter',
+    r.placed && r.fuse === 5 && r.retreatT > 3.5 && r.state === 'aim', JSON.stringify(r));
 
   await page.waitForTimeout(900);   // fällt zu Boden und bleibt liegen
   r = await page.evaluate(() => {
@@ -57,14 +57,13 @@ try {
   check('Dynamit explodiert NICHT beim Aufsetzen (der alte Bug)', r.still && r.rest, JSON.stringify(r));
   check('Die Raupe daneben lebt noch unversehrt', r.alive && r.hp === 100);
 
-  // Lunte fast abbrennen lassen -> jetzt muss es krachen
-  await page.evaluate(() => {
-    const pr = window.__wurm.projectiles.find((p) => p.type === 'dynamite');
-    pr.t = 9.9;
-  });
-  await page.waitForTimeout(400);
-  r = await page.evaluate(() => ({ gone: !window.__wurm.projectiles.some((p) => p.type === 'dynamite') }));
-  check('Nach 10 s Lunte explodiert das Dynamit', r.gone);
+  // Manueller Zünder: FEUER im Rückzug drücken -> sofortiger Knall
+  r = await page.evaluate(() => new Promise((res) => {
+    const WU = window.__wurm;
+    document.getElementById('b-fire').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    setTimeout(() => res({ gone: !WU.projectiles.some((p) => p.type === 'dynamite') }), 400);
+  }));
+  check('FEUER im Rückzug zündet das Dynamit sofort', r.gone);
 
   // ---- Kaugummi: Kleber-Phasen über die Züge
   r = await page.evaluate(() => {

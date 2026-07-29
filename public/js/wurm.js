@@ -190,8 +190,8 @@ const WEAPONS = [
     fire: (w) => shotgun(w) },
   { key: 'mp', name: 'MP (Uzi)', icon: '🔩', ammo: Infinity, aimed: true, hitscan: true,
     fire: (w) => uzi(w) },
-  { key: 'dynamit', name: 'Dynamit', icon: '🧨', ammo: 3, aimed: false, retreat: 8,
-    fire: (w) => drop(w, 'dynamite', { r: 52, dmg: 62, fuse: 10 }) },
+  { key: 'dynamit', name: 'Dynamit', icon: '🧨', ammo: 3, aimed: false, retreat: 4, tap: true,
+    fire: (w) => drop(w, 'dynamite', { r: 52, dmg: 62, fuse: 5 }) },
   { key: 'sniper', name: 'Scharfschütze', icon: '🔭', ammo: 2, aimed: true, hitscan: true,
     fire: (w) => sniper(w) },
   { key: 'gum', name: 'Kaugummikanone', icon: '🍬', ammo: 3, aimed: true,
@@ -477,7 +477,6 @@ function stepWorm(wm, dt) {
 
   // Kriech-Phase (Wellenbewegung der Raupe)
   if (wm.grounded && Math.abs(wm.vx) > 5) wm.crawl += Math.min(0.5, Math.abs(wm.vx) * dt * 0.5);
-  else wm.crawl += dt * 1.6; // ruhiges „Atmen"
   // Wasser
   if (wm.y > WATERLINE + 4) {
     const wasAlive = wm.alive;
@@ -753,7 +752,12 @@ function drawWorm(wm, team, time) {
   const f = wm.facing;
   const segN = 5, gap = 3.4, segR = 4.2;
   const moving = wm.grounded && Math.abs(wm.vx) > 6;
-  const amp = moving ? 2.8 : 0.6;
+  const amp = moving ? 2.8 : 0;   // im Stand ganz ruhig (kein Dauergewackel)
+  // Tickt Dynamit in der Nähe? Dann Ohren zu und Augen zusammenkneifen!
+  let earsShut = false;
+  for (const pr of projectiles) {
+    if (pr.type === 'dynamite' && Math.hypot(pr.x - wm.x, pr.y - wm.y) < 110) { earsShut = true; break; }
+  }
   const segY = (i) => wm.y - segR + Math.sin(wm.crawl - i * 0.95) * amp;
 
   ctx.save();
@@ -794,7 +798,7 @@ function drawWorm(wm, team, time) {
   }
   // Kopf-Details (mit gelegentlichem Blinzeln)
   const hx = wm.x, hy = segY(0);
-  const blink = ((time * 0.9 + wm.crawl * 0.37) % 3.1) < 0.14;
+  const blink = earsShut || ((time * 0.9 + wm.crawl * 0.37) % 3.1) < 0.14;
   if (blink) {
     ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(hx + f * 0.8, hy - 1.6); ctx.lineTo(hx + f * 3.6, hy - 1.6); ctx.stroke();
@@ -807,12 +811,18 @@ function drawWorm(wm, team, time) {
     ctx.fillStyle = '#111';
     ctx.beginPath(); ctx.arc(hx + f * (2.4 + Math.cos(lookA) * 0.6), hy - 1.8 - Math.sin(lookA) * 0.9, 1.05, 0, TAU); ctx.fill();
   }
-  // Mund: fröhlich, bei wenig HP besorgt
+  // Mund: fröhlich, bei wenig HP (oder tickendem Dynamit) besorgt
   ctx.strokeStyle = '#111'; ctx.lineWidth = 0.8; ctx.lineCap = 'round';
   ctx.beginPath();
-  if (wm.hp > 25) ctx.arc(hx + f * 1.8, hy + 0.9, 1.7, 0.35, Math.PI - 0.35);
+  if (wm.hp > 25 && !earsShut) ctx.arc(hx + f * 1.8, hy + 0.9, 1.7, 0.35, Math.PI - 0.35);
   else ctx.arc(hx + f * 1.8, hy + 3.4, 1.7, Math.PI + 0.35, TAU - 0.35);
   ctx.stroke();
+  // Ohren zuhalten: zwei Pfötchen seitlich an den Kopf gepresst
+  if (earsShut) {
+    ctx.fillStyle = shade(team.color, 28); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(hx - f * 1.2, hy - 4.6, 1.7, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(hx + f * 4.4, hy - 3.6, 1.7, 0, TAU); ctx.fill(); ctx.stroke();
+  }
   // Fühler
   ctx.strokeStyle = team.color; ctx.lineWidth = 0.9;
   const antW = Math.sin(time * 3 + wm.x) * 1;
@@ -1125,9 +1135,18 @@ function canMove() { return game.state === 'aim' && game.active; }   // auch im 
 function releaseFire() {
   if (!game.charging) return;
   game.charging = false;
-  // Nahkampf (Baseballschläger) braucht keine Aufladung – tippen reicht.
-  if (canAct() && (game.power > 0.02 || curWeapon().melee)) fireWeapon();
+  // Nahkampf & Dynamit brauchen keine Aufladung – tippen reicht.
+  if (canAct() && (game.power > 0.02 || curWeapon().melee || curWeapon().tap)) fireWeapon();
   else game.power = 0;
+}
+
+// Manueller Zünder: FEUER während des Rückzugs drücken lässt gelegtes
+// Dynamit sofort hochgehen (statt die restliche Lunte abzuwarten).
+function triggerDynamite() {
+  if (!game.fireDone || game.state !== 'aim') return;
+  for (const pr of projectiles) {
+    if (pr.type === 'dynamite' && pr.fuse != null) pr.fuse = Math.min(pr.fuse, pr.t + 0.1);
+  }
 }
 
 function actJump() {
@@ -1148,6 +1167,7 @@ function onFireDown() {
   if (net.on && !net.host) { if (iTurn()) net.client.send({ t: 'act', a: { k: 'fire', on: true } }); return; }
   if (net.on && game.turnTeam !== net.you) return;
   if (canAct()) game.charging = true;
+  else triggerDynamite();
 }
 function onFireUp() {
   if (net.on && !net.host) { if (iTurn()) net.client.send({ t: 'act', a: { k: 'fire', on: false } }); return; }
@@ -1404,7 +1424,7 @@ function onRemoteAct(m) {
   if (a.k === 'move') net.remote.moveDir = a.dir | 0;
   else if (a.k === 'aim') net.remote.aimDir = a.dir | 0;
   else if (a.k === 'jump') actJump();
-  else if (a.k === 'fire') { if (a.on) { if (canAct()) game.charging = true; } else releaseFire(); }
+  else if (a.k === 'fire') { if (a.on) { if (canAct()) game.charging = true; else triggerDynamite(); } else releaseFire(); }
   else if (a.k === 'weapon') { if (canAct()) { game.weaponIdx = a.i | 0; game.shotgunShots = 0; } }
   else if (a.k === 'switch') { if (canAct()) switchWorm(); }
 }
