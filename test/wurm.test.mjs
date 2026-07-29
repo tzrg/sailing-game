@@ -322,6 +322,41 @@ try {
     return { celebrate: active.celebrate > 0, next: WU.game.active !== active };
   });
   check('Nach dem Zug hüpft die Raupe (Zug fertig!)', r.celebrate && r.next);
+
+  // ---- Baseballschläger: genervt (18 Schaden, moderater Rums) ---------------
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const w = WU.game.active;
+    const victim = WU.allWorms().find((o) => o !== w);
+    victim.x = w.x + w.facing * 20; victim.y = w.y;
+    victim.vx = 0; victim.vy = 0; victim.hp = 100;
+    WU.game.aim = 0;
+    WU.WEAPONS.find((wp) => wp.key === 'bat').fire(w);
+    return { hp: victim.hp, vx: Math.abs(victim.vx), vy: victim.vy };
+  });
+  check('Schläger macht jetzt 18 Schaden (statt 26)', r.hp === 82, 'hp=' + r.hp);
+  check('Rückstoß moderat: |vx| ≤ 380, leichter Lupfer', r.vx > 100 && r.vx <= 380.5 && r.vy < 0, JSON.stringify(r));
+
+  // ---- Kartenränder: Land bis zum Rand, unsichtbare Wände statt Absturz -----
+  r = await page.evaluate(() => new Promise((res) => {
+    const WU = window.__wurm;
+    WU.newGame();
+    // Land reicht jetzt bis an beide Ränder (kein Wasserstreifen mehr)
+    const landL = WU.solidAt(2, 590), landR = WU.solidAt(1597, 590);
+    // Raupe hoch oben mit Wucht gegen die linke Wand schleudern
+    const wm = WU.allWorms()[0];
+    wm.x = 60; wm.y = 40; wm.vx = -900; wm.vy = 0; wm.grounded = false;
+    let minX = wm.x, bounced = false, n = 0;
+    const iv = setInterval(() => {
+      minX = Math.min(minX, wm.x);
+      if (wm.vx > 10) bounced = true;
+      if (++n > 25) { clearInterval(iv); res({ landL, landR, minX, bounced, alive: wm.alive, x: wm.x }); }
+    }, 80);
+  }));
+  check('Land reicht bis an beide Kartenränder', r.landL && r.landR, JSON.stringify(r));
+  check('Unsichtbare Wand: Raupe prallt ab und bleibt im Bild',
+    r.minX >= 5 && r.bounced && r.alive && r.x >= 5, JSON.stringify(r));
 } finally {
   await browser.close();
   srv.stop();

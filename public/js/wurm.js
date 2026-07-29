@@ -10,7 +10,6 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 // ---- Welt ------------------------------------------------------------------
 const WORLD_W = 1600, WORLD_H = 640, WATERLINE = 600;
-const EDGE_WATER = 48;   // Wasser-Rand links/rechts (kein Land)
 const GRAV = 520;              // px/s²
 let mask;                       // Uint8Array: 1 = fester Grund
 let terrainCanvas, terrainCtx, terrainImage;
@@ -54,9 +53,8 @@ function generateTerrain(seed) {
     const cx = (r() * WORLD_W) | 0, cy = (200 + r() * 300) | 0, rad = 30 + r() * 60;
     carveCircle(cx, cy, rad, false);
   }
-  // Wasser direkt an den Rändern: die äußersten Spalten kein Land -> wer dort
-  // hinfällt oder hingeschlagen wird, landet im Meer.
-  for (let x = 0; x < EDGE_WATER; x++) for (let y = 0; y < WORLD_H; y++) { mask[idx(x, y)] = 0; mask[idx(WORLD_W - 1 - x, y)] = 0; }
+  // Das Land reicht bis an die Kartenränder – seitlich fällt niemand raus,
+  // ins Wasser geht es nur durch Löcher, die bis ganz nach unten reichen.
   buildTerrainCanvas();
 }
 
@@ -322,7 +320,7 @@ function bat(w) {
   for (const wm of allWorms()) {
     if (!wm.alive || wm === w) continue;
     if (Math.hypot(wm.x - hx, (wm.y - 6) - hy) < 30) {
-      damage(wm, 26, dirx * 600, diry * 420 - 130);   // Schaden + kräftiger Schlag
+      damage(wm, 18, dirx * 380, diry * 300 - 100);   // Schaden + ordentlicher Schlag
       hit = true;
     }
   }
@@ -474,7 +472,11 @@ function stepWorm(wm, dt) {
 
   // horizontale Bewegung mit Stufen-Klettern
   if (Math.abs(wm.vx) > 1) {
-    const nx = clamp(wm.x + wm.vx * dt, 2, WORLD_W - 2);
+    let nx = wm.x + wm.vx * dt;
+    // Unsichtbare Wände links/rechts: wer dagegen geschlagen wird, prallt ab
+    // (beim normalen Laufen einfach stehen bleiben)
+    if (nx < 6) { nx = 6; wm.vx = Math.abs(wm.vx) > 80 ? Math.abs(wm.vx) * 0.5 : 0; }
+    else if (nx > WORLD_W - 6) { nx = WORLD_W - 6; wm.vx = Math.abs(wm.vx) > 80 ? -Math.abs(wm.vx) * 0.5 : 0; }
     if (bodyClear(nx, wm.y)) {
       wm.x = nx;
     } else {
