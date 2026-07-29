@@ -183,7 +183,7 @@ for (let i = 0; i < 6; i++) {
 // Flug/Explosion. Namen bewusst eigenständig (kein geschütztes Original).
 const WEAPONS = [
   { key: 'panzer', name: 'Panzerfaust', icon: '🚀', ammo: Infinity, aimed: true,
-    fire: (w) => launch(w, 'rocket', 720, { r: 34, dmg: 48, wind: 1 }) },
+    fire: (w) => launch(w, 'rocket', 720, { r: 34, dmg: 48, wind: 2.5 }) },
   { key: 'granate', name: 'Splittergranate', icon: '💣', ammo: Infinity, aimed: true, retreat: true,
     fire: (w) => launch(w, 'grenade', 620, { r: 36, dmg: 46, fuse: 3, bounce: 0.55, wind: 0.5 }) },
   { key: 'schrot', name: 'Schrotflinte', icon: '🔫', ammo: Infinity, aimed: true, hitscan: true,
@@ -492,6 +492,16 @@ function stepProjectile(pr, dt) {
   if (pr.type === 'rocket' && Math.random() < dt * 55) {
     particles.push({ kind: 'smoke', x: pr.x, y: pr.y, vx: 0, vy: -14, r0: 3.5, t: 0, ttl: 0.5 });
   }
+  if (pr.holy) {
+    // Halleluja: goldene Sternchen sprudeln, der heilige Geist steigt auf
+    if (Math.random() < dt * 14) {
+      particles.push({ kind: 'star', x: pr.x + (Math.random() - 0.5) * 12, y: pr.y - 4,
+        vx: (Math.random() - 0.5) * 30, vy: -70 - Math.random() * 40, rot: Math.random() * TAU, t: 0, ttl: 0.8 });
+    }
+    if (Math.random() < dt * 3) {
+      particles.push({ kind: 'holy', x: pr.x, y: pr.y - 10, t: 0, ttl: 1.2 });
+    }
+  }
   if (pr.wind) pr.vx += game.wind * 40 * pr.wind * dt;
   let nx = pr.x + pr.vx * dt, ny = pr.y + pr.vy * dt;
 
@@ -784,17 +794,38 @@ function drawWorm(wm, team, time) {
     ctx.moveTo(sx + 2, sy + segR - 1); ctx.lineTo(sx + 2 - wig, sy + segR + 2.5);
     ctx.stroke();
   }
-  // Körper (hinten zuerst, Kopf zuletzt)
+  // Körper (hinten zuerst, Kopf zuletzt): sattes Logo-Grün mit
+  // Kugel-Verlauf für den plastischen Look – die Teamfarbe sitzt auf der Mütze
   for (let i = segN - 1; i >= 0; i--) {
     const sx = wm.x - f * i * gap, sy = segY(i);
     const r = i === 0 ? segR + 1.3 : segR * (1 - i * 0.06);
+    const base = i % 2 ? '#5cbf4e' : '#48a83e';
+    const grad = ctx.createRadialGradient(sx - r * 0.35, sy - r * 0.45, r * 0.15, sx, sy, r * 1.15);
+    grad.addColorStop(0, shade(base, 55));
+    grad.addColorStop(0.6, base);
+    grad.addColorStop(1, shade(base, -40));
     ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU);
-    ctx.fillStyle = i % 2 ? team.color : shade(team.color, -22);
+    ctx.fillStyle = grad;
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1.2; ctx.stroke();   // fette Comic-Outline
-    // Glanzlicht auf jedem Segment
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
-    ctx.beginPath(); ctx.arc(sx - r * 0.3, sy - r * 0.35, r * 0.32, 0, TAU); ctx.fill();
+    // kleiner Glanzpunkt obendrauf
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath(); ctx.arc(sx - r * 0.32, sy - r * 0.42, r * 0.16, 0, TAU); ctx.fill();
+  }
+  // Team-Mütze: farbige Kappe mit Schirm und Bommel auf dem Kopf
+  {
+    const chx = wm.x, chy = segY(0) - 2.6;
+    ctx.fillStyle = team.color; ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.arc(chx, chy, segR + 0.9, Math.PI + 0.15, -0.15); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Schirm in Blickrichtung
+    ctx.beginPath(); ctx.ellipse(chx + f * (segR + 1.6), chy + 0.4, 2.7, 1.1, 0, 0, TAU);
+    ctx.fill(); ctx.stroke();
+    // Glanz auf der Kappe + weißer Bommel
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.arc(chx - 1.6, chy - 2.6, 1.3, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#f2f2f2'; ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.arc(chx, chy - segR - 1.1, 1.2, 0, TAU); ctx.fill(); ctx.stroke();
   }
   // Kopf-Details (mit gelegentlichem Blinzeln)
   const hx = wm.x, hy = segY(0);
@@ -819,7 +850,7 @@ function drawWorm(wm, team, time) {
   ctx.stroke();
   // Ohren zuhalten: zwei Pfötchen seitlich an den Kopf gepresst
   if (earsShut) {
-    ctx.fillStyle = shade(team.color, 28); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.8;
+    ctx.fillStyle = shade('#5cbf4e', 22); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.8;
     ctx.beginPath(); ctx.arc(hx - f * 1.2, hy - 4.6, 1.7, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.beginPath(); ctx.arc(hx + f * 4.4, hy - 3.6, 1.7, 0, TAU); ctx.fill(); ctx.stroke();
   }
@@ -893,6 +924,11 @@ function drawProjectile(pr, time) {
     ctx.beginPath(); ctx.arc(0, 0, pr.holy ? 6 : 4, 0, TAU); ctx.fill();
     const on = Math.floor(time * 10) % 2 === 0;
     ctx.fillStyle = on ? '#ffcc33' : '#883'; ctx.beginPath(); ctx.arc(0, -5, 1.5, 0, TAU); ctx.fill();
+    if (pr.holy) {
+      // schwebender Heiligenschein
+      ctx.strokeStyle = 'rgba(255,238,150,0.9)'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.ellipse(0, -10 - Math.sin(time * 5) * 1.2, 5, 1.8, 0, 0, TAU); ctx.stroke();
+    }
   }
   ctx.restore();
 }
@@ -947,6 +983,15 @@ function drawParticle(p) {
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(p.name, p.x + wig, p.y - f * 38 + 12);
       ctx.fillStyle = '#fff'; ctx.fillText(p.name, p.x + wig, p.y - f * 38 + 12);
     }
+    ctx.globalAlpha = 1; ctx.textAlign = 'left';
+  } else if (p.kind === 'holy') {
+    const f = p.t / p.ttl;
+    const wig = Math.sin(p.t * 5) * 3;
+    ctx.globalAlpha = (1 - f) * 0.95;
+    ctx.fillStyle = 'rgba(255,240,150,0.45)';
+    ctx.beginPath(); ctx.arc(p.x + wig, p.y - f * 34, 8, 0, TAU); ctx.fill();
+    ctx.font = '12px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('🕊️', p.x + wig, p.y - f * 34 + 4);
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
   } else if (p.kind === 'burst') {
     // POW!-Blitz: gezackter Comic-Stern

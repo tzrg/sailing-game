@@ -239,6 +239,33 @@ try {
   });
   check('Ertrinken: kein Grabstein, Neues Spiel räumt Gräber', r.drowned && r.noNewGrave && r.cleared, JSON.stringify(r));
 
+  // ---- Allmachtsgranate: Sterne + heiliger Geist vor dem Knall
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const w = WU.focus();
+    WU.projectiles.push({ type: 'grenade', x: w.x + 40, y: w.y - 60, vx: 0, vy: -30, t: 0,
+      r: 100, dmg: 115, fuse: 3, bounce: 0.45, wind: 0.5, holy: 1 });
+    const windPanzer = WU.WEAPONS.find((x) => x.key === 'panzer');
+    return { ok: true };
+  });
+  await page.waitForTimeout(700);
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    const kinds = new Set(WU.particles.map((p) => p.kind));
+    WU.projectiles.length = 0;   // Granate vor dem Knall aufräumen
+    return { hasStar: kinds.has('star'), hasHoly: kinds.has('holy') };
+  });
+  check('Allmachtsgranate: Sternchen + heiliger Geist steigen auf', r.hasStar && r.hasHoly, JSON.stringify(r));
+
+  // ---- Panzerfaust: kräftiger Windeinfluss für Trickshots
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    const fireStr = String(WU.WEAPONS.find((x) => x.key === 'panzer').fire);
+    return { windy: fireStr.includes('wind: 2.5') };
+  });
+  check('Panzerfaust segelt mit 2.5x Wind', r.windy, JSON.stringify(r));
+
   // ---- Abschluss-Hüpfer nach dem Zug
   r = await page.evaluate(() => {
     const WU = window.__wurm;
