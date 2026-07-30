@@ -74,12 +74,12 @@ Docker-Container deployt.
   Verstrahlung, Anti-Boss-Railgun, Hypnoseturm, Fernsehturm (lenkt Zuschauer
   ab und hält sie fest, danach kurz immun), vier passive Buff-Türme
   (Auto-Lader mit Uranmunition/Treibladung, Starkstromaggregat für
-  Blitz/Railgun/Laser, Chemiefabrik für Gift/Flammen, Sprengstofffabrik
+  Blitz/Railgun/Laser, Chemiefabrik für Säure/Flammen, Sprengstofffabrik
   für Granaten/Raketen – je der beste Nachbar zählt; geboostete Türme
   tragen sichtbare Buff-Plaketten, gewählte Buff-Türme zeigen ihren
   3×3-Wirkungsbereich), Blitzturm lädt Getroffene statisch auf
   (3 s langsamer, +30% Kinetik-Schaden),
-  Unwahrscheinlichkeitskanone, Giftschleuder, Windmaschine, Goldmine,
+  Unwahrscheinlichkeitskanone, Säureschleuder, Windmaschine, Goldmine,
   Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.
   Nur die Kommandozentrale ist **endlos ausbaubar** (jede weitere Stufe
@@ -100,7 +100,7 @@ Docker-Container deployt.
   Antippen aufklappen.
   Späte Wellen bringen Resistenzler (Feuer-, Laser- und Blitz-resistent),
   die einen Waffen-Mix erzwingen. Schadensarten + **Panzerung** (Kinetik/Laser
-  knacken sie, Säurepfützen der Giftschleuder ätzen sie aktiv weg, die
+  knacken sie, Säurepfützen der Säureschleuder ätzen sie aktiv weg, die
   Kanonen-Hohlladung trifft sie ×4), pro Turm einmalige **Spezialisierungen** (Spezialmunition,
   Schaden-oder-Reichweite, mehr Kettenziele, breiterer Feuerkegel) und die
   Kommandozentrale (3 Stufen) schaltet **☢️ Nuke** und **🛰️ Orbital-Laser**

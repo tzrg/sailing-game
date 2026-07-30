@@ -1073,7 +1073,7 @@ check('Regenerierer-Heilung hart gedeckelt (~700/s statt 20.000/s bei Welle 67)'
   r.healed > 600 && r.healed < 800, JSON.stringify(r));
 check('Brand stoppt die Selbstheilung komplett', r.healedBurning <= 0, JSON.stringify(r));
 
-// ---- 14) Anti-Panzer: Hohlladung (Kanone) + Säure (Giftschleuder) ----------
+// ---- 14) Anti-Panzer: Hohlladung (Kanone) + Säure (Säureschleuder) ---------
 r = await page.evaluate(() => {
   const TD = window.__td;
   TD.newGame();
@@ -1145,7 +1145,7 @@ r = await page.evaluate(() => {
   const splS = TD.effStats(gr).splash;
   return { base, amp, burnN, durT, gBase, gAmp, splS };
 });
-check('Chemiefabrik: ×1,3 Schaden/s für Flammenwerfer & Giftschleuder',
+check('Chemiefabrik: ×1,3 Schaden/s für Flammenwerfer & Säureschleuder',
   r.amp.fl === Math.round(r.base.fl * 1.3) && r.amp.gi === Math.round(r.base.gi * 1.3), JSON.stringify(r));
 check('☠️ Nervengift +2,5 s Pfützen · 🔥 Napalm Brand ×1,6',
   Math.abs(r.durT - (r.base.dur + 2.5)) < 1e-9 && r.burnN === Math.round(r.base.burn * 1.6), JSON.stringify(r));

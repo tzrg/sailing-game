@@ -91,7 +91,7 @@ const TOWERS = {
       { cost: 120, charge: 7, cap: 48, range: 2.6 },
       { cost: 210, charge: 12, cap: 85, range: 2.9 },
       { cost: 1500, charge: 24, cap: 170, range: 3.3 }] },
-  gift: { name: 'Giftschleuder', icon: '🧪', color: '#8ad84a', desc: 'hinterlässt ätzende Säurepfützen – das Gift frisst auch Panzerung an',
+  gift: { name: 'Säureschleuder', icon: '🧪', color: '#8ad84a', desc: 'hinterlässt ätzende Säurepfützen – die Säure frisst auch Panzerung an',
     levels: [
       { cost: 95, dps: 13, rate: 0.45, range: 3.0, pool: 0.95, dur: 4 },
       { cost: 105, dps: 25, rate: 0.5, range: 3.3, pool: 1.1, dur: 4.5 },
@@ -121,7 +121,7 @@ const TOWERS = {
       { cost: 120, amp: 1.45 },
       { cost: 220, amp: 1.6 },
       { cost: 1000, amp: 1.9 }] },
-  chem: { name: 'Chemiefabrik', icon: '⚗️', color: '#8ad84a', desc: 'passiv: Giftschleuder & Flammenwerfer auf Nachbarfeldern bekommen deutlich mehr Schaden/s',
+  chem: { name: 'Chemiefabrik', icon: '⚗️', color: '#8ad84a', desc: 'passiv: Säureschleuder & Flammenwerfer auf Nachbarfeldern bekommen deutlich mehr Schaden/s',
     levels: [
       { cost: 110, amp: 1.3 },
       { cost: 120, amp: 1.45 },
@@ -217,7 +217,7 @@ const SPECS = {
     { key: 'turbo', icon: '🔌', name: 'Turbolader', cost: 150, desc: 'geboostete Schuss-Türme feuern ×1,2 schneller' },
   ],
   chem: [
-    { key: 'toxin', icon: '☠️', name: 'Nervengift', cost: 150, desc: 'Giftpfützen daneben halten +2,5 s' },
+    { key: 'toxin', icon: '☠️', name: 'Ätzkonzentrat', cost: 150, desc: 'Säurepfützen daneben halten +2,5 s' },
     { key: 'napalm', icon: '🔥', name: 'Napalm-Zusatz', cost: 150, desc: 'Brandschaden der Flammenwerfer ×1,6' },
   ],
   explo: [
@@ -275,7 +275,7 @@ function effStats(t) {
       if (v.spec === 'turbo' && s.rate) s.rate = Math.round(s.rate * 1.2 * 100) / 100;
     }
   }
-  // ⚗️ Chemiefabrik: Giftschleuder & Flammenwerfer ätzen/brennen härter
+  // ⚗️ Chemiefabrik: Säureschleuder & Flammenwerfer ätzen/brennen härter
   if (t.type === 'gift' || t.type === 'flame') {
     const c = buffNeighbor('chem');
     if (c) {
@@ -1012,7 +1012,7 @@ function stepShot(sh, dt) {
     return sh.t >= sh.ttl;
   }
   if (sh.kind === 'pool') {
-    // Giftpfütze: ätzt alle, die drin stehen
+    // Säurepfütze: ätzt alle, die drin stehen
     for (const e of enemies) {
       if (e.dead || e.escaped) continue;
       if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.r + e.r * 0.5) damage(e, sh.dps * dt, 'poison', sh.acid ? 'acid' : false, sh.src);
@@ -1133,7 +1133,7 @@ function update(dt) {
   if (game.shakeT > 0) game.shakeT = Math.max(0, game.shakeT - dt);
 
   // Türme & Schüsse. Rückwärts über den Live-Array: stepShot darf neue
-  // Schüsse pushen (Giftpfütze aus der Flasche, Explosions-Visuals) – mit
+  // Schüsse pushen (Säurepfütze aus der Flasche, Explosions-Visuals) – mit
   // shots.filter(...) gingen die während des Durchlaufs gepushten verloren.
   for (const t of towers) stepTower(t, dt);
   for (let i = shots.length - 1; i >= 0; i--) {
@@ -2089,7 +2089,7 @@ function drawShot(sh) {
     }
     ctx.globalAlpha = 1;
   } else if (sh.kind === 'pool') {
-    // Giftpfütze mit blubberndem Rand
+    // Säurepfütze mit blubberndem Rand
     const a = clamp(sh.ttl - sh.t, 0, 1);
     ctx.globalAlpha = 0.45 * Math.min(1, a);
     ctx.fillStyle = '#5ab82a';
@@ -2639,7 +2639,7 @@ const TIPS = {
   ray: 'Verstrahlung bleibt für immer und ignoriert Panzerung – vorne markieren, hinten sterben lassen.',
   loader: 'Passiv! Direkt neben MG, Kanone oder Railgun stellen – nur der beste Lader daneben zählt. ☢️ Uranmunition verstrahlt nebenbei, 🧪 Treibladung verlängert die Reichweite.',
   volt: 'Passiv! Neben Blitzturm, Railgun oder Laser stellen – Schaden rauf. ⚡ Überspannung lohnt bei Blitz UND Railgun.',
-  chem: 'Passiv! Neben Giftschleuder oder Flammenwerfer – Säure und Feuer werden richtig fies. Kombiniert gut mit 🧫 Königswasser.',
+  chem: 'Passiv! Neben Säureschleuder oder Flammenwerfer – Säure und Feuer werden richtig fies. Kombiniert gut mit 🧫 Königswasser.',
   explo: 'Passiv! Neben Granatkanone oder Raketenturm – mit 💥 Splitterladung wächst auch die Fläche.',
   improb: 'Glücksspiel: verwandelt Panzer in Blobs – oder in Renner. Am besten auf dicke Brocken.',
   railgun: 'Der Boss-Killer: trifft Bosse immer, 3× Schaden, durch jede Panzerung. Kleine verfehlt sie oft.',
@@ -2653,7 +2653,7 @@ const TIPS = {
 const MAINSTAT = {
   mg: ['dmg', 'Schaden'], cannon: ['dmg', 'Schaden'], grenade: ['dmg', 'Schaden'],
   rocket: ['dmg', 'Schaden'], tesla: ['dmg', 'Schaden'], railgun: ['dmg', 'Schaden'],
-  laser: ['dps', 'Schaden/s'], flame: ['dps', 'Schaden/s'], gift: ['dps', 'Gift/s'],
+  laser: ['dps', 'Schaden/s'], flame: ['dps', 'Schaden/s'], gift: ['dps', 'Säure/s'],
   ice: ['slow', 'Tempo-Malus', (v) => Math.round(v * 100) + '%'],
   wind: ['rate', 'Stöße/s'], improb: ['rate', 'Würfe/s'],
   ray: ['charge', 'Verstrahlung/s'], gold: ['gold', 'Gold'],
