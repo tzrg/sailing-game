@@ -1053,6 +1053,26 @@ r = await page.evaluate(() => {
 check('Voll-Statistik nur für die letzten 12 Partien, Slot bleibt klein',
   r.newest && r.at11 && !r.at12 && !r.at13 && r.size < 32000, JSON.stringify(r));
 
+// ---- 13) Regenerierer: Heilung gedeckelt, Brand stoppt sie -----------------
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.wave = 67;
+  TD.game.nextT = 999;
+  const e = window.mkEnemy(5, 2, 500000);
+  e.maxHp = 1e6; e.regen = 0.02;   // ungedeckelt wären das 20.000 HP/s
+  for (let i = 0; i < 20; i++) TD.update(0.05);   // 1 Sekunde
+  const healed = e.hp - 500000;
+  e.hp = 500000; e.burnT = 5; e.burnDps = 0;      // brennt (ohne Brandschaden)
+  for (let i = 0; i < 20; i++) TD.update(0.05);
+  const healedBurning = e.hp - 500000;
+  TD.newGame();
+  return { healed, healedBurning };
+});
+check('Regenerierer-Heilung hart gedeckelt (~700/s statt 20.000/s bei Welle 67)',
+  r.healed > 600 && r.healed < 800, JSON.stringify(r));
+check('Brand stoppt die Selbstheilung komplett', r.healedBurning <= 0, JSON.stringify(r));
+
 // Kids-Modus übersteht einen Reload (localStorage)
 await page.evaluate(() => window.__td.setKidsMode(true));
 await page.reload();

@@ -347,7 +347,12 @@ function stepEnemy(e, dt) {
       if (e.hp <= 0 && !e.killedBy) e.killedBy = e.radSrc;
     }
   }
-  if (e.regen) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * e.regen * dt);
+  if (e.regen && e.burnT <= 0) {
+    // Selbstheilung: prozentual, aber hart gedeckelt – sonst ist der
+    // Regenerierer in hohen Wellen unbesiegbar. Brand stoppt sie komplett.
+    const heal = Math.min(e.maxHp * e.regen, 30 + game.wave * 10);
+    e.hp = Math.min(e.maxHp, e.hp + heal * dt);
+  }
   if (e.hypnoT > 0) {
     // Hypnotisiert: bleibt stehen und beißt den nächsten anderen Gegner
     e.hypnoT -= dt;
@@ -2446,7 +2451,7 @@ const EHELP = {
   blob: { wave: 1, desc: 'Das Standardmonster: mittleres Tempo, keine Extras.', tip: 'Futter für alles – gut zum Gold sammeln.' },
   runner: { wave: 2, desc: 'Flitzt mit fast doppeltem Tempo, hat dafür wenig HP.', tip: '❄️ Vereiser und 🌪️ Wind bremsen; schnelle Türme wie das MG fangen ihn ab.' },
   tank: { wave: 4, desc: 'Zäher Brocken mit grauer Rüstung, die Feuer, Blitz, Explosion und Gift fast komplett schluckt.', tip: 'Kinetik (MG/Kanone), Laser, 🧲 Railgun oder ☣️ Verstrahlung – oder per 🎲 verwandeln.' },
-  regen: { wave: 7, desc: 'Heilt sich stetig selbst.', tip: 'Fokus-Schaden statt Dauer-Gekleckere – oder permanente ☣️ Verstrahlung, die heilt er nicht weg.' },
+  regen: { wave: 7, desc: 'Heilt sich stetig selbst – die Heilung ist aber gedeckelt und setzt komplett aus, solange er brennt.', tip: 'Anzünden (🔥/Brandmarkierer) stoppt die Heilung; Fokus-Schaden oder permanente ☣️ Verstrahlung erledigen den Rest.' },
   ember: { wave: 10, desc: 'Feuerresistent: nimmt nur 10 % Feuerschaden, auch vom Brand.', tip: 'Flammenwerfer sparen – alles andere wirkt normal.' },
   prisma: { wave: 12, desc: 'Laserresistent: Laserstrahlen wirken fast gar nicht.', tip: 'Kinetik, Explosion oder Blitz nehmen – der 📡 Laser darf Pause machen.' },
   blitzer: { wave: 14, desc: 'Geerdet: Blitzschaden verpufft (10 %), und flott ist er auch noch.', tip: 'Der ⚡ Blitzturm überspringt ihn gefühlt – MG, Kanone oder Flächenschaden nutzen.' },
