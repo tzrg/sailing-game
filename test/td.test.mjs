@@ -1102,6 +1102,75 @@ check('Hohlladung trifft Panzerung ×4', r.heatDmg === r.dmg * 4, JSON.stringify
 check('Säure ätzt Panzerung ×1,3 · Königswasser ×2,5',
   Math.abs(r.acidBase - 100 * 0.05 * 1.3) < 1e-6 && Math.abs(r.acidRoyal - 100 * 0.05 * 2.5) < 1e-6, JSON.stringify(r));
 
+// ---- 15) Buff-Türme: Starkstromaggregat, Chemiefabrik, Sprengstofffabrik ---
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 100000;
+  const te = TD.place('tesla', 4, 3);
+  const la = TD.place('laser', 4, 4);
+  const rg = TD.place('railgun', 5, 4);
+  const base = { te: TD.effStats(te).dmg, la: TD.effStats(la).dps, rg: TD.effStats(rg).dmg,
+    chain: TD.effStats(te).chain, acc: TD.effStats(rg).acc, rate: TD.effStats(te).rate };
+  const v = TD.place('volt', 5, 3);
+  const amp = { te: TD.effStats(te).dmg, la: TD.effStats(la).dps, rg: TD.effStats(rg).dmg };
+  v.spec = 'surge';
+  const surge = { chain: TD.effStats(te).chain, acc: TD.effStats(rg).acc };
+  v.spec = 'turbo';
+  const rateTurbo = TD.effStats(te).rate;
+  return { base, amp, surge, rateTurbo };
+});
+check('Starkstromaggregat: ×1,3 Schaden für Blitzturm, Laser & Railgun',
+  r.amp.te === Math.round(r.base.te * 1.3) && r.amp.la === Math.round(r.base.la * 1.3) && r.amp.rg === Math.round(r.base.rg * 1.3), JSON.stringify(r));
+check('⚡ Überspannung: +2 Kettenziele, +15% Railgun-Trefferchance',
+  r.surge.chain === r.base.chain + 2 && Math.abs(r.surge.acc - (r.base.acc + 0.15)) < 1e-9, JSON.stringify(r.surge));
+check('🔌 Turbolader: Feuerrate ×1,2', Math.abs(r.rateTurbo - Math.round(r.base.rate * 1.2 * 100) / 100) < 1e-9, 'rate=' + r.rateTurbo);
+
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  const fl = TD.place('flame', 7, 6);
+  const gi = TD.place('gift', 7, 7);
+  const base = { fl: TD.effStats(fl).dps, burn: TD.effStats(fl).burn, gi: TD.effStats(gi).dps, dur: TD.effStats(gi).dur };
+  const ch = TD.place('chem', 8, 6);
+  const amp = { fl: TD.effStats(fl).dps, gi: TD.effStats(gi).dps };
+  ch.spec = 'napalm';
+  const burnN = TD.effStats(fl).burn;
+  ch.spec = 'toxin';
+  const durT = TD.effStats(gi).dur;
+  const gr = TD.place('grenade', 3, 6);
+  const gBase = { dmg: TD.effStats(gr).dmg, splash: TD.effStats(gr).splash };
+  const ex = TD.place('explo', 3, 7);
+  const gAmp = TD.effStats(gr).dmg;
+  ex.spec = 'splitter';
+  const splS = TD.effStats(gr).splash;
+  return { base, amp, burnN, durT, gBase, gAmp, splS };
+});
+check('Chemiefabrik: ×1,3 Schaden/s für Flammenwerfer & Giftschleuder',
+  r.amp.fl === Math.round(r.base.fl * 1.3) && r.amp.gi === Math.round(r.base.gi * 1.3), JSON.stringify(r));
+check('☠️ Nervengift +2,5 s Pfützen · 🔥 Napalm Brand ×1,6',
+  Math.abs(r.durT - (r.base.dur + 2.5)) < 1e-9 && r.burnN === Math.round(r.base.burn * 1.6), JSON.stringify(r));
+check('Sprengstofffabrik: ×1,3 Granaten-Schaden, 💥 Splitterladung +0,35 Fläche',
+  r.gAmp === Math.round(r.gBase.dmg * 1.3) && Math.abs(r.splS - (r.gBase.splash + 0.35)) < 1e-9, JSON.stringify(r));
+
+// Auto-Lader-Ausprägungen: Experimentelle Treibladung + Uranmunition
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  const m = TD.place('mg', 6, 3);
+  const baseR = TD.effStats(m).range;
+  const lo = TD.place('loader', 7, 3);
+  lo.spec = 'exp';
+  const expR = TD.effStats(m).range - baseR;
+  lo.spec = 'uran';
+  const uranFlag = TD.effStats(m).uran === true;
+  const e = window.mkEnemy(6, 2, 1e6);
+  for (let i = 0; i < 30; i++) TD.update(0.05);   // 1,5 s Dauerfeuer
+  const rad = e.radDps;
+  TD.newGame();
+  return { expR, uranFlag, rad };
+});
+check('🧪 Treibladung: +0,8 Reichweite für geboostete Türme', Math.abs(r.expR - 0.8) < 1e-9, 'dR=' + r.expR);
+check('☢️ Uranmunition: Treffer verstrahlen bis zum 30/s-Deckel', r.uranFlag && r.rad === 30, JSON.stringify(r));
+
 // Kids-Modus übersteht einen Reload (localStorage)
 await page.evaluate(() => window.__td.setKidsMode(true));
 await page.reload();

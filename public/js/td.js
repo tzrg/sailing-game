@@ -1,5 +1,5 @@
 // Tower Defense – Monster laufen den Parcours entlang, Türme halten sie auf.
-// Achtzehn Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
+// Einundzwanzig Turmtypen mit Stufen und Spezialisierungen, Geld pro Abschuss,
 // endlose Wellen. Die Kommandozentrale schaltet Nuke + Orbital-Laser frei.
 // Kids-Modus: alle Türme werden zu Spielzeug (nur Optik, gleiche Werte).
 
@@ -115,6 +115,24 @@ const TOWERS = {
       { cost: 100, boost: 1.8 },
       { cost: 180, boost: 2.1 },
       { cost: 900, boost: 2.6 }] },
+  volt: { name: 'Starkstromaggregat', icon: '🔋', color: '#ffe66e', desc: 'passiv: Blitzturm, Railgun & Laser auf Nachbarfeldern machen deutlich mehr Schaden (das beste Aggregat daneben zählt)',
+    levels: [
+      { cost: 110, amp: 1.3 },
+      { cost: 120, amp: 1.45 },
+      { cost: 220, amp: 1.6 },
+      { cost: 1000, amp: 1.9 }] },
+  chem: { name: 'Chemiefabrik', icon: '⚗️', color: '#8ad84a', desc: 'passiv: Giftschleuder & Flammenwerfer auf Nachbarfeldern bekommen deutlich mehr Schaden/s',
+    levels: [
+      { cost: 110, amp: 1.3 },
+      { cost: 120, amp: 1.45 },
+      { cost: 220, amp: 1.6 },
+      { cost: 1000, amp: 1.9 }] },
+  explo: { name: 'Sprengstofffabrik', icon: '🏭', color: '#c9a15a', desc: 'passiv: Granatkanone & Raketenturm auf Nachbarfeldern schlagen deutlich härter',
+    levels: [
+      { cost: 110, amp: 1.3 },
+      { cost: 120, amp: 1.45 },
+      { cost: 220, amp: 1.6 },
+      { cost: 1000, amp: 1.9 }] },
   improb: { name: 'Unwahrscheinlichkeitskanone', icon: '🎲', color: '#e08ad8', desc: 'verwandelt Gegner in eine zufällige andere Art – HP-Anteil bleibt, nur 1× pro Monster, Bosse sind immun',
     levels: [
       { cost: 140, rate: 0.25, range: 3.0 },
@@ -190,6 +208,22 @@ const SPECS = {
     { key: 'focus', icon: '🎯', name: 'Fokus', cost: 200, desc: 'zielsicher: trifft kleine Gegner zu 90%', mod: (s) => { s.acc = 0.9; } },
     { key: 'hyper', icon: '⚡', name: 'Hypercharge', cost: 200, desc: 'streut doppelt so stark, aber 6× Schaden an Bossen', mod: (s) => { s.acc *= 0.5; s.bossMul = 6; } },
   ],
+  loader: [
+    { key: 'uran', icon: '☢️', name: 'Uranmunition', cost: 150, desc: 'Treffer geboosteter Türme verstrahlen die Ziele leicht (bis 30/s)' },
+    { key: 'exp', icon: '🧪', name: 'Experimentelle Treibladung', cost: 150, desc: 'geboostete Türme: +0,8 Reichweite' },
+  ],
+  volt: [
+    { key: 'surge', icon: '⚡', name: 'Überspannung', cost: 150, desc: 'Blitzturm daneben: +2 Kettenziele · Railgun: +15% Trefferchance' },
+    { key: 'turbo', icon: '🔌', name: 'Turbolader', cost: 150, desc: 'geboostete Schuss-Türme feuern ×1,2 schneller' },
+  ],
+  chem: [
+    { key: 'toxin', icon: '☠️', name: 'Nervengift', cost: 150, desc: 'Giftpfützen daneben halten +2,5 s' },
+    { key: 'napalm', icon: '🔥', name: 'Napalm-Zusatz', cost: 150, desc: 'Brandschaden der Flammenwerfer ×1,6' },
+  ],
+  explo: [
+    { key: 'splitter', icon: '💥', name: 'Splitterladung', cost: 150, desc: '+0,35 Fläche für Granaten & Raketen daneben' },
+    { key: 'range', icon: '🔭', name: 'Langstrecken-Treibsatz', cost: 150, desc: 'geboostete Türme: +0,8 Reichweite' },
+  ],
   tv: [
     { key: 'binge', icon: '🍿', name: 'Serienmarathon', cost: 130, desc: '+1,2 s Programm', mod: (s) => { s.dur += 1.2; } },
     { key: 'big', icon: '🖥️', name: 'Großbildleinwand', cost: 130, desc: '+2 Zuschauerplätze, +0,5 Reichweite', mod: (s) => { s.aud += 2; s.range += 0.5; } },
@@ -203,18 +237,65 @@ function effStats(t) {
   if (t.type === 'railgun') s.bossMul = 3; // Grundbonus gegen Bosse
   const spec = t.spec && (SPECS[t.type] || []).find((o) => o.key === t.spec);
   if (spec && spec.mod) spec.mod(s);
-  // Auto-Lader: der beste ⚙️ auf einem der 8 Nachbarfelder beschleunigt
-  // MG, Kanone und Railgun
-  if ((t.type === 'mg' || t.type === 'cannon' || t.type === 'railgun') && s.rate) {
-    let boost = 1;
+  // Nachbarschafts-Buffs: der jeweils beste Buff-Turm auf einem der 8
+  // Nachbarfelder zählt (höchste Stufe gewinnt, wie beim Auto-Lader)
+  const buffNeighbor = (btype) => {
+    let best = null;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         if (!dx && !dy) continue;
         const n = towerAt[(t.x + dx) + ',' + (t.y + dy)];
-        if (n && n.type === 'loader') boost = Math.max(boost, towerStats(n).boost);
+        if (n && n.type === btype && (!best || n.lvl > best.lvl)) best = n;
       }
     }
-    if (boost > 1) { s.rate = Math.round(s.rate * boost * 100) / 100; s.boosted = boost; }
+    return best;
+  };
+  // ⚙️ Auto-Lader: MG, Kanone & Railgun schießen schneller
+  if ((t.type === 'mg' || t.type === 'cannon' || t.type === 'railgun') && s.rate) {
+    const l = buffNeighbor('loader');
+    if (l) {
+      const boost = towerStats(l).boost;
+      s.rate = Math.round(s.rate * boost * 100) / 100; s.boosted = boost;
+      if (l.spec === 'uran') s.uran = true;          // Treffer verstrahlen leicht
+      if (l.spec === 'exp') s.range += 0.8;          // Experimentelle Treibladung
+    }
+  }
+  // 🔋 Starkstromaggregat: Blitzturm, Railgun & Laser machen mehr Schaden
+  if (t.type === 'tesla' || t.type === 'railgun' || t.type === 'laser') {
+    const v = buffNeighbor('volt');
+    if (v) {
+      const f = towerStats(v).amp;
+      if (s.dmg) s.dmg = Math.round(s.dmg * f);
+      if (s.dps) s.dps = Math.round(s.dps * f);
+      s.volted = f;
+      if (v.spec === 'surge') {
+        if (s.chain) s.chain += 2;
+        if (s.acc) s.acc = Math.min(0.95, s.acc + 0.15);
+      }
+      if (v.spec === 'turbo' && s.rate) s.rate = Math.round(s.rate * 1.2 * 100) / 100;
+    }
+  }
+  // ⚗️ Chemiefabrik: Giftschleuder & Flammenwerfer ätzen/brennen härter
+  if (t.type === 'gift' || t.type === 'flame') {
+    const c = buffNeighbor('chem');
+    if (c) {
+      const f = towerStats(c).amp;
+      s.dps = Math.round(s.dps * f);
+      s.chemed = f;
+      if (c.spec === 'toxin' && s.dur) s.dur += 2.5;
+      if (c.spec === 'napalm' && s.burn) s.burn = Math.round(s.burn * 1.6);
+    }
+  }
+  // 🏭 Sprengstofffabrik: Granatkanone & Raketenturm schlagen härter
+  if (t.type === 'grenade' || t.type === 'rocket') {
+    const x = buffNeighbor('explo');
+    if (x) {
+      const f = towerStats(x).amp;
+      s.dmg = Math.round(s.dmg * f);
+      s.boomed = f;
+      if (x.spec === 'splitter') s.splash += 0.35;
+      if (x.spec === 'range') s.range += 0.8;
+    }
   }
   return s;
 }
@@ -526,8 +607,14 @@ function tacticalNuke(x, y, dmg, src) {
   }
 }
 
+// Uranmunition (Auto-Lader-Spezialisierung): jeder Treffer verstrahlt leicht
+function irradiate(e, t) {
+  e.radDps = Math.min(30, (e.radDps || 0) + 6);
+  if (!e.radSrc) e.radSrc = t;
+}
+
 function stepTower(t, dt) {
-  if (t.type === 'command' || t.type === 'loader') { t.pulse = (t.pulse || 0) + dt; return; }
+  if (['command', 'loader', 'volt', 'chem', 'explo'].includes(t.type)) { t.pulse = (t.pulse || 0) + dt; return; }
   const s = effStats(t);
   const cx = t.x + 0.5, cy = t.y + 0.5;
   t.born = (t.born ?? 1) + dt;
@@ -691,6 +778,7 @@ function stepTower(t, dt) {
       creditDmg(t, Math.min(Math.max(tg.hp, 0), rdmg));
       tg.hp -= rdmg;
       if (tg.hp <= 0 && !tg.killedBy) tg.killedBy = t;
+      if (s.uran) irradiate(tg, t);
       shots.push({ kind: 'rail', x1: cx, y1: cy, x2: tg.x, y2: tg.y, t: 0, ttl: 0.15 });
       for (let i = 0; i < 8; i++) {
         const a = Math.random() * TAU, sp = 2 + Math.random() * 3;
@@ -843,6 +931,7 @@ function stepTower(t, dt) {
     damage(target, dmg, 'kinetic', t.spec === 'tungsten', t);
     if (t.spec === 'fire') target.vulnFire = 4;      // Brandmarkierer: nimmt 4s mehr Feuerschaden
     if (t.spec === 'shock') target.vulnShock = 4;    // Ionisiert: nimmt 4s mehr Blitzschaden
+    if (s.uran) irradiate(target, t);
     const tcol = t.spec === 'fire' ? 'rgba(255,150,60,0.95)' : t.spec === 'shock' ? 'rgba(140,190,255,0.95)' : t.spec === 'tungsten' ? 'rgba(240,248,255,1)' : 'rgba(255,240,180,0.9)';
     shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.07, color: tcol });
     // Mündungsfeuer + Einschlagsfunken
@@ -856,6 +945,7 @@ function stepTower(t, dt) {
     damage(target, s.dmg, 'kinetic', t.spec === 'heat' ? 'heat' : false, t);
     if (t.spec === 'fire') target.vulnFire = 4;
     if (t.spec === 'shock') target.vulnShock = 4;
+    if (s.uran) irradiate(target, t);
     shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.1, color: 'rgba(255,255,255,0.95)', w: 3 });
     spawnPart({ kind: 'muzzle', x: cx + Math.cos(t.angle) * 0.5, y: cy + Math.sin(t.angle) * 0.5, a: t.angle, ttl: 0.09, size: 0.3 });
     spawnPart({ kind: 'smoke', x: cx + Math.cos(t.angle) * 0.55, y: cy + Math.sin(t.angle) * 0.55, vx: Math.cos(t.angle) * 0.8, vy: -0.3, ttl: 0.6, size: 0.15 });
@@ -1161,6 +1251,9 @@ const KIDS = {
   wind: { name: 'Riesen-Föhn', icon: '🌬️', desc: 'föhnt den Vordersten ein Stück zurück Richtung Start' },
   gold: { name: 'Taschengeld-Sparschwein', icon: '🐷', desc: 'sammelt fleißig Taschengeld (tut niemandem weh)' },
   loader: { name: 'Zuckerschub-Bude', icon: '🍭', desc: 'passiv: Nerf-Blaster, Kartoffelkanone & Riesenflitsche daneben ballern nach der Zuckerration viel schneller' },
+  volt: { name: 'Brause-Batterie', icon: '🥤', desc: 'passiv: Juckpulver-Werfer, Riesenflitsche & Kitzel-Laserpointer daneben hauen viel doller rein' },
+  chem: { name: 'Matsch-Küche', icon: '🫕', desc: 'passiv: Spinat-Katapult & Pupsmaschine daneben werden noch viel fieser' },
+  explo: { name: 'Knallbonbon-Fabrik', icon: '🎉', desc: 'passiv: Wasserbomben-Katapult & Silvesterrakete daneben knallen viel lauter' },
   improb: { name: 'Zauberhut', icon: '🎩', desc: 'Simsalabim: verwandelt ein Monster in ein zufälliges anderes' },
   railgun: { name: 'Riesenflitsche', icon: '🪃', desc: 'die Mega-Steinschleuder: trifft die ganz Großen mit Karacho, kleine flutschen oft durch' },
   hypno: { name: 'Seifenblasen-Turm', icon: '🫧', desc: 'schillernde Seifenblasen: ein Monster bleibt stehen und schubst die anderen' },
@@ -1219,6 +1312,22 @@ const KIDS_SPECS = {
 // Kartoffelkanone: Chili/Kitzel wie der Nerf-Blaster, Hohlladung = Dosenöffner
 KIDS_SPECS.cannon = { fire: KIDS_SPECS.mg.fire, shock: KIDS_SPECS.mg.shock,
   heat: { icon: '🥫', name: 'Dosenöffner-Kartoffel', desc: 'knackt Ritterrüstungen wie Konservendosen (×4)' } };
+KIDS_SPECS.loader = {
+  uran: { icon: '✨', name: 'Glitzerstaub-Munition', desc: 'getroffene Monster glitzern nach (leichter Dauerschaden, bis 30/s)' },
+  exp: { icon: '🧃', name: 'Brause-Extraladung', desc: 'geboostete Türme: +0,8 Reichweite' },
+};
+KIDS_SPECS.volt = {
+  surge: { icon: '⚡', name: 'Extra-Kribbeln', desc: 'Juckpulver: +2 Kettenziele · Flitsche: +15% Trefferchance' },
+  turbo: { icon: '🥤', name: 'Doppel-Brause', desc: 'geboostete Schuss-Türme feuern ×1,2 schneller' },
+};
+KIDS_SPECS.chem = {
+  toxin: { icon: '🥦', name: 'Rosenkohl-Rezept', desc: 'Spinatpfützen daneben halten +2,5 s' },
+  napalm: { icon: '🌶️', name: 'Extra-Chili', desc: 'Nachgeruch der Pupsmaschine ×1,6' },
+};
+KIDS_SPECS.explo = {
+  splitter: { icon: '🎊', name: 'Konfetti-Extra', desc: '+0,35 Fläche für Wasserbomben & Raketen daneben' },
+  range: { icon: '🎈', name: 'Extra-Schwung', desc: 'geboostete Türme: +0,8 Reichweite' },
+};
 function sInfo(type, sp) {
   const o = kidsMode && KIDS_SPECS[type] && KIDS_SPECS[type][sp.key];
   return o ? { ...sp, ...o } : sp;
@@ -1234,7 +1343,10 @@ const KIDS_TIPS = {
   ice: 'Macht keinen Schaden, ist aber Gold wert: an Kurven festkleben, dahinter draufhauen.',
   tesla: 'Stark gegen Pulks – das Juckpulver staubt weiter. ⚡ Geerdete juckt es nicht.',
   ray: 'Der Duft bleibt für immer und zieht durch jede Rüstung – vorne einsprühen, hinten schlappmachen lassen.',
-  loader: 'Passiv! Direkt neben Nerf-Blaster, Kartoffelkanone oder Riesenflitsche stellen – nur die beste Bude daneben zählt.',
+  loader: 'Passiv! Direkt neben Nerf-Blaster, Kartoffelkanone oder Riesenflitsche stellen – nur die beste Bude daneben zählt. ✨ Glitzerstaub bleibt haften, 🧃 Extraladung reicht weiter.',
+  volt: 'Passiv! Neben Juckpulver-Werfer, Riesenflitsche oder Kitzel-Laserpointer stellen – alles haut doller rein.',
+  chem: 'Passiv! Neben Spinat-Katapult oder Pupsmaschine – Matsch und Mief werden richtig fies.',
+  explo: 'Passiv! Neben Wasserbomben-Katapult oder Silvesterrakete – mit 🎊 Konfetti-Extra wächst auch die Fläche.',
   improb: 'Glücksspiel: verwandelt Panzer in Blobs – oder in Renner. Am besten auf dicke Brocken.',
   railgun: 'Der Riesen-Schreck: trifft die ganz Großen immer, 3× Schaden, durch jede Rüstung. Kleine flutschen oft durch.',
   hypno: 'Verzauberte stehen still und schubsen Nachbarn – je fetter das Opfer, desto doller.',
@@ -1516,7 +1628,7 @@ function draw(time) {
   // Abschuss-Zähler (im Menü umschaltbar)
   if (showKills) {
     for (const t of towers) {
-      if (['gold', 'ice', 'wind', 'loader', 'improb', 'tv'].includes(t.type)) continue;
+      if (['gold', 'ice', 'wind', 'loader', 'improb', 'tv', 'volt', 'chem', 'explo'].includes(t.type)) continue;
       const kx = (t.x + 0.5) * T, ky = (t.y + 0.5) * T;
       ctx.fillStyle = 'rgba(8,16,24,0.72)';
       roundRectP(kx - T * 0.62, ky + T * 0.4, T * 1.24, T * 0.28, 4); ctx.fill();
@@ -1554,12 +1666,20 @@ function drawTower(t, time) {
   ctx.fillStyle = def.color;
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.3 * sock, 0, TAU); ctx.fill();
   // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
-  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno', 'loader', 'tv'].includes(t.type)) {
+  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno', 'loader', 'tv', 'volt', 'chem', 'explo'].includes(t.type)) {
     const kick = (t.kick || 0) * T * 0.1;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
     ctx.fillStyle = '#22303a';
     ctx.fillRect(-kick, -T * 0.08, T * 0.42, T * 0.16);
     ctx.restore();
+  }
+  // Buff-Fabriken: rotierender Wirkungs-Ring in Turmfarbe
+  if (t.type === 'volt' || t.type === 'chem' || t.type === 'explo') {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate((t.pulse || 0) * 1.6);
+    ctx.strokeStyle = def.color; ctx.globalAlpha = 0.65 + Math.sin((t.pulse || 0) * 5) * 0.2;
+    ctx.lineWidth = 2; ctx.setLineDash([4, 5]);
+    ctx.beginPath(); ctx.arc(0, 0, T * 0.36, 0, TAU); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.restore();
   }
   // Auto-Lader: rotierender Zahnkranz
   if (t.type === 'loader') {
@@ -2190,7 +2310,15 @@ function showUpgpanel(t) {
   if (s.burn) statBits.push('+' + s.burn + '/s ' + (kidsMode ? 'Nachgeruch' : 'Brand'));
   if (s.charge) statBits.push('+' + s.charge + '/s ' + (kidsMode ? 'Duft' : 'Verstrahlung') + ' · max ' + s.cap + '/s');
   if (s.boost) statBits.push('Feuerrate ×' + s.boost + ' für ' + tInfo('mg').name + ', ' + tInfo('cannon').name + ' & ' + tInfo('railgun').name + ' daneben');
+  if (s.amp) {
+    const pair = t.type === 'volt' ? ['tesla', 'railgun', 'laser'] : t.type === 'chem' ? ['gift', 'flame'] : ['grenade', 'rocket'];
+    statBits.push('Schaden ×' + s.amp + ' für ' + pair.map((k) => tInfo(k).name).join(' & ') + ' daneben');
+  }
   if (s.boosted) statBits.push(tInfo('loader').icon + ' ' + tInfo('loader').name + ' aktiv: Feuerrate ×' + s.boosted);
+  if (s.volted) statBits.push(tInfo('volt').icon + ' ' + tInfo('volt').name + ' aktiv: Schaden ×' + s.volted);
+  if (s.chemed) statBits.push(tInfo('chem').icon + ' ' + tInfo('chem').name + ' aktiv: Schaden ×' + s.chemed);
+  if (s.boomed) statBits.push(tInfo('explo').icon + ' ' + tInfo('explo').name + ' aktiv: Schaden ×' + s.boomed);
+  if (s.uran) statBits.push('☢️ Uranmunition: Treffer verstrahlen leicht');
   if (t.type === 'improb') statBits.push('verwürfelt 1 Monster pro Schuss (je nur 1×, keine Bosse)');
   if (s.acc) statBits.push('trifft Kleine zu ' + Math.round(s.acc * 100) + '% · Bosse immer, ×' + s.bossMul);
   if (s.factor) statBits.push((kidsMode ? 'Zauber ' : 'Hypnose ') + s.dur + ' s · ' + (kidsMode ? 'Schubs ' : 'Biss ') + Math.round(s.factor * 100) + '% seiner Max-HP/s');
@@ -2201,7 +2329,7 @@ function showUpgpanel(t) {
   if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
   if (s.range) statBits.push('Reichweite ' + (Math.round(s.range * 10) / 10));
   if (t.type === 'command') statBits.push((kidsMode ? '🪅 ' : '☢️ ') + s.nuke + ' Schaden', (kidsMode ? '🚿 ' : '🛰️ ') + s.beam + ' Schaden · Radius ' + s.brad, 'gegen Bosse 3× · durch jede Panzerung');
-  if (!['gold', 'ice', 'wind', 'loader', 'improb', 'tv'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse · 💥 ' + fmtCount(t.dmgDone || 0) + ' Schaden');
+  if (!['gold', 'ice', 'wind', 'loader', 'improb', 'tv', 'volt', 'chem', 'explo'].includes(t.type)) statBits.push('💀 ' + (t.kills || 0) + ' Abschüsse · 💥 ' + fmtCount(t.dmgDone || 0) + ' Schaden');
   info.textContent = `${def.icon} ${def.name} · Stufe ${t.lvl + 1}${t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl)} · ${statBits.join(' · ')}`;
   const up = document.getElementById('upg-up');
   if (next) {
@@ -2434,7 +2562,10 @@ const TIPS = {
   ice: 'Macht keinen Schaden, ist aber Gold wert: an Kurven bremsen, dahinter draufhauen.',
   tesla: 'Stark gegen Pulks – der Blitz springt weiter. ⚡ Geerdete lachen nur darüber.',
   ray: 'Verstrahlung bleibt für immer und ignoriert Panzerung – vorne markieren, hinten sterben lassen.',
-  loader: 'Passiv! Direkt neben MG, Kanone oder Railgun stellen – nur der beste Lader daneben zählt.',
+  loader: 'Passiv! Direkt neben MG, Kanone oder Railgun stellen – nur der beste Lader daneben zählt. ☢️ Uranmunition verstrahlt nebenbei, 🧪 Treibladung verlängert die Reichweite.',
+  volt: 'Passiv! Neben Blitzturm, Railgun oder Laser stellen – Schaden rauf. ⚡ Überspannung lohnt bei Blitz UND Railgun.',
+  chem: 'Passiv! Neben Giftschleuder oder Flammenwerfer – Säure und Feuer werden richtig fies. Kombiniert gut mit 🧫 Königswasser.',
+  explo: 'Passiv! Neben Granatkanone oder Raketenturm – mit 💥 Splitterladung wächst auch die Fläche.',
   improb: 'Glücksspiel: verwandelt Panzer in Blobs – oder in Renner. Am besten auf dicke Brocken.',
   railgun: 'Der Boss-Killer: trifft Bosse immer, 3× Schaden, durch jede Panzerung. Kleine verfehlt sie oft.',
   hypno: 'Hypnotisierte stehen still und beißen Nachbarn – je fetter das Opfer, desto härter der Biss.',
@@ -2452,6 +2583,9 @@ const MAINSTAT = {
   wind: ['rate', 'Stöße/s'], improb: ['rate', 'Würfe/s'],
   ray: ['charge', 'Verstrahlung/s'], gold: ['gold', 'Gold'],
   loader: ['boost', 'Feuerrate', (v) => '×' + v],
+  volt: ['amp', 'Schaden-Boost', (v) => '×' + v],
+  chem: ['amp', 'Schaden-Boost', (v) => '×' + v],
+  explo: ['amp', 'Schaden-Boost', (v) => '×' + v],
   hypno: ['factor', 'Biss', (v) => Math.round(v * 100) + '% MaxHP/s'],
   tv: ['dur', 'Ablenkung', (v) => v + ' s'],
   command: ['nuke', '☢️-Schaden'],

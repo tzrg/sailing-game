@@ -68,11 +68,14 @@ Docker-Container deployt.
   immer schneller; Bonus-Kirsche alle 5 Äpfel; Modi „Wände tödlich" oder
   „Durchgang" (Wrap). Highscore für die Bestenliste.
 - **`td.html` – 🏰 Tower Defense**: endlose Wellen auf einem
-  Schlangenlinien-Parcours, drei Schwierigkeitsgrade, achtzehn Turmtypen
+  Schlangenlinien-Parcours, drei Schwierigkeitsgrade, einundzwanzig Turmtypen
   (MG, Kanone, Granatkanone, Laser, Flammenwerfer mit Feuerkegel, Raketen,
   Vereiser, Blitzturm, Bestrahlungsturm mit permanenter panzerignorierender
   Verstrahlung, Anti-Boss-Railgun, Hypnoseturm, Fernsehturm (lenkt Zuschauer
-  ab und hält sie fest, danach kurz immun), passiver Auto-Lader,
+  ab und hält sie fest, danach kurz immun), vier passive Buff-Türme
+  (Auto-Lader mit Uranmunition/Treibladung, Starkstromaggregat für
+  Blitz/Railgun/Laser, Chemiefabrik für Gift/Flammen, Sprengstofffabrik
+  für Granaten/Raketen – je der beste Nachbar zählt),
   Unwahrscheinlichkeitskanone, Giftschleuder, Windmaschine, Goldmine,
   Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.
