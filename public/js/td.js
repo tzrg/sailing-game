@@ -659,7 +659,7 @@ function stepTower(t, dt) {
       hit.push(next);
       cur = next;
     }
-    shots.push({ kind: 'zap', pts: [[cx, cy], ...hit.map((e) => [e.x, e.y - 0.1])], t: 0, ttl: 0.16 });
+    shots.push({ kind: 'zap', pts: [[cx, cy - 0.28], ...hit.map((e) => [e.x, e.y - 0.1])], t: 0, ttl: 0.16 });
     for (const e of hit) {
       // Statisch aufgeladen: 3 s langsamer + anfälliger für Kinetik
       // (Geerdete ⚡-Resistenzler bleiben davon unbeeindruckt)
@@ -1132,9 +1132,13 @@ function update(dt) {
 
   if (game.shakeT > 0) game.shakeT = Math.max(0, game.shakeT - dt);
 
-  // Türme & Schüsse
+  // Türme & Schüsse. Rückwärts über den Live-Array: stepShot darf neue
+  // Schüsse pushen (Giftpfütze aus der Flasche, Explosions-Visuals) – mit
+  // shots.filter(...) gingen die während des Durchlaufs gepushten verloren.
   for (const t of towers) stepTower(t, dt);
-  shots = shots.filter((sh) => !stepShot(sh, dt));
+  for (let i = shots.length - 1; i >= 0; i--) {
+    if (stepShot(shots[i], dt)) shots.splice(i, 1);
+  }
 
   // Deko-Partikel bewegen
   for (let i = parts.length - 1; i >= 0; i--) {
@@ -1683,12 +1687,39 @@ function drawTower(t, time) {
   ctx.fillStyle = def.color;
   ctx.beginPath(); ctx.arc(cx, cy, T * 0.3 * sock, 0, TAU); ctx.fill();
   // Lauf mit Rückstoß (kickt beim Schuss nach hinten)
-  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno', 'loader', 'tv', 'volt', 'chem', 'explo'].includes(t.type)) {
+  if (!['ice', 'flame', 'wind', 'gold', 'command', 'ray', 'railgun', 'hypno', 'loader', 'tv', 'volt', 'chem', 'explo', 'tesla'].includes(t.type)) {
     const kick = (t.kick || 0) * T * 0.1;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(t.angle || 0);
     ctx.fillStyle = '#22303a';
     ctx.fillRect(-kick, -T * 0.08, T * 0.42, T * 0.16);
     ctx.restore();
+  }
+  // Blitzturm als Tesla-Spule: Wicklungssäule mit Kugel-Elektrode und
+  // dauerhaft knisternden Mini-Blitzen (beim Schuss heller)
+  if (t.type === 'tesla') {
+    const topY = cy - T * 0.2;
+    ctx.fillStyle = '#6a5a3a';
+    ctx.fillRect(cx - T * 0.1, cy - T * 0.08, T * 0.2, T * 0.34);
+    ctx.strokeStyle = '#d8b45a'; ctx.lineWidth = 1.4;
+    for (let i = 0; i < 4; i++) {
+      const wy = cy - T * 0.03 + i * T * 0.075;
+      ctx.beginPath(); ctx.moveTo(cx - T * 0.11, wy); ctx.lineTo(cx + T * 0.11, wy); ctx.stroke();
+    }
+    const orb = ctx.createRadialGradient(cx - T * 0.05, topY - T * 0.05, T * 0.02, cx, topY, T * 0.18);
+    orb.addColorStop(0, '#fffdf0'); orb.addColorStop(0.5, '#e6e0f2'); orb.addColorStop(1, '#8d88ac');
+    ctx.fillStyle = orb;
+    ctx.beginPath(); ctx.arc(cx, topY, T * 0.17, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = `rgba(255,240,140,${0.45 + (t.kick || 0) * 0.55})`;
+    ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const a = time * 8 + i * 2.1 + Math.sin(time * 13 + i * 4) * 0.9;
+      const x1 = cx + Math.cos(a) * T * 0.17, y1 = topY + Math.sin(a) * T * 0.17;
+      ctx.beginPath(); ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 + Math.cos(a + 0.6) * T * 0.09, y1 + Math.sin(a + 0.6) * T * 0.09);
+      ctx.lineTo(x1 + Math.cos(a - 0.3) * T * 0.17, y1 + Math.sin(a - 0.3) * T * 0.17);
+      ctx.stroke();
+    }
   }
   // Buff-Fabriken: rotierender Wirkungs-Ring in Turmfarbe
   if (t.type === 'volt' || t.type === 'chem' || t.type === 'explo') {
@@ -1808,9 +1839,9 @@ function drawTower(t, time) {
     ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.arc(cx, cy, s.range * T * f, 0, TAU); ctx.stroke();
   }
-  // Icon + Level-Sterne
+  // Icon + Level-Sterne (die Tesla-Spule ist selbst gezeichnet, kein Emoji)
   ctx.font = (T * (t.type === 'command' ? 0.62 : 0.42)) + 'px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  fText(def.icon, cx, cy - T * 0.02);
+  if (t.type !== 'tesla') fText(def.icon, cx, cy - T * 0.02);
   ctx.font = (T * 0.24) + 'px system-ui';
   fText(t.lvl >= 4 ? '👑' + (t.lvl - 2) : t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl), cx, cy + T * 0.34);
   // Aktive Buffs gut sichtbar: Plaketten mit dem Icon des Buff-Turms obendrauf

@@ -1210,6 +1210,23 @@ r = await page.evaluate(() => {
 check('Aufgeladene laufen 25% langsamer', Math.abs(r.slowDist - 1.5 * 0.75) < 0.08, 'dist=' + r.slowDist);
 check('Aufgeladene nehmen +30% Kinetik-Schaden', Math.abs(r.kinDelta - r.dmg * 1.3) < 1e-9, JSON.stringify(r));
 
+// ---- 17) Bugfix: die Giftflasche erzeugt wirklich eine Pfütze --------------
+// (shots.filter verwarf während des Durchlaufs gepushte Schüsse – die Pfütze
+// aus der gelandeten Flasche ging dadurch immer verloren)
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 5000;
+  TD.place('gift', 4, 3);
+  const e = window.mkEnemy(4, 2, 100000, 500);
+  for (let i = 0; i < 40; i++) TD.update(0.05);   // Wurf (0,5 s Flug) + Pfütze wirkt
+  const pools = TD.shots.filter((x) => x.kind === 'pool').length;
+  TD.newGame();
+  return { pools, armor: e.armorHp, hp: e.hp };
+});
+check('Giftflasche erzeugt eine Pfütze (Shots-Filter-Bug behoben)', r.pools >= 1, JSON.stringify(r));
+check('Die Pfütze ätzt die Panzerung wirklich an', r.armor < 500 && r.hp === 100000, JSON.stringify(r));
+
 // Kids-Modus übersteht einen Reload (localStorage)
 await page.evaluate(() => window.__td.setKidsMode(true));
 await page.reload();
