@@ -93,8 +93,9 @@ Docker-Container deployt.
   (Turmarten-Tabelle + Kill-Matrix) und lassen sich in der Historie per
   Antippen aufklappen.
   Späte Wellen bringen Resistenzler (Feuer-, Laser- und Blitz-resistent),
-  die einen Waffen-Mix erzwingen. Schadensarten + **Panzerung** (Kinetik/Laser knacken
-  sie), pro Turm einmalige **Spezialisierungen** (Spezialmunition,
+  die einen Waffen-Mix erzwingen. Schadensarten + **Panzerung** (Kinetik/Laser
+  knacken sie, Säurepfützen der Giftschleuder ätzen sie aktiv weg, die
+  Kanonen-Hohlladung trifft sie ×4), pro Turm einmalige **Spezialisierungen** (Spezialmunition,
   Schaden-oder-Reichweite, mehr Kettenziele, breiterer Feuerkegel) und die
   Kommandozentrale (3 Stufen) schaltet **☢️ Nuke** und **🛰️ Orbital-Laser**
   frei (je 1× pro Welle, Upgrades machen beide stärker). Der Spielstand wird

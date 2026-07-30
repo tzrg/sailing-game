@@ -1073,6 +1073,35 @@ check('Regenerierer-Heilung hart gedeckelt (~700/s statt 20.000/s bei Welle 67)'
   r.healed > 600 && r.healed < 800, JSON.stringify(r));
 check('Brand stoppt die Selbstheilung komplett', r.healedBurning <= 0, JSON.stringify(r));
 
+// ---- 14) Anti-Panzer: Hohlladung (Kanone) + Säure (Giftschleuder) ----------
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 2000;
+  const c = TD.place('cannon', 7, 6);
+  c.spec = 'heat';
+  const s = TD.effStats(c);
+  const tank = window.mkEnemy(8, 5, 1000, 100000);
+  TD.update(0.05); TD.update(0.05);   // genau ein Schuss (danach 2 s Ladezeit)
+  const heatDmg = 100000 - tank.armorHp;
+  // Säurepfützen direkt: normal ätzt ×1,3, Königswasser ×2,5
+  const tank2 = window.mkEnemy(5, 2, 1000, 10000);
+  TD.shots.push({ kind: 'pool', x: 5.5, y: 2.5, r: 1, dps: 100, t: 0, ttl: 5, src: null });
+  TD.update(0.05);
+  const acidBase = 10000 - tank2.armorHp;
+  const tank3 = window.mkEnemy(3, 2, 1000, 10000);
+  TD.shots.push({ kind: 'pool', x: 3.5, y: 2.5, r: 1, dps: 100, t: 0, ttl: 5, src: null, acid: true });
+  TD.update(0.05);
+  const acidRoyal = 10000 - tank3.armorHp;
+  TD.newGame();
+  return { dmg: s.dmg, heatDmg, acidBase, acidRoyal,
+    cannonSpecs: (TD.SPECS.cannon || []).map((o) => o.key).join() };
+});
+check('Kanone: Hohlladung statt Wolframkern (fire/shock/heat)', r.cannonSpecs === 'fire,shock,heat', r.cannonSpecs);
+check('Hohlladung trifft Panzerung ×4', r.heatDmg === r.dmg * 4, JSON.stringify(r));
+check('Säure ätzt Panzerung ×1,3 · Königswasser ×2,5',
+  Math.abs(r.acidBase - 100 * 0.05 * 1.3) < 1e-6 && Math.abs(r.acidRoyal - 100 * 0.05 * 2.5) < 1e-6, JSON.stringify(r));
+
 // Kids-Modus übersteht einen Reload (localStorage)
 await page.evaluate(() => window.__td.setKidsMode(true));
 await page.reload();

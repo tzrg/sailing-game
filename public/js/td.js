@@ -91,7 +91,7 @@ const TOWERS = {
       { cost: 120, charge: 7, cap: 48, range: 2.6 },
       { cost: 210, charge: 12, cap: 85, range: 2.9 },
       { cost: 1500, charge: 24, cap: 170, range: 3.3 }] },
-  gift: { name: 'Giftschleuder', icon: '🧪', color: '#8ad84a', desc: 'hinterlässt ätzende Giftpfützen',
+  gift: { name: 'Giftschleuder', icon: '🧪', color: '#8ad84a', desc: 'hinterlässt ätzende Säurepfützen – das Gift frisst auch Panzerung an',
     levels: [
       { cost: 95, dps: 13, rate: 0.45, range: 3.0, pool: 0.95, dur: 4 },
       { cost: 105, dps: 25, rate: 0.5, range: 3.3, pool: 1.1, dur: 4.5 },
@@ -155,7 +155,11 @@ const AMMO_SPECS = [
 ];
 const SPECS = {
   mg: AMMO_SPECS,
-  cannon: AMMO_SPECS.map((a) => ({ ...a, cost: 110 })),
+  // Kanone: statt Wolframkern gibt es die Hohlladung – DIE Anti-Panzer-Wahl
+  cannon: [
+    ...AMMO_SPECS.filter((a) => a.key !== 'tungsten').map((a) => ({ ...a, cost: 110 })),
+    { key: 'heat', icon: '🧨', name: 'Hohlladung', cost: 110, desc: 'Anti-Panzer: ×4 gegen Panzerung, normaler Schaden sonst' },
+  ],
   grenade: [
     { key: 'dmg', icon: '💥', name: 'Sprengkraft', cost: 110, desc: '+50% Schaden, größere Fläche', mod: (s) => { s.dmg *= 1.5; s.splash += 0.35; } },
     { key: 'range', icon: '🔭', name: 'Langrohr', cost: 110, desc: '+1,0 Reichweite', mod: (s) => { s.range += 1.0; } },
@@ -176,6 +180,7 @@ const SPECS = {
   gift: [
     { key: 'dur', icon: '⏳', name: 'Zähflüssig', cost: 100, desc: 'Pfützen halten 3 s länger', mod: (s) => { s.dur += 3; } },
     { key: 'pool', icon: '🫧', name: 'Große Pfützen', cost: 100, desc: '+40% Pfützenradius', mod: (s) => { s.pool *= 1.4; } },
+    { key: 'acid', icon: '🧫', name: 'Königswasser', cost: 130, desc: 'Pfützen fressen Panzerung ×2,5 (statt ×1,3)' },
   ],
   ray: [
     { key: 'charge', icon: '☢️', name: 'Zerfallsplus', cost: 120, desc: '+50% Verstrahlung & Limit', mod: (s) => { s.charge *= 1.5; s.cap = Math.round(s.cap * 1.5); } },
@@ -389,16 +394,18 @@ function stepEnemy(e, dt) {
 }
 
 // Schadenstypen: kinetic | laser | fire | shock | explosive | poison
-// Panzerung schluckt Feuer/Blitz/Explosion/Gift fast komplett, wird aber von
-// Kinetik (x1.5, Wolfram x2.2) und Laser (x1) effektiv zerlegt.
+// Panzerung schluckt Feuer/Blitz/Explosion fast komplett, wird aber von
+// Kinetik (x1.5, Wolfram x2.2, Hohlladung x4) und Laser (x1) zerlegt –
+// und Gift ätzt sie als Säure aktiv weg (x1.3, Königswasser x2.5).
 function damage(e, amt, type = 'kinetic', ap = false, src = null) {
   if (e.resist === type) amt *= 0.1;   // Resistenzler: nur 10% vom eigenen Element
   if (type === 'fire' && e.vulnFire > 0) amt *= 1.5;
   if (type === 'shock' && e.vulnShock > 0) amt *= 1.5;
   if (e.armorHp > 0) {
     let mult = 0.25;
-    if (type === 'kinetic') mult = ap ? 2.2 : 1.5;
+    if (type === 'kinetic') mult = ap === 'heat' ? 4 : ap ? 2.2 : 1.5;
     else if (type === 'laser') mult = 1.0;
+    else if (type === 'poison') mult = ap === 'acid' ? 2.5 : 1.3;
     if (src) creditDmg(src, Math.min(e.armorHp, amt * mult));
     e.armorHp -= amt * mult;
     if (e.armorHp <= 0) { e.armorHp = 0; armorBreak(e); }
@@ -575,7 +582,7 @@ function stepTower(t, dt) {
     if (t.cd > 0 || !target) return;
     t.cd = 1 / s.rate;
     // Flasche fliegt dorthin, wo das Ziel gleich sein wird
-    shots.push({ kind: 'glob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.5, dps: s.dps, pool: s.pool, dur: s.dur, src: t });
+    shots.push({ kind: 'glob', x: cx, y: cy, sx: cx, sy: cy, tx: target.x, ty: target.y, t: 0, ttl: 0.5, dps: s.dps, pool: s.pool, dur: s.dur, src: t, acid: t.spec === 'acid' });
     t.kick = 1;
     return;
   }
@@ -845,9 +852,8 @@ function stepTower(t, dt) {
       spawnPart({ kind: 'spark', x: target.x, y: target.y - 0.1, vx: Math.cos(a) * (1 + Math.random() * 2), vy: Math.sin(a) * 2 - 1.2, ttl: 0.3, color: '#ffd27f' });
     }
   } else if (t.type === 'cannon') {
-    let cdmg = s.dmg;
-    if (t.spec === 'tungsten') cdmg *= 1.6;
-    damage(target, cdmg, 'kinetic', t.spec === 'tungsten', t);
+    // Hohlladung: kein Extra-Grundschaden, dafür ×4 gegen Panzerung
+    damage(target, s.dmg, 'kinetic', t.spec === 'heat' ? 'heat' : false, t);
     if (t.spec === 'fire') target.vulnFire = 4;
     if (t.spec === 'shock') target.vulnShock = 4;
     shots.push({ kind: 'tracer', x1: cx, y1: cy, x2: target.x, y2: target.y, t: 0, ttl: 0.1, color: 'rgba(255,255,255,0.95)', w: 3 });
@@ -911,7 +917,7 @@ function stepShot(sh, dt) {
     // Giftpfütze: ätzt alle, die drin stehen
     for (const e of enemies) {
       if (e.dead || e.escaped) continue;
-      if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.r + e.r * 0.5) damage(e, sh.dps * dt, 'poison', false, sh.src);
+      if (Math.hypot(e.x - sh.x, e.y - sh.y) <= sh.r + e.r * 0.5) damage(e, sh.dps * dt, 'poison', sh.acid ? 'acid' : false, sh.src);
     }
     if (Math.random() < dt * 8) spawnPart({ kind: 'bubble', x: sh.x + (Math.random() - 0.5) * sh.r * 1.4, y: sh.y + (Math.random() - 0.5) * sh.r * 1.0, vx: 0, vy: -0.4, ttl: 0.5 });
     return sh.t >= sh.ttl;
@@ -921,7 +927,7 @@ function stepShot(sh, dt) {
     sh.x = sh.sx + (sh.tx - sh.sx) * f;
     sh.y = sh.sy + (sh.ty - sh.sy) * f - Math.sin(f * Math.PI) * 1.1;
     if (f >= 1) {
-      shots.push({ kind: 'pool', x: sh.tx, y: sh.ty, r: sh.pool, dps: sh.dps, t: 0, ttl: sh.dur, src: sh.src });
+      shots.push({ kind: 'pool', x: sh.tx, y: sh.ty, r: sh.pool, dps: sh.dps, t: 0, ttl: sh.dur, src: sh.src, acid: sh.acid });
       for (let i = 0; i < 6; i++) spawnPart({ kind: 'spark', x: sh.tx, y: sh.ty, vx: (Math.random() - 0.5) * 2.4, vy: -Math.random() * 2, ttl: 0.3, color: '#a8e86a' });
       return true;
     }
@@ -1195,6 +1201,7 @@ const KIDS_SPECS = {
   gift: {
     dur: { icon: '🥣', name: 'Extra matschig', desc: 'Pfützen halten 3 s länger' },
     pool: { icon: '🍲', name: 'Familienportion', desc: '+40% Pfützenradius' },
+    acid: { icon: '🍋', name: 'Omas Essigreiniger', desc: 'löst Ritterrüstungen ×2,5 auf (statt ×1,3)' },
   },
   ray: {
     charge: { icon: '🌹', name: 'Extra-starker-Flakon', desc: '+50% Duft & Limit' },
@@ -1209,7 +1216,9 @@ const KIDS_SPECS = {
     big: { icon: '🎪', name: 'Große Bühne', desc: '+2 Sitzplätze, +0,5 Reichweite' },
   },
 };
-KIDS_SPECS.cannon = KIDS_SPECS.mg;   // gleiche Munitionsarten wie der Nerf-Blaster
+// Kartoffelkanone: Chili/Kitzel wie der Nerf-Blaster, Hohlladung = Dosenöffner
+KIDS_SPECS.cannon = { fire: KIDS_SPECS.mg.fire, shock: KIDS_SPECS.mg.shock,
+  heat: { icon: '🥫', name: 'Dosenöffner-Kartoffel', desc: 'knackt Ritterrüstungen wie Konservendosen (×4)' } };
 function sInfo(type, sp) {
   const o = kidsMode && KIDS_SPECS[type] && KIDS_SPECS[type][sp.key];
   return o ? { ...sp, ...o } : sp;
@@ -2417,7 +2426,7 @@ statsEl.addEventListener('click', (e) => { if (e.target === statsEl) statsEl.cla
 // ---- Hilfe-Menü: Dropdowns je Turm- und Gegnerart --------------------------
 const TIPS = {
   mg: 'Früh billig; mit ⚙️ Auto-Lader daneben wird es eine Kreissäge. 🔩 Wolframkern knackt Panzer.',
-  cannon: 'Lange Reichweite – wirkt über mehrere Pfadschleifen. Erste Wahl gegen Panzerung.',
+  cannon: 'Lange Reichweite – wirkt über mehrere Pfadschleifen. Mit 🧨 Hohlladung DIE Anti-Panzer-Waffe (×4 gegen Panzerung).',
   grenade: 'An Kurven und Doppelpfaden stellen, wo Gruppen dicht laufen. Prallt an Panzerung ab.',
   laser: 'An lange Geraden bauen – trifft alles auf der Linie und schält nebenbei Panzerung.',
   flame: 'Der Kegel schwenkt zum nächsten Gegner; Brand wirkt nach. Gegen 🔥 Glutläufer nutzlos.',
@@ -2430,7 +2439,7 @@ const TIPS = {
   railgun: 'Der Boss-Killer: trifft Bosse immer, 3× Schaden, durch jede Panzerung. Kleine verfehlt sie oft.',
   hypno: 'Hypnotisierte stehen still und beißen Nachbarn – je fetter das Opfer, desto härter der Biss.',
   tv: 'Hält die Vordersten vor der Kill-Zone fest, während die Türme dahinter arbeiten. Niemand hängt ewig: nach dem Programm ist jeder kurz immun.',
-  gift: 'Pfützen liegen auf dem Weg und ätzen jeden, der durchläuft. Länge vor Fläche an Engstellen.',
+  gift: 'Pfützen liegen auf dem Weg und ätzen jeden, der durchläuft – Säure frisst auch Panzerung (🧫 Königswasser ×2,5). Länge vor Fläche an Engstellen.',
   wind: 'Verzögert den Vordersten (¾-Regel: niemand hängt ewig fest). Gut vor der Kill-Zone.',
   gold: 'Früh gebaut zahlt sie sich über die Wellen aus. In eine ruhige Ecke stellen.',
   command: 'Schaltet ☢️ Nuke und 🛰️ Orbital-Laser frei (je 1× pro Welle, gegen Bosse 3× und durch jede Panzerung). Endlos ausbaubar – jede weitere Stufe kostet ein Vermögen.',
@@ -2450,7 +2459,7 @@ const MAINSTAT = {
 const EHELP = {
   blob: { wave: 1, desc: 'Das Standardmonster: mittleres Tempo, keine Extras.', tip: 'Futter für alles – gut zum Gold sammeln.' },
   runner: { wave: 2, desc: 'Flitzt mit fast doppeltem Tempo, hat dafür wenig HP.', tip: '❄️ Vereiser und 🌪️ Wind bremsen; schnelle Türme wie das MG fangen ihn ab.' },
-  tank: { wave: 4, desc: 'Zäher Brocken mit grauer Rüstung, die Feuer, Blitz, Explosion und Gift fast komplett schluckt.', tip: 'Kinetik (MG/Kanone), Laser, 🧲 Railgun oder ☣️ Verstrahlung – oder per 🎲 verwandeln.' },
+  tank: { wave: 4, desc: 'Zäher Brocken mit grauer Rüstung, die Feuer, Blitz und Explosion fast komplett schluckt.', tip: 'Kinetik (MG/Kanone – 🧨 Hohlladung ×4!), 🧪 Säurepfützen, Laser, 🧲 Railgun oder ☣️ Verstrahlung – oder per 🎲 verwandeln.' },
   regen: { wave: 7, desc: 'Heilt sich stetig selbst – die Heilung ist aber gedeckelt und setzt komplett aus, solange er brennt.', tip: 'Anzünden (🔥/Brandmarkierer) stoppt die Heilung; Fokus-Schaden oder permanente ☣️ Verstrahlung erledigen den Rest.' },
   ember: { wave: 10, desc: 'Feuerresistent: nimmt nur 10 % Feuerschaden, auch vom Brand.', tip: 'Flammenwerfer sparen – alles andere wirkt normal.' },
   prisma: { wave: 12, desc: 'Laserresistent: Laserstrahlen wirken fast gar nicht.', tip: 'Kinetik, Explosion oder Blitz nehmen – der 📡 Laser darf Pause machen.' },
