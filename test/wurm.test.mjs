@@ -264,9 +264,9 @@ try {
   r = await page.evaluate(() => {
     const WU = window.__wurm;
     const fireStr = String(WU.WEAPONS.find((x) => x.key === 'panzer').fire);
-    return { windy: fireStr.includes('wind: 2.5') };
+    return { windy: fireStr.includes('wind: 6') };
   });
-  check('Panzerfaust segelt mit 2.5x Wind', r.windy, JSON.stringify(r));
+  check('Panzerfaust segelt mit 6x Wind (Trickshots!)', r.windy, JSON.stringify(r));
 
   // ---- Absoluter Stillstand: keine Mikro-Bewegung im Stehen
   r = await page.evaluate(() => new Promise((res) => {
@@ -429,6 +429,100 @@ try {
     return { hp: victim.hp, vx: Math.abs(victim.vx) };
   });
   check('Schubser: genau 1 Schaden, sanfter Stups', r.hp === 99 && r.vx > 60 && r.vx <= 160, JSON.stringify(r));
+
+  // ---- Ninja-Seil, Feuerfaust, Kamikaze -------------------------------------
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    const by = (k) => WU.WEAPONS.find((w) => w.key === k);
+    return { alle: ['seil', 'faust', 'kamikaze'].every((k) => !!by(k)), kAmmo: by('kamikaze').ammo };
+  });
+  check('Ninja-Seil, Feuerfaust & Kamikaze im Arsenal', r.alle && r.kAmmo === 1, JSON.stringify(r));
+
+  // Seil: Haken ans Gelände, Zug bleibt erhalten, Pendel hält die Seillänge
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const w = WU.game.active;
+    WU.weapon = WU.WEAPONS.findIndex((x) => x.key === 'seil');
+    WU.game.aim = -0.9;   // schräg nach unten: trifft garantiert Gelände
+    WU.fireWeapon();
+    return { hooked: !!w.rope, turnAlive: WU.game.fireDone === false, state: WU.game.state };
+  });
+  check('Seil hakt ein und verbraucht den Zug nicht', r.hooked && r.turnAlive && r.state === 'aim', JSON.stringify(r));
+
+  r = await page.evaluate(() => new Promise((res) => {
+    const WU = window.__wurm;
+    const w = WU.game.active;
+    // Luftraum freisprengen, dann frei baumelnd im Himmel aufhängen
+    WU.explode(800, 200, 85, 0, true, 0);
+    WU.explode(800, 120, 85, 0, true, 0);
+    w.x = 800; w.y = 260;
+    w.rope = { ax: 800, ay: 160, len: 80 };
+    w.grounded = false; w.vx = 150; w.vy = 0;
+    setTimeout(() => {
+      const rope = w.rope;
+      const d = rope ? Math.hypot(w.x - rope.ax, w.y - rope.ay) : -1;
+      const swung = w.x !== 800;
+      w.rope = null;   // loslassen fürs nächste Szenario
+      res({ d, swung, alive: w.alive });
+    }, 600);
+  }));
+  check('Pendel: Seil bleibt straff (Abstand ≤ Seillänge), Raupe schwingt',
+    r.d > 0 && r.d <= 81 && r.swung && r.alive, JSON.stringify(r));
+
+  // Feuerfaust: Uppercut mit 30 Schaden, Opfer fliegt steil nach oben
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const w = WU.game.active;
+    const victim = WU.allWorms().find((o) => o !== w);
+    victim.x = w.x + w.facing * 16; victim.y = w.y;
+    victim.vx = 0; victim.vy = 0; victim.hp = 100;
+    WU.WEAPONS.find((wp) => wp.key === 'faust').fire(w);
+    return { hp: victim.hp, vy: victim.vy };
+  });
+  check('Feuerfaust: 30 Schaden, Opfer steil nach oben', r.hp === 70 && r.vy <= -300, JSON.stringify(r));
+
+  // Kamikaze: gräbt sich schräg nach unten durchs Gelände und opfert sich
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const w = WU.game.active;
+    let gy = 60; while (!WU.solidAt(800, gy) && gy < 589) gy++;
+    w.x = 800; w.y = gy - 1; w.vx = 0; w.vy = 0; w.grounded = true; w.facing = 1;
+    WU.weapon = WU.WEAPONS.findIndex((x) => x.key === 'kamikaze');
+    WU.game.aim = -0.9;
+    WU.fireWeapon();
+    window.__kami = { w, x0: 800, y0: gy - 1 };
+    return { started: true };
+  });
+  await page.waitForTimeout(1900);
+  r = await page.evaluate(() => {
+    const { w, x0, y0 } = window.__kami;
+    const dx = Math.cos(-0.9), dy = -Math.sin(-0.9);
+    // Punkt ~10 Schritte in Grabrichtung: lag vorher tief im Boden
+    const px = x0 + dx * 70, py = (y0 - 6) + dy * 70;
+    return { dead: !w.alive, carved: !window.__wurm.solidAt(px, py) };
+  });
+  check('Kamikaze: Tunnel gegraben, Raupe opfert sich', r.dead && r.carved, JSON.stringify(r));
+
+  // ---- Streubombe: Bomblets zünden beim Aufprall, Bananen hüpfen ------------
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    WU.projectiles.length = 0;
+    WU.detonate({ r: 24, dmg: 0, cluster: 6 }, 500, 60);
+    const bomblets = WU.projectiles.filter((p) => p.type === 'cluster');
+    const impact = bomblets.every((b) => !b.bounce && b.fuse === 4);
+    WU.projectiles.length = 0;
+    WU.detonate({ r: 30, dmg: 0, cluster: 5, clusterType: 'banana', clusterR: 32, clusterDmg: 38 }, 500, 60);
+    const bananas = WU.projectiles.filter((p) => p.type === 'banana');
+    const bouncy = bananas.every((b) => b.bounce > 0 && b.fuse < 4);
+    WU.projectiles.length = 0;
+    return { n: bomblets.length, impact, bn: bananas.length, bouncy };
+  });
+  check('Streubomben-Bomblets zünden direkt beim Aufprall', r.n === 6 && r.impact, JSON.stringify(r));
+  check('Filial-Bananen hüpfen dagegen weiter', r.bn === 5 && r.bouncy, JSON.stringify(r));
 } finally {
   await browser.close();
   srv.stop();

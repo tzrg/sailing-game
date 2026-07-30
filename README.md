@@ -32,8 +32,12 @@ Docker-Container deployt.
   Scharfschütze mit kartenweitem Präzisionsschuss, Kaugummikanone, die
   Gegner für ihren nächsten Zug festklebt, 🍌 Bananenbombe mit fünf
   Filial-Bananen, ✈️ Luftangriff-Bombenteppich auf den anvisierten Punkt,
-  🕳️ Maulwurfsbombe – Riesen-Krater, kaum Schaden – und 👉 Schubser für
-  den sanften Stoß von der Kante); Dynamit mit 5-s-Lunte,
+  🕳️ Maulwurfsbombe – Riesen-Krater, kaum Schaden –, 👉 Schubser für
+  den sanften Stoß von der Kante, 🪢 Ninja-Seil zum Schwingen – ←/→
+  schaukelt, ▲/▼ kürzt/verlängert, FEUER lässt los, kostet keinen Zug –,
+  🥊 Feuerfaust-Uppercut und 🎌 Kamikaze); die 🚀 Panzerfaust segelt mit
+  6-fachem Windeinfluss für Trickshots, Streubomben-Bomblets zünden direkt
+  beim Aufprall. Dynamit mit 5-s-Lunte,
   4 s Rückzugszeit und manuellem Zünder. Die Raupen richten sich im Stand
   auf wie das Vorbild, kriechen mit Wellen-Gang und tragen Namens- und
   HP-Schilder in Teamfarbe über dem Kopf. Das Land reicht bis an die

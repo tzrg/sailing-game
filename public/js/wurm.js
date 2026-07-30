@@ -200,7 +200,7 @@ for (let i = 0; i < 6; i++) {
 // Flug/Explosion. Namen bewusst eigenständig (kein geschütztes Original).
 const WEAPONS = [
   { key: 'panzer', name: 'Panzerfaust', icon: '🚀', ammo: Infinity, aimed: true,
-    fire: (w) => launch(w, 'rocket', 720, { r: 34, dmg: 48, wind: 2.5 }) },
+    fire: (w) => launch(w, 'rocket', 720, { r: 34, dmg: 48, wind: 6 }) },   // segelt extrem im Wind – Trickshots!
   { key: 'granate', name: 'Splittergranate', icon: '💣', ammo: Infinity, aimed: true, retreat: true,
     fire: (w) => launch(w, 'grenade', 620, { r: 36, dmg: 46, fuse: 3, bounce: 0.55, wind: 0.5 }) },
   { key: 'schrot', name: 'Schrotflinte', icon: '🔫', ammo: Infinity, aimed: true, hitscan: true,
@@ -224,6 +224,12 @@ const WEAPONS = [
     fire: (w) => airstrike(w) },
   { key: 'schubs', name: 'Schubser', icon: '👉', ammo: Infinity, aimed: false, melee: true,
     fire: (w) => prod(w) },
+  { key: 'seil', name: 'Ninja-Seil', icon: '🪢', ammo: Infinity, aimed: true,
+    fire: (w) => ropeShot(w) },
+  { key: 'faust', name: 'Feuerfaust', icon: '🥊', ammo: Infinity, aimed: false, melee: true,
+    fire: (w) => firepunch(w) },
+  { key: 'kamikaze', name: 'Kamikaze', icon: '🎌', ammo: 1, aimed: true, endsTurn: true,
+    fire: (w) => kamikaze(w) },
   { key: 'allmacht', name: 'Allmachtsgranate', icon: '✨', ammo: 1, aimed: true, retreat: true,
     fire: (w) => launch(w, 'grenade', 600, { r: 100, dmg: 115, fuse: 3.5, bounce: 0.45, wind: 0.5, holy: 1 }) },
   { key: 'brenner', name: 'Schweißbrenner', icon: '🔥', ammo: Infinity, aimed: true, endsTurn: true,
@@ -370,6 +376,75 @@ function airstrike(w) {
   }
 }
 
+// Ninja-Seil: der Haken fliegt entlang der Zielhilfe; trifft er Gelände,
+// hängt die Raupe am Seil und schwingt (←/→ schwingen, ▲/▼ kürzen/verlängern,
+// FEUER lässt los). Kostet keinen Schuss – reines Fortbewegungs-Werkzeug.
+function ropeShot(w) {
+  const a = game.aim, dir = w.facing;
+  const res = hitscanRay(w.x, w.y - 8, dir * Math.cos(a), -Math.sin(a), 320);
+  if (res.hit === 'ground') {
+    w.rope = { ax: res.x, ay: res.y, len: Math.max(14, res.d - 4) };
+    w.grounded = false;
+    spawnTracer(w.x, w.y - 8, res.x, res.y);
+  } else {
+    game.banner = 'Kein Halt!'; game.bannerT = 0.9;
+  }
+  game.fireDone = false;   // Seil verbraucht den Zug nicht
+  return 'more';
+}
+function releaseRope(w) { w.rope = null; }
+
+// Feuerfaust: der Uppercut – trifft die Raupe direkt vor der Faust, schlägt
+// sie steil nach oben und stanzt eine kleine Kerbe in dünne Decken darüber.
+function firepunch(w) {
+  const dir = w.facing;
+  const hx = w.x + dir * 16, hy = w.y - 8;
+  let hit = false;
+  for (const wm of allWorms()) {
+    if (!wm.alive || wm === w) continue;
+    if (Math.hypot(wm.x - hx, (wm.y - 6) - hy) < 30) {
+      carveCircle(wm.x | 0, (wm.y - 16) | 0, 10);
+      damage(wm, 30, dir * 160, -340);
+      for (let i = 0; i < 8; i++) {
+        particles.push({ kind: 'spark', x: wm.x, y: wm.y - 10,
+          vx: (Math.random() - 0.5) * 90, vy: -120 - Math.random() * 140, t: 0, ttl: 0.4 });
+      }
+      hit = true;
+    }
+  }
+  spawnTracer(w.x + dir * 6, w.y - 4, w.x + dir * 14, w.y - 16);
+  if (!hit) game.banner = 'Daneben!', game.bannerT = 0.8;
+}
+
+// Kamikaze: die Raupe stürzt sich mit Anlauf in Zielrichtung durchs Gelände,
+// rammt jeden auf dem Weg – und geht am Ende selbst mit einem Knall drauf.
+function kamikaze(w) {
+  const a = clamp(game.aim, -1.2, 1.2), dir = w.facing;
+  const dx = dir * Math.cos(a), dy = -Math.sin(a);
+  for (const wm of allWorms()) wm.kamiHit = false;
+  game.actionBusy = true;
+  let step = 0;
+  const iv = setInterval(() => {
+    if (step >= 34 || !w.alive) {
+      clearInterval(iv); game.actionBusy = false;
+      if (w.alive) { explode(w.x, w.y - 6, 40, 46); damage(w, 1000, 0, 0); }
+      return;
+    }
+    carveCircle((w.x + dx * 10) | 0, (w.y - 6 + dy * 10) | 0, 11);
+    w.x = clamp(w.x + dx * 7, 6, WORLD_W - 6);
+    w.y += dy * 7;
+    w.vx = 0; w.vy = 0; w.grounded = false;
+    for (const wm of allWorms()) {
+      if (wm.alive && wm !== w && !wm.kamiHit && Math.hypot(w.x - wm.x, w.y - wm.y) < 16) {
+        wm.kamiHit = true;
+        damage(wm, 30, dx * 300, -160);
+      }
+    }
+    particles.push({ kind: 'spark', x: w.x - dx * 8, y: w.y - 8, vx: -dx * 120, vy: -dy * 120 - 40, t: 0, ttl: 0.3 });
+    step++;
+  }, 40);
+}
+
 // Explosivschaf: hüpft in Blickrichtung los und explodiert bei Kontakt mit
 // einer Raupe (oder nach Ablauf der Zündschnur).
 function dropSheep(w) {
@@ -511,6 +586,33 @@ function stepWorm(wm, dt) {
   if (resting) wm.vy = 0;
   else wm.vy += GRAV * dt;
 
+  // Am Ninja-Seil: Pendelphysik um den Anker statt Laufen/Fallen
+  if (wm.rope) {
+    wm.x += wm.vx * dt; wm.y += wm.vy * dt;
+    const dx = wm.x - wm.rope.ax, dy = wm.y - wm.rope.ay;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d > wm.rope.len) {
+      // auf Seillänge zurückziehen, Radialanteil der Geschwindigkeit kappen
+      const nx = dx / d, ny = dy / d;
+      wm.x = wm.rope.ax + nx * wm.rope.len;
+      wm.y = wm.rope.ay + ny * wm.rope.len;
+      const vr = wm.vx * nx + wm.vy * ny;
+      if (vr > 0) { wm.vx -= vr * nx; wm.vy -= vr * ny; }
+    }
+    if (wm.x < 6) { wm.x = 6; wm.vx = Math.abs(wm.vx) * 0.5; }
+    else if (wm.x > WORLD_W - 6) { wm.x = WORLD_W - 6; wm.vx = -Math.abs(wm.vx) * 0.5; }
+    // Bodenkontakt löst das Seil (sanft aus dem Gelände schieben)
+    if (solidAt(wm.x, wm.y)) {
+      let up = 0;
+      while (solidAt(wm.x, wm.y - up) && up < 12) up++;
+      wm.y -= up;
+      releaseRope(wm);
+      wm.grounded = true; wm.vy = 0; wm.vx *= 0.4;
+    }
+    checkDrown(wm);
+    return;
+  }
+
   // horizontale Bewegung mit Stufen-Klettern
   if (Math.abs(wm.vx) > 1) {
     let nx = wm.x + wm.vx * dt;
@@ -548,14 +650,17 @@ function stepWorm(wm, dt) {
 
   // Kriech-Phase (Wellenbewegung der Raupe)
   if (wm.grounded && Math.abs(wm.vx) > 5) wm.crawl += Math.min(0.5, Math.abs(wm.vx) * dt * 0.5);
-  // Wasser
-  if (wm.y > WATERLINE + 4) {
-    const wasAlive = wm.alive;
-    wm.alive = false; wm.hp = 0;
-    if (wasAlive) logHit(wm, 0);
-    particles.push({ kind: 'splash', x: wm.x, y: WATERLINE, t: 0, ttl: 0.6 });
-    if (wasAlive) particles.push({ kind: 'death', x: wm.x, y: WATERLINE - 12, name: wm.name || '', t: 0, ttl: 1.9 });
-  }
+  checkDrown(wm);
+}
+
+// Wasser: unterhalb der Wasserlinie ist Schluss (kein Grabstein, nur Blubb)
+function checkDrown(wm) {
+  if (wm.y <= WATERLINE + 4) return;
+  const wasAlive = wm.alive;
+  wm.alive = false; wm.hp = 0;
+  if (wasAlive) logHit(wm, 0);
+  particles.push({ kind: 'splash', x: wm.x, y: WATERLINE, t: 0, ttl: 0.6 });
+  if (wasAlive) particles.push({ kind: 'death', x: wm.x, y: WATERLINE - 12, name: wm.name || '', t: 0, ttl: 1.9 });
 }
 
 function stepProjectile(pr, dt) {
@@ -663,12 +768,14 @@ function terrainNormal(x, y) {
 function detonate(pr, x, y) {
   explode(x, y, pr.r, pr.dmg, true, pr.knock);
   if (pr.cluster) {
-    // Streubombe: kleine Granaten; Bananenbombe: fette Filial-Bananen
+    // Streubomben-Bomblets knallen direkt beim Aufprall (kein Hüpfen, nur
+    // eine Not-Lunte fürs Wasser); Filial-Bananen hüpfen erst noch herum
     for (let i = 0; i < pr.cluster; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6;
-      projectiles.push({ type: pr.clusterType || 'grenade', x, y: y - 6,
+      projectiles.push({ type: pr.clusterType || 'cluster', x, y: y - 6,
         vx: Math.cos(a) * (120 + Math.random() * 120), vy: Math.sin(a) * (160 + Math.random() * 120),
-        t: 0, r: pr.clusterR || 20, dmg: pr.clusterDmg || 22, fuse: 1.5 + Math.random(), bounce: 0.55 });
+        t: 0, r: pr.clusterR || 20, dmg: pr.clusterDmg || 22,
+        ...(pr.clusterType ? { fuse: 1.5 + Math.random(), bounce: 0.55 } : { fuse: 4 }) });
     }
   }
 }
@@ -700,8 +807,9 @@ function startTurn() {
   net.remote.moveDir = 0; net.remote.aimDir = 0;   // relayed Eingaben zurücksetzen
   game.state = 'aim';
   game.banner = 'Team ' + team.name + ' ist dran'; game.bannerT = 1.6;
-  // Kaugummi: alter Kleber löst sich, frischer wird jetzt wirksam
-  for (const wmx of allWorms()) if (wmx.gluePhase === 2) wmx.gluePhase = 0;
+  // Kaugummi: alter Kleber löst sich, frischer wird jetzt wirksam; und wer
+  // noch am Ninja-Seil hing, lässt beim Zugwechsel los
+  for (const wmx of allWorms()) { if (wmx.gluePhase === 2) wmx.gluePhase = 0; wmx.rope = null; }
   if (game.active.gluePhase === 1) {
     game.active.gluePhase = 2;
     game.banner = game.active.name + ' klebt fest – laufen unmöglich!'; game.bannerT = 2;
@@ -749,6 +857,8 @@ function fireWeapon() {
 function endTurnAfterSettle(dt) {
   game.busyT += dt;
   if (game.busyT > 16) { startTurn(); return; } // Sicherheits-Zeitgrenze
+  // Zug ist vorbei: wer noch am Ninja-Seil baumelt, lässt jetzt los
+  if (game.active && game.active.rope) releaseRope(game.active);
   if (game.actionBusy) { game.settleT = 0; return; } // Uzi/Brenner noch aktiv
   // warten bis Projektile weg und Würmer wirklich ruhig sind (nur echte
   // Geschwindigkeit prüfen – nicht das grounded-Flag, das sonst hängen bleibt)
@@ -912,6 +1022,13 @@ function shade(hex, amt) {
 // Raupe: Kette aus Segmenten mit wandernder Kriech-Welle (Inchworm-Look)
 function drawWorm(wm, team, time) {
   if (!wm.alive) return;
+  // Ninja-Seil: straffe Leine vom Rücken zum Anker samt Haken
+  if (wm.rope) {
+    ctx.strokeStyle = '#e0d0a0'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(wm.x, wm.y - 8); ctx.lineTo(wm.rope.ax, wm.rope.ay); ctx.stroke();
+    ctx.fillStyle = '#b8b8c0';
+    ctx.beginPath(); ctx.arc(wm.rope.ax, wm.rope.ay, 2.4, 0, TAU); ctx.fill();
+  }
   const f = wm.facing;
   const segN = 5, gap = 3.4, segR = 4.2;
   const moving = wm.grounded && Math.abs(wm.vx) > 6;
@@ -1469,6 +1586,7 @@ function onJump() {
 function onFireDown() {
   if (net.on && !net.host) { if (iTurn()) net.client.send({ t: 'act', a: { k: 'fire', on: true } }); return; }
   if (net.on && game.turnTeam !== net.you) return;
+  if (game.active && game.active.rope) { releaseRope(game.active); return; }   // FEUER = Seil loslassen
   if (canAct()) game.charging = true;
   else triggerDynamite();
 }
@@ -1580,6 +1698,13 @@ function readInput(dt) {
     moveDir = localMoveDir(); aimDir = localAimDir();
   }
   if (wm.gluePhase === 2) moveDir = 0;   // festgeklebt: kein Schritt möglich
+  if (wm.rope) {
+    // Am Seil: ←/→ schaukeln auf, ▲/▼ kürzen/verlängern das Seil
+    wm.vx += moveDir * 300 * dt;
+    if (moveDir) wm.facing = moveDir;
+    if (aimDir) wm.rope.len = clamp(wm.rope.len - aimDir * 110 * dt, 14, 300);
+    return;
+  }
   if (moveDir < 0) { wm.vx = -70; wm.facing = -1; }
   else if (moveDir > 0) { wm.vx = 70; wm.facing = 1; }
   else if (wm.grounded) wm.vx *= 0.4;
@@ -1637,7 +1762,7 @@ window.__wurm = { game, teams: () => teams, projectiles, particles, graves, hitL
   get lastBoom() { return lastBoom; }, WEAPONS, fireWeapon, weaponAmmo,
   set weapon(i) { game.weaponIdx = i; }, focus: () => game.active, newGame,
   get mask() { return mask; }, solidAt, explode, cfg, net: () => net, cam,
-  startTurn, hitscanRay, gumPop, allWorms };
+  startTurn, hitscanRay, gumPop, allWorms, detonate };
 
 // ==========================================================================
 //  Online-Multiplayer (Caterpillars) – Host-autoritativ
@@ -1657,7 +1782,8 @@ function sendSnapshot() {
     rt: +(game.retreatT || 0).toFixed(2), fd: game.fireDone ? 1 : 0,
     win: game.winner ? game.winner.name : null, ac: { t: game.turnTeam, i: t ? t.cur : 0 },
     tm: teams.map((tt) => ({ c: tt.cur, au: tt.ammoUsed,
-      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing, n: w.name, g: w.gluePhase || 0, cb: w.celebrate > 0 ? 1 : 0, sl: w.saluteT > 0 ? 1 : 0 })) })),
+      w: tt.worms.map((w) => ({ x: Math.round(w.x), y: Math.round(w.y), hp: w.hp | 0, al: w.alive ? 1 : 0, f: w.facing, n: w.name, g: w.gluePhase || 0, cb: w.celebrate > 0 ? 1 : 0, sl: w.saluteT > 0 ? 1 : 0,
+        rp: w.rope ? [Math.round(w.rope.ax), Math.round(w.rope.ay)] : 0 })) })),
     pj: projectiles.map((p) => ({ t: p.type, x: Math.round(p.x), y: Math.round(p.y), r: p.r,
       vx: Math.round(p.vx || 0), vy: Math.round(p.vy || 0), ang: p.ang || 0 })),
     cr: net.craters.length ? net.craters.splice(0, net.craters.length) : undefined,
@@ -1679,6 +1805,7 @@ function applySnap(s) {
         if (o.alive && !w.al) killWorm(o);   // gerade gestorben -> Sterbe-Effekt
         o.x = w.x; o.y = w.y; o.hp = w.hp; o.alive = !!w.al; o.facing = w.f; if (w.n) o.name = w.n;
         o.gluePhase = w.g || 0;
+        o.rope = w.rp ? { ax: w.rp[0], ay: w.rp[1], len: 0 } : null;   // nur fürs Zeichnen beim Gast
         if (w.cb && !(o.celebrate > 0)) o.celebrate = 1.5;
         if (w.sl && !(o.saluteT > 0)) o.saluteT = 1;
       });
