@@ -75,7 +75,10 @@ Docker-Container deployt.
   ab und hält sie fest, danach kurz immun), vier passive Buff-Türme
   (Auto-Lader mit Uranmunition/Treibladung, Starkstromaggregat für
   Blitz/Railgun/Laser, Chemiefabrik für Gift/Flammen, Sprengstofffabrik
-  für Granaten/Raketen – je der beste Nachbar zählt),
+  für Granaten/Raketen – je der beste Nachbar zählt; geboostete Türme
+  tragen sichtbare Buff-Plaketten, gewählte Buff-Türme zeigen ihren
+  3×3-Wirkungsbereich), Blitzturm lädt Getroffene statisch auf
+  (3 s langsamer, +30% Kinetik-Schaden),
   Unwahrscheinlichkeitskanone, Giftschleuder, Windmaschine, Goldmine,
   Kommandozentrale),
   je vier Ausbaustufen – die letzte sündhaft teuer als Endgame-Goldsink.

@@ -1171,6 +1171,45 @@ r = await page.evaluate(() => {
 check('🧪 Treibladung: +0,8 Reichweite für geboostete Türme', Math.abs(r.expR - 0.8) < 1e-9, 'dR=' + r.expR);
 check('☢️ Uranmunition: Treffer verstrahlen bis zum 30/s-Deckel', r.uranFlag && r.rad === 30, JSON.stringify(r));
 
+// ---- 16) Blitzturm-Relevanz: Geblitzte sind statisch aufgeladen ------------
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 5000;
+  TD.place('tesla', 4, 3);
+  const e = window.mkEnemy(4, 2, 1e6);
+  const grounded = window.mkEnemy(6, 2, 1e6);   // außer Reichweite (2.7): Abstand 2.06? nein – resist prüfen
+  grounded.resist = 'shock';
+  TD.update(0.05); TD.update(0.05);
+  return { zap: e.zapT, groundedZap: grounded.zapT || 0 };
+});
+check('Blitztreffer lädt statisch auf (3 s), Geerdete nicht',
+  r.zap > 2.8 && r.groundedZap === 0, JSON.stringify(r));
+
+r = await page.evaluate(() => {
+  const TD = window.__td;
+  TD.newGame();
+  TD.game.money = 5000;
+  // Tempo: aufgeladen läuft nur 75%
+  const e = window.mkEnemy(5, 2, 1e6);
+  e.speed = 1.5; e.zapT = 60;
+  const p0 = e.pathI + e.frac;
+  for (let i = 0; i < 20; i++) TD.update(0.05);   // 1 s
+  const slowDist = e.pathI + e.frac - p0;
+  e.dead = true;   // aus dem Weg, sonst zielt das MG gleich auf ihn
+  // Kinetik: MG-Schuss trifft Aufgeladene x1,3
+  const m = TD.place('mg', 4, 3);
+  const dmg = TD.effStats(m).dmg;
+  const v = window.mkEnemy(4, 2, 1000);
+  v.zapT = 60;
+  TD.update(0.05); TD.update(0.05);   // genau ein Schuss
+  const kinDelta = 1000 - v.hp;
+  TD.newGame();
+  return { slowDist, dmg, kinDelta };
+});
+check('Aufgeladene laufen 25% langsamer', Math.abs(r.slowDist - 1.5 * 0.75) < 0.08, 'dist=' + r.slowDist);
+check('Aufgeladene nehmen +30% Kinetik-Schaden', Math.abs(r.kinDelta - r.dmg * 1.3) < 1e-9, JSON.stringify(r));
+
 // Kids-Modus übersteht einen Reload (localStorage)
 await page.evaluate(() => window.__td.setKidsMode(true));
 await page.reload();

@@ -79,7 +79,7 @@ const TOWERS = {
       { cost: 60, slow: 0.45, range: 2.4 },
       { cost: 110, slow: 0.55, range: 2.8 },
       { cost: 900, slow: 0.68, range: 3.3 }] },
-  tesla: { name: 'Blitzturm', icon: '⚡', color: '#ffe66e', desc: 'Kettenblitz springt von Gegner zu Gegner',
+  tesla: { name: 'Blitzturm', icon: '⚡', color: '#ffe66e', desc: 'Kettenblitz springt von Gegner zu Gegner – Geblitzte sind 3 s statisch aufgeladen: −25% Tempo und +30% Kinetik-Schaden',
     levels: [
       { cost: 120, dmg: 28, rate: 1.1, range: 2.7, chain: 3 },
       { cost: 130, dmg: 50, rate: 1.25, range: 3.0, chain: 4 },
@@ -410,7 +410,7 @@ function spawnEnemy(type) {
     x: sx + 0.5, y: sy + 0.5, slowT: 0, slowF: 0, burnT: 0, burnDps: 0,
     bounty: bounty(game.wave, t.mult), boss: !!t.boss, regen: t.regen || 0,
     armorHp: t.armor ? hp * t.armor : 0, maxArmor: t.armor ? hp * t.armor : 0,
-    vulnFire: 0, vulnShock: 0, windCd: 0, dazeT: 0, dazeCd: 0, radDps: 0, resist: t.resist || null,
+    vulnFire: 0, vulnShock: 0, windCd: 0, dazeT: 0, dazeCd: 0, zapT: 0, radDps: 0, resist: t.resist || null,
     r: t.r, color: t.color, wob: Math.random() * TAU,
   });
 }
@@ -424,6 +424,7 @@ function stepEnemy(e, dt) {
   if (e.vulnShock > 0) e.vulnShock -= dt;
   if (e.windCd > 0) e.windCd -= dt;
   if (e.dazeCd > 0) e.dazeCd -= dt;
+  if (e.zapT > 0) e.zapT -= dt;
   if (e.burnT > 0) { e.burnT -= dt; damage(e, e.burnDps * dt, 'fire', false, e.burnSrc); }
   if (e.radDps > 0) {   // Verstrahlung: ignoriert Panzerung, klingt nie ab
     const dealt = Math.min(Math.max(e.hp, 0), e.radDps * dt);
@@ -463,7 +464,8 @@ function stepEnemy(e, dt) {
     if (e.dazeT <= 0) e.dazeCd = 2.5;
     return;
   }
-  const spd = e.speed * (1 - e.slowF);
+  // Statisch aufgeladen (Blitztreffer): ein Viertel langsamer
+  const spd = e.speed * (1 - e.slowF) * (e.zapT > 0 ? 0.75 : 1);
   e.frac += spd * dt;
   while (e.frac >= 1) {
     e.frac -= 1; e.pathI++;
@@ -482,6 +484,7 @@ function damage(e, amt, type = 'kinetic', ap = false, src = null) {
   if (e.resist === type) amt *= 0.1;   // Resistenzler: nur 10% vom eigenen Element
   if (type === 'fire' && e.vulnFire > 0) amt *= 1.5;
   if (type === 'shock' && e.vulnShock > 0) amt *= 1.5;
+  if (type === 'kinetic' && e.zapT > 0) amt *= 1.3;   // statisch aufgeladen
   if (e.armorHp > 0) {
     let mult = 0.25;
     if (type === 'kinetic') mult = ap === 'heat' ? 4 : ap ? 2.2 : 1.5;
@@ -657,7 +660,12 @@ function stepTower(t, dt) {
       cur = next;
     }
     shots.push({ kind: 'zap', pts: [[cx, cy], ...hit.map((e) => [e.x, e.y - 0.1])], t: 0, ttl: 0.16 });
-    for (const e of hit) spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.2, vx: (Math.random() - 0.5) * 2, vy: -1.5, ttl: 0.25, color: '#fff8b0' });
+    for (const e of hit) {
+      // Statisch aufgeladen: 3 s langsamer + anfälliger für Kinetik
+      // (Geerdete ⚡-Resistenzler bleiben davon unbeeindruckt)
+      if (e.resist !== 'shock') e.zapT = 3;
+      spawnPart({ kind: 'spark', x: e.x, y: e.y - 0.2, vx: (Math.random() - 0.5) * 2, vy: -1.5, ttl: 0.25, color: '#fff8b0' });
+    }
     t.kick = 1;
     return;
   }
@@ -1094,6 +1102,10 @@ function update(dt) {
     if (e.radDps > 0 && Math.random() < dt * 5) {
       spawnPart({ kind: 'rad', x: e.x + (Math.random() - 0.5) * e.r, y: e.y - e.r * 0.5, vx: (Math.random() - 0.5) * 0.4, vy: -0.8, ttl: 0.45 });
     }
+    // statisch aufgeladene knistern gelb
+    if (e.zapT > 0 && Math.random() < dt * 6) {
+      spawnPart({ kind: 'spark', x: e.x + (Math.random() - 0.5) * e.r * 2, y: e.y - e.r, vx: (Math.random() - 0.5) * 1.5, vy: -0.8, ttl: 0.25, color: '#ffe66e' });
+    }
     if (e.escaped) {
       game.lives -= e.boss ? 5 : 1;
       spawnPart({ kind: 'shock', x: e.x, y: e.y, r: 0.8, ttl: 0.4, color: '#ff5548' });
@@ -1245,7 +1257,7 @@ const KIDS = {
   flame: { name: 'Pupsmaschine', icon: '💨', desc: 'pupst grüne Wolken – und der Geruch bleibt hängen' },
   rocket: { name: 'Silvesterrakete', icon: '🎆', desc: 'zischt mit Ziel-Automatik hinterher und macht BUMM in bunt' },
   ice: { name: 'Klebeschleim-Verteiler', icon: '🐌', desc: 'verteilt zähen Glibberschleim – da kommt keiner schnell durch' },
-  tesla: { name: 'Juckpulver-Werfer', icon: '🪶', desc: 'wirft Juckpulver, das von Monster zu Monster staubt' },
+  tesla: { name: 'Juckpulver-Werfer', icon: '🪶', desc: 'wirft Juckpulver, das von Monster zu Monster staubt – wer juckt, läuft langsamer und kassiert mehr von Pfeilen & Kartoffeln' },
   ray: { name: 'Oma-Parfüm-Zerstäuber', icon: '🧴', desc: 'sprüht Omas Parfüm – der Duft geht NIE wieder raus' },
   gift: { name: 'Spinat-Katapult', icon: '🥦', desc: 'schleudert Spinatpfützen auf den Weg – bäh, da will keiner durch' },
   wind: { name: 'Riesen-Föhn', icon: '🌬️', desc: 'föhnt den Vordersten ein Stück zurück Richtung Start' },
@@ -1341,7 +1353,7 @@ const KIDS_TIPS = {
   flame: 'Die Wolke schwenkt zum nächsten Gegner; der Geruch wirkt nach. Gegen 🔥 Glutläufer nutzlos – die riechen nichts.',
   rocket: 'Zielsuchend, verfehlt nie. Mit der 🎊 Mega-Konfettibombe die dickste Party-Waffe.',
   ice: 'Macht keinen Schaden, ist aber Gold wert: an Kurven festkleben, dahinter draufhauen.',
-  tesla: 'Stark gegen Pulks – das Juckpulver staubt weiter. ⚡ Geerdete juckt es nicht.',
+  tesla: 'Stark gegen Pulks – das Juckpulver staubt weiter, Juckende trödeln und kassieren mehr von Pfeilen & Kartoffeln. ⚡ Geerdete juckt es nicht.',
   ray: 'Der Duft bleibt für immer und zieht durch jede Rüstung – vorne einsprühen, hinten schlappmachen lassen.',
   loader: 'Passiv! Direkt neben Nerf-Blaster, Kartoffelkanone oder Riesenflitsche stellen – nur die beste Bude daneben zählt. ✨ Glitzerstaub bleibt haften, 🧃 Extraladung reicht weiter.',
   volt: 'Passiv! Neben Juckpulver-Werfer, Riesenflitsche oder Kitzel-Laserpointer stellen – alles haut doller rein.',
@@ -1620,6 +1632,11 @@ function draw(time) {
       ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.setLineDash([4, 4]);
       ctx.beginPath(); ctx.arc((game.sel.x + 0.5) * T, (game.sel.y + 0.5) * T, range * T, 0, TAU); ctx.stroke();
       ctx.setLineDash([]);
+    } else if (t && ['loader', 'volt', 'chem', 'explo'].includes(t.type)) {
+      // Buff-Turm gewählt: die 8 Nachbarfelder (Wirkungsbereich) einrahmen
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.setLineDash([6, 4]); ctx.lineWidth = 2.5;
+      ctx.strokeRect((t.x - 1) * T + 2, (t.y - 1) * T + 2, 3 * T - 4, 3 * T - 4);
+      ctx.setLineDash([]); ctx.lineWidth = 1;
     }
   }
 
@@ -1796,6 +1813,26 @@ function drawTower(t, time) {
   fText(def.icon, cx, cy - T * 0.02);
   ctx.font = (T * 0.24) + 'px system-ui';
   fText(t.lvl >= 4 ? '👑' + (t.lvl - 2) : t.lvl >= 3 ? '👑' : '⭐'.repeat(t.lvl), cx, cy + T * 0.34);
+  // Aktive Buffs gut sichtbar: Plaketten mit dem Icon des Buff-Turms obendrauf
+  const badges = [];
+  if (s.boosted) badges.push('loader');
+  if (s.volted) badges.push('volt');
+  if (s.chemed) badges.push('chem');
+  if (s.boomed) badges.push('explo');
+  if (badges.length) {
+    const bw = T * 0.3;
+    let bx0 = cx - (badges.length - 1) * bw / 2;
+    for (const b of badges) {
+      const info = tInfo(b);
+      ctx.fillStyle = 'rgba(10,18,28,0.85)';
+      ctx.beginPath(); ctx.arc(bx0, cy - T * 0.46, T * 0.15, 0, TAU); ctx.fill();
+      ctx.strokeStyle = info.color; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(bx0, cy - T * 0.46, T * 0.15, 0, TAU); ctx.stroke();
+      ctx.font = (T * 0.19) + 'px system-ui';
+      fText(info.icon, bx0, cy - T * 0.46);
+      bx0 += bw;
+    }
+  }
   if (scale !== 1) ctx.restore();
 }
 
@@ -1910,6 +1947,11 @@ function drawEnemy(e, time) {
   if (e.vulnFire > 0) { ctx.strokeStyle = 'rgba(255,140,50,0.9)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.35, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.vulnShock > 0) { ctx.strokeStyle = 'rgba(120,180,255,0.9)'; ctx.setLineDash([2, 4]); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(cx, cy + wob, e.r * T * 1.5, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
   if (e.burnT > 0) { ctx.font = (T * 0.3) + 'px system-ui'; ctx.textAlign = 'center'; fText('🔥', cx, cy - e.r * T - T * 0.12); }
+  if (e.zapT > 0) {
+    // statisch aufgeladen: zuckendes ⚡ überm linken Ohr
+    ctx.font = (T * 0.26) + 'px system-ui'; ctx.textAlign = 'center';
+    fText('⚡', cx - e.r * T * 0.75 + (Math.random() - 0.5) * 1.5, cy - e.r * T - T * 0.16);
+  }
   if (e.dazeT > 0) {
     // gebannt vorm Programm: Bildschirm überm Kopf + Sterne in den Augen
     ctx.font = (T * 0.28) + 'px system-ui'; ctx.textAlign = 'center';
@@ -2323,7 +2365,9 @@ function showUpgpanel(t) {
   if (s.acc) statBits.push('trifft Kleine zu ' + Math.round(s.acc * 100) + '% · Bosse immer, ×' + s.bossMul);
   if (s.factor) statBits.push((kidsMode ? 'Zauber ' : 'Hypnose ') + s.dur + ' s · ' + (kidsMode ? 'Schubs ' : 'Biss ') + Math.round(s.factor * 100) + '% seiner Max-HP/s');
   if (s.aud) statBits.push('fesselt ' + s.aud + ' Zuschauer · ' + s.dur + ' s Programm');
-  if (s.chain) statBits.push(s.chain + ' Kettenziele');
+  if (s.chain) statBits.push(s.chain + ' Kettenziele', kidsMode
+    ? 'Juckende: 3 s −25% Tempo · +30% von Pfeilen & Kartoffeln'
+    : '⚡ Geblitzte: 3 s −25% Tempo · +30% Kinetik-Schaden');
   if (s.cone) statBits.push('Kegel ' + Math.round(s.cone * 2 * 180 / Math.PI) + '°');
   if (s.gold) statBits.push('+' + s.gold + ' 💰 alle ' + s.interval + ' s');
   if (s.pool) statBits.push('Pfütze ' + (Math.round(s.pool * 100) / 100) + ' · ' + (Math.round(s.dur * 10) / 10) + ' s');
@@ -2560,7 +2604,7 @@ const TIPS = {
   flame: 'Der Kegel schwenkt zum nächsten Gegner; Brand wirkt nach. Gegen 🔥 Glutläufer nutzlos.',
   rocket: 'Zielsuchend, verfehlt nie. Mit ☢️ Taktischer Nuke die Endgame-Flächenwaffe.',
   ice: 'Macht keinen Schaden, ist aber Gold wert: an Kurven bremsen, dahinter draufhauen.',
-  tesla: 'Stark gegen Pulks – der Blitz springt weiter. ⚡ Geerdete lachen nur darüber.',
+  tesla: 'Stark gegen Pulks – der Blitz springt weiter, und Geblitzte sind 3 s langsamer und nehmen +30% Kinetik. Vor MG/Kanone/Railgun stellen! ⚡ Geerdete lachen nur darüber.',
   ray: 'Verstrahlung bleibt für immer und ignoriert Panzerung – vorne markieren, hinten sterben lassen.',
   loader: 'Passiv! Direkt neben MG, Kanone oder Railgun stellen – nur der beste Lader daneben zählt. ☢️ Uranmunition verstrahlt nebenbei, 🧪 Treibladung verlängert die Reichweite.',
   volt: 'Passiv! Neben Blitzturm, Railgun oder Laser stellen – Schaden rauf. ⚡ Überspannung lohnt bei Blitz UND Railgun.',
