@@ -29,9 +29,14 @@ Docker-Container deployt.
 - **`wurm.html` – 🐛 Raupen · Caterpillars**: rundenbasiertes
   Artillerie-Spiel mit kriechenden Raupen, zerstörbarem Gelände, Wind und
   vielen Waffen (inkl. Baseballschläger, Explosivschaf, Minigun,
-  Scharfschütze mit kartenweitem Präzisionsschuss und Kaugummikanone, die
-  Gegner für ihren nächsten Zug festklebt); Dynamit mit 5-s-Lunte,
-  4 s Rückzugszeit und manuellem Zünder. Das Land reicht bis an die
+  Scharfschütze mit kartenweitem Präzisionsschuss, Kaugummikanone, die
+  Gegner für ihren nächsten Zug festklebt, 🍌 Bananenbombe mit fünf
+  Filial-Bananen, ✈️ Luftangriff-Bombenteppich auf den anvisierten Punkt,
+  🕳️ Maulwurfsbombe – Riesen-Krater, kaum Schaden – und 👉 Schubser für
+  den sanften Stoß von der Kante); Dynamit mit 5-s-Lunte,
+  4 s Rückzugszeit und manuellem Zünder. Die Raupen richten sich im Stand
+  auf wie das Vorbild, kriechen mit Wellen-Gang und tragen Namens- und
+  HP-Schilder in Teamfarbe über dem Kopf. Das Land reicht bis an die
   Kartenränder – seitlich prallt man an unsichtbaren Wänden ab, ins Wasser
   fällt nur, wer ein bis unten durchgesprengtes Loch erwischt. 2–6 Teams im
   Hotseat am selben Gerät **oder online** über Lobby/Code (ein Team pro

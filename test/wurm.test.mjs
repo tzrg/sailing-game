@@ -357,6 +357,78 @@ try {
   check('Land reicht bis an beide Kartenränder', r.landL && r.landR, JSON.stringify(r));
   check('Unsichtbare Wand: Raupe prallt ab und bleibt im Bild',
     r.minX >= 5 && r.bounced && r.alive && r.x >= 5, JSON.stringify(r));
+
+  // ---- Neue Waffen: Bananenbombe, Maulwurfsbombe, Luftangriff, Schubser -----
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    const by = (k) => WU.WEAPONS.find((w) => w.key === k);
+    return { alle: ['banane', 'maulwurf', 'luft', 'schubs'].every((k) => !!by(k)),
+      bAmmo: by('banane').ammo, mAmmo: by('maulwurf').ammo, lAmmo: by('luft').ammo,
+      sAmmo: by('schubs').ammo };
+  });
+  check('Neue Waffen im Arsenal (🍌 🕳️ ✈️ 👉)', r.alle, JSON.stringify(r));
+  check('Munition: Banane 1, Maulwurf 3, Luftangriff 1, Schubser ∞',
+    r.bAmmo === 1 && r.mAmmo === 3 && r.lAmmo === 1 && r.sAmmo === Infinity);
+
+  // Maulwurfsbombe: Riesen-Krater, Mini-Schaden
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    WU.weapon = WU.WEAPONS.findIndex((w) => w.key === 'maulwurf');
+    WU.game.power = 0.5;
+    WU.fireWeapon();
+    const pr = WU.projectiles.find((p) => p.type === 'mole');
+    // Wirkung direkt prüfen: riesig graben, kaum wehtun
+    let gy = 100; while (!WU.solidAt(800, gy) && gy < 589) gy++;
+    const wm = WU.allWorms()[0];
+    wm.x = 760; wm.y = gy - 2; wm.hp = 100; wm.vx = 0; wm.vy = 0;
+    WU.explode(800, gy + 20, 85, 10, true, 90);
+    return { placed: !!pr, r: pr && pr.r, dmg: pr && pr.dmg, knock: pr && pr.knock,
+      hp: wm.hp, carvedCenter: !WU.solidAt(800, gy + 20), carvedWide: !WU.solidAt(800, gy + 80) };
+  });
+  check('Maulwurfsbombe: Radius 85, nur 10 Schaden, sanfter Rums',
+    r.placed && r.r === 85 && r.dmg === 10 && r.knock === 90, JSON.stringify(r));
+  check('Riesen-Krater gegraben, Raupe fast unversehrt',
+    r.carvedCenter && r.carvedWide && r.hp >= 90 && r.hp < 100, JSON.stringify(r));
+
+  // Bananenbombe trägt 5 Filial-Bananen
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    WU.weapon = WU.WEAPONS.findIndex((w) => w.key === 'banane');
+    WU.game.power = 0.5;
+    WU.fireWeapon();
+    const pr = WU.projectiles.find((p) => p.type === 'banana');
+    return { placed: !!pr, cluster: pr && pr.cluster, cType: pr && pr.clusterType, cDmg: pr && pr.clusterDmg };
+  });
+  check('Bananenbombe fliegt und trägt 5 Filial-Bananen',
+    r.placed && r.cluster === 5 && r.cType === 'banana' && r.cDmg === 38, JSON.stringify(r));
+
+  // Luftangriff: Bombenteppich aus dem Himmel + Bomber
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    WU.weapon = WU.WEAPONS.findIndex((w) => w.key === 'luft');
+    WU.fireWeapon();
+    const bombs = WU.projectiles.filter((p) => p.type === 'abomb');
+    return { n: bombs.length, fromSky: bombs.every((b) => b.y < 0),
+      plane: WU.particles.some((p) => p.kind === 'plane') };
+  });
+  check('Luftangriff: 5 Bomben aus dem Himmel + Bomber im Anflug',
+    r.n === 5 && r.fromSky && r.plane, JSON.stringify(r));
+
+  // Schubser: genau 1 Schaden, kleiner Stups
+  r = await page.evaluate(() => {
+    const WU = window.__wurm;
+    WU.newGame();
+    const w = WU.game.active;
+    const victim = WU.allWorms().find((o) => o !== w);
+    victim.x = w.x + w.facing * 14; victim.y = w.y;
+    victim.vx = 0; victim.vy = 0; victim.hp = 100;
+    WU.WEAPONS.find((wp) => wp.key === 'schubs').fire(w);
+    return { hp: victim.hp, vx: Math.abs(victim.vx) };
+  });
+  check('Schubser: genau 1 Schaden, sanfter Stups', r.hp === 99 && r.vx > 60 && r.vx <= 160, JSON.stringify(r));
 } finally {
   await browser.close();
   srv.stop();

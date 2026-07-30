@@ -215,6 +215,15 @@ const WEAPONS = [
     fire: (w) => launch(w, 'gum', 620, { r: 20, dmg: 12, wind: 0.4 }) },
   { key: 'cluster', name: 'Streubombe', icon: '🍒', ammo: 2, aimed: true, retreat: true,
     fire: (w) => launch(w, 'cluster', 640, { r: 24, dmg: 26, fuse: 3, bounce: 0.5, wind: 1, cluster: 6 }) },
+  { key: 'banane', name: 'Bananenbombe', icon: '🍌', ammo: 1, aimed: true, retreat: true,
+    fire: (w) => launch(w, 'banana', 640, { r: 30, dmg: 30, fuse: 3, bounce: 0.65, wind: 0.8,
+      cluster: 5, clusterType: 'banana', clusterR: 32, clusterDmg: 38 }) },
+  { key: 'maulwurf', name: 'Maulwurfsbombe', icon: '🕳️', ammo: 3, aimed: true, retreat: true,
+    fire: (w) => launch(w, 'mole', 620, { r: 85, dmg: 10, fuse: 3, bounce: 0.4, wind: 0.5, knock: 90 }) },
+  { key: 'luft', name: 'Luftangriff', icon: '✈️', ammo: 1, aimed: true,
+    fire: (w) => airstrike(w) },
+  { key: 'schubs', name: 'Schubser', icon: '👉', ammo: Infinity, aimed: false, melee: true,
+    fire: (w) => prod(w) },
   { key: 'allmacht', name: 'Allmachtsgranate', icon: '✨', ammo: 1, aimed: true, retreat: true,
     fire: (w) => launch(w, 'grenade', 600, { r: 100, dmg: 115, fuse: 3.5, bounce: 0.45, wind: 0.5, holy: 1 }) },
   { key: 'brenner', name: 'Schweißbrenner', icon: '🔥', ammo: Infinity, aimed: true, endsTurn: true,
@@ -329,6 +338,38 @@ function bat(w) {
   if (!hit) game.banner = 'Daneben!', game.bannerT = 0.8;
 }
 
+// Schubser: der sanfteste Angriff der Welt – 1 Schaden, kleiner Stups.
+// Perfekt, um jemanden von der Kante (oder ins frisch gegrabene Loch) zu
+// schieben, ohne selbst Dreck aufzuwirbeln.
+function prod(w) {
+  const dir = w.facing;
+  const hx = w.x + dir * 14, hy = w.y - 6;
+  let hit = false;
+  for (const wm of allWorms()) {
+    if (!wm.alive || wm === w) continue;
+    if (Math.hypot(wm.x - hx, (wm.y - 6) - hy) < 26) {
+      damage(wm, 1, dir * 150, -60);
+      hit = true;
+    }
+  }
+  spawnTracer(w.x + dir * 6, w.y - 8, w.x + dir * 20, w.y - 8);
+  if (!hit) game.banner = 'Ins Leere geschubst!', game.bannerT = 0.8;
+}
+
+// Luftangriff: die Zielhilfe bestimmt den Einschlagspunkt (wo der Strahl
+// aufs Gelände trifft), dann fliegt ein Flugzeug ein und legt dort einen
+// Teppich aus fünf Bomben.
+function airstrike(w) {
+  const a = game.aim, dir = w.facing;
+  const res = hitscanRay(w.x + dir * 12, w.y - 10, dir * Math.cos(a), -Math.sin(a), 2200);
+  const tx = clamp(res.x, 40, WORLD_W - 40);
+  particles.push({ kind: 'plane', x: tx - dir * 340, y: 46, vx: dir * 280, dir, t: 0, ttl: 2.6 });
+  for (let i = 0; i < 5; i++) {
+    projectiles.push({ type: 'abomb', x: tx + dir * (i - 2) * 26, y: -24 - i * 20,
+      vx: dir * 55, vy: 130, t: 0, r: 28, dmg: 30, wind: 0.5 });
+  }
+}
+
 // Explosivschaf: hüpft in Blickrichtung los und explodiert bei Kontakt mit
 // einer Raupe (oder nach Ablauf der Zündschnur).
 function dropSheep(w) {
@@ -386,7 +427,7 @@ function gumPop(x, y) {
 }
 
 // ---- Explosion -------------------------------------------------------------
-function explode(x, y, r, dmg, dig = true) {
+function explode(x, y, r, dmg, dig = true, knock = 260) {
   lastBoom = { x, y };
   if (dig) carveCircle(x | 0, y | 0, r);
   for (const wm of allWorms()) {
@@ -395,7 +436,7 @@ function explode(x, y, r, dmg, dig = true) {
     if (dist < r + 18) {
       const f = clamp(1 - dist / (r + 18), 0, 1);
       const ang = Math.atan2(wm.y - y, wm.x - x);
-      damage(wm, Math.round(dmg * f), Math.cos(ang) * 260 * f, Math.sin(ang) * 260 * f - 80 * f);
+      damage(wm, Math.round(dmg * f), Math.cos(ang) * knock * f, Math.sin(ang) * knock * f - knock * 0.3 * f);
     }
   }
   const nSpark = Math.round(clamp(r * 0.5, 12, 44));   // größere Explosion = mehr Funken
@@ -546,8 +587,8 @@ function stepProjectile(pr, dt) {
       if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - (wm.y - 6)) < 13) { gumPop(nx, ny); return true; }
     }
   }
-  // Wurm getroffen (Raketen/Cluster/Schaf explodieren bei Kontakt) – Körpermitte
-  if (pr.type === 'rocket' || pr.type === 'cluster' || pr.type === 'sheep') {
+  // Wurm getroffen (Raketen/Cluster/Schaf/Fliegerbomben explodieren bei Kontakt)
+  if (pr.type === 'rocket' || pr.type === 'cluster' || pr.type === 'sheep' || pr.type === 'abomb') {
     for (const wm of allWorms()) if (wm.alive && wm !== game.active && Math.hypot(nx - wm.x, ny - (wm.y - 6)) < 13) { detonate(pr, nx, ny); return true; }
   }
   // Schaf: hüpft über den Boden statt liegen zu bleiben. Die Bewegung wird
@@ -620,11 +661,14 @@ function terrainNormal(x, y) {
 }
 
 function detonate(pr, x, y) {
-  explode(x, y, pr.r, pr.dmg, true);
+  explode(x, y, pr.r, pr.dmg, true, pr.knock);
   if (pr.cluster) {
+    // Streubombe: kleine Granaten; Bananenbombe: fette Filial-Bananen
     for (let i = 0; i < pr.cluster; i++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6;
-      projectiles.push({ type: 'grenade', x, y: y - 6, vx: Math.cos(a) * (120 + Math.random() * 120), vy: Math.sin(a) * (160 + Math.random() * 120), t: 0, r: 20, dmg: 22, fuse: 1.5 + Math.random(), bounce: 0.5 });
+      projectiles.push({ type: pr.clusterType || 'grenade', x, y: y - 6,
+        vx: Math.cos(a) * (120 + Math.random() * 120), vy: Math.sin(a) * (160 + Math.random() * 120),
+        t: 0, r: pr.clusterR || 20, dmg: pr.clusterDmg || 22, fuse: 1.5 + Math.random(), bounce: 0.55 });
     }
   }
 }
@@ -877,13 +921,23 @@ function drawWorm(wm, team, time) {
   for (const pr of projectiles) {
     if (pr.type === 'dynamite' && Math.hypot(pr.x - wm.x, pr.y - wm.y) < 110) { earsShut = true; break; }
   }
-  const segY = (i) => wm.y - segR + Math.sin(wm.crawl - i * 0.95) * amp;
+  // Aufbäumen wie im Klassiker: im Stand richtet sich die Raupe auf (Kopf
+  // hoch, Körper eingerollt), beim Kriechen und im Flug macht sie sich lang
+  const rearTarget = (moving || !wm.grounded || wm.squashT > 0) ? 0 : 1;
+  wm.rearF = (wm.rearF ?? 1) + (rearTarget - (wm.rearF ?? 1)) * 0.12;
+  const rear = wm.rearF;
+  const headFwd = [2.6, 1.3, 0.4, 0, 0];
+  const lift = (i) => (segN - 1 - i) * 3.3 * rear;
+  // Raupenwellen-Gang: die Segmente stauchen und strecken sich beim Kriechen
+  const inch = (i) => (moving ? Math.sin(wm.crawl * 1.8 - i) * 0.16 : 0);
+  const segX = (i) => wm.x - f * i * gap * (1 - 0.55 * rear) * (1 + inch(i)) + f * rear * headFwd[i];
+  const segY = (i) => wm.y - segR + Math.sin(wm.crawl - i * 0.95) * amp - lift(i);
 
   ctx.save();
   // weicher Bodenschatten verankert die Raupe optisch
   if (wm.grounded) {
     ctx.globalAlpha = 0.22; ctx.fillStyle = '#000';
-    ctx.beginPath(); ctx.ellipse(wm.x - f * 6, wm.y + 1.6, 12, 2.6, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(wm.x - f * 6 * (1 - 0.6 * rear), wm.y + 1.6, 12 - 4 * rear, 2.6, 0, 0, TAU); ctx.fill();
     ctx.globalAlpha = 1;
   }
   // Kaugummi-Pfütze unter festgeklebten Raupen
@@ -902,7 +956,7 @@ function drawWorm(wm, team, time) {
   // Beinchen
   ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
   for (let i = 0; i < segN; i++) {
-    const sx = wm.x - f * i * gap, sy = segY(i);
+    const sx = segX(i), sy = segY(i);
     const wig = moving ? Math.sin(wm.crawl * 2 - i) * 1.2 : 0;
     ctx.beginPath();
     ctx.moveTo(sx - 2, sy + segR - 1); ctx.lineTo(sx - 2 + wig, sy + segR + 2.5);
@@ -912,7 +966,7 @@ function drawWorm(wm, team, time) {
   // Körper (hinten zuerst, Kopf zuletzt): sattes Logo-Grün mit
   // Kugel-Verlauf für den plastischen Look – die Teamfarbe sitzt auf der Mütze
   for (let i = segN - 1; i >= 0; i--) {
-    const sx = wm.x - f * i * gap, sy = segY(i);
+    const sx = segX(i), sy = segY(i);
     const r = i === 0 ? segR + 1.3 : segR * (1 - i * 0.06);
     const base = i % 2 ? '#5cbf4e' : '#48a83e';
     const grad = ctx.createRadialGradient(sx - r * 0.35, sy - r * 0.45, r * 0.15, sx, sy, r * 1.15);
@@ -929,7 +983,7 @@ function drawWorm(wm, team, time) {
   }
   // Team-Mütze: farbige Kappe mit Schirm und Bommel auf dem Kopf
   {
-    const chx = wm.x;
+    const chx = segX(0);
     let chy = segY(0) - 2.6;
     // Salut: die Mütze wird kurz gelüpft
     if (wm.saluteT > 0) chy -= Math.sin((1 - clamp(wm.saluteT, 0, 1)) * Math.PI) * 4;
@@ -946,7 +1000,7 @@ function drawWorm(wm, team, time) {
     ctx.beginPath(); ctx.arc(chx, chy - segR - 1.1, 1.2, 0, TAU); ctx.fill(); ctx.stroke();
   }
   // Kopf-Details (mit gelegentlichem Blinzeln)
-  const hx = wm.x, hy = segY(0);
+  const hx = segX(0), hy = segY(0);
   const blink = earsShut || ((time * 0.9 + wm.crawl * 0.37) % 3.1) < 0.14;
   if (blink) {
     ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.lineCap = 'round';
@@ -980,39 +1034,32 @@ function drawWorm(wm, team, time) {
   ctx.beginPath(); ctx.arc(hx + f * 3.5 + antW, hy - 9.5, 0.9, 0, TAU); ctx.fill();
   ctx.restore();
 
-  const barY = wm.y - segR - amp - 15;   // über der Mütze samt Bommel
-  // aktiver Wurm: Pfeil (über Namen/Balken)
+  // Namens- und HP-Schild im Stil des Klassikers: zwei gestapelte dunkle
+  // Boxen mit Teamfarben-Rand über dem Kopf
+  const headTop = segY(0) - segR - 7;   // über Mütze samt Bommel
   if (wm === game.active && game.state === 'aim') {
+    // aktiver Wurm: hüpfender Pfeil über den Schildern
     const bob = Math.sin(time * 4) * 2;
-    const ay = barY - 13 - bob;
+    const ay = headTop - 36 - bob;
     ctx.fillStyle = team.color;
     ctx.beginPath();
     ctx.moveTo(wm.x, ay); ctx.lineTo(wm.x - 5, ay - 8); ctx.lineTo(wm.x + 5, ay - 8);
     ctx.closePath(); ctx.fill();
   }
-  // Name + HP-Zahl über dem Balken (groß und gut lesbar)
-  ctx.textAlign = 'center';
-  ctx.font = '700 10px system-ui';
-  const label = `${wm.name || ''} ${wm.hp}`.trim();
-  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.strokeText(label, wm.x, barY - 5);
-  ctx.fillStyle = '#fff'; ctx.fillText(label, wm.x, barY - 5);
-  if (wm.gluePhase) { ctx.font = '10px system-ui'; ctx.fillText('🍬', wm.x + 18, barY - 4); }
-  // HP-Balken: plastische Pille – dunkle Mulde, Farbverlauf, Glanzstreifen
-  const hbW = 26, hbH = 5, hbX = wm.x - hbW / 2;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  roundRect(hbX - 0.8, barY - 0.8, hbW + 1.6, hbH + 1.6, 3.4); ctx.fill();
-  const hpF = clamp(wm.hp, 0, 100) / 100;
-  if (hpF > 0) {
-    const hpCol = wm.hp > 50 ? team.color : (wm.hp > 25 ? '#e0a92e' : '#e0453e');
-    const hpG = ctx.createLinearGradient(0, barY, 0, barY + hbH);
-    hpG.addColorStop(0, shade(hpCol, 55));
-    hpG.addColorStop(0.45, hpCol);
-    hpG.addColorStop(1, shade(hpCol, -45));
-    ctx.fillStyle = hpG;
-    roundRect(hbX, barY, Math.max(2, hbW * hpF), hbH, 2.4); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    roundRect(hbX + 1, barY + 0.7, Math.max(1, hbW * hpF - 2), 1.5, 1); ctx.fill();
-  }
+  ctx.textAlign = 'center'; ctx.font = '700 9px system-ui';
+  const plate = (txt, py, col) => {
+    const wdt = Math.max(20, ctx.measureText(txt).width + 10);
+    ctx.fillStyle = 'rgba(14,18,48,0.88)';
+    roundRect(wm.x - wdt / 2, py, wdt, 12, 3.5); ctx.fill();
+    ctx.strokeStyle = team.color; ctx.lineWidth = 1.2;
+    roundRect(wm.x - wdt / 2, py, wdt, 12, 3.5); ctx.stroke();
+    ctx.fillStyle = col; ctx.fillText(txt, wm.x, py + 9);
+    return wdt;
+  };
+  const nw = plate(wm.name || '?', headTop - 31, '#fff');
+  const hpCol = wm.hp > 50 ? '#eaf3fa' : wm.hp > 25 ? '#ffd166' : '#ff6a5a';
+  plate(String(Math.max(0, Math.round(wm.hp))), headTop - 17, hpCol);
+  if (wm.gluePhase) { ctx.font = '9px system-ui'; ctx.fillText('🍬', wm.x + nw / 2 + 8, headTop - 22); }
   // Sprechblase zum Abschluss-Hüpfer: „Zug fertig!"
   if (wm.celebrate > 0.25) {
     ctx.globalAlpha = clamp(wm.celebrate, 0, 1);
@@ -1049,6 +1096,30 @@ function drawProjectile(pr, time) {
     ctx.font = '20px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('🐑', 0, 0);
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  } else if (pr.type === 'banana') {
+    // rotierende Banane (Halbmond mit Stiel)
+    ctx.rotate(pr.t * 7);
+    ctx.strokeStyle = '#f5d33a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0, -2, 6, 0.35, Math.PI - 0.35); ctx.stroke();
+    ctx.strokeStyle = '#7a5a20'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(-5.2, 0); ctx.lineTo(-6.4, -1.6); ctx.stroke();
+  } else if (pr.type === 'mole') {
+    // Maulwurfsbombe: braune Buddelkugel mit Schnäuzchen und Schaufel-Pfoten
+    ctx.fillStyle = '#5a4632'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, 6, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e8a8b8';
+    ctx.beginPath(); ctx.arc(4, 1.5, 1.8, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#d8c8a8';
+    ctx.beginPath(); ctx.arc(-3, 4, 2, 0, TAU); ctx.arc(2, 5, 2, 0, TAU); ctx.fill();
+    const on = Math.floor(time * 10) % 2 === 0;
+    ctx.fillStyle = on ? '#ffcc33' : '#883'; ctx.beginPath(); ctx.arc(0, -7, 1.5, 0, TAU); ctx.fill();
+  } else if (pr.type === 'abomb') {
+    // Fliegerbombe: fällt mit der Nase voran
+    ctx.rotate(Math.atan2(pr.vy, pr.vx) - Math.PI / 2);
+    ctx.fillStyle = '#4a545c'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(0, 0, 3.2, 6.5, 0, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e0453e';
+    ctx.beginPath(); ctx.moveTo(-3, -5); ctx.lineTo(0, -9); ctx.lineTo(3, -5); ctx.closePath(); ctx.fill();
   } else {
     ctx.fillStyle = pr.holy ? '#f5d76e' : '#2c3e50';
     ctx.beginPath(); ctx.arc(0, 0, pr.holy ? 6 : 4, 0, TAU); ctx.fill();
@@ -1113,6 +1184,14 @@ function drawParticle(p) {
   } else if (p.kind === 'gum') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = '#ff8ad0';
     ctx.beginPath(); ctx.arc(p.x, p.y, 2.4, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+  } else if (p.kind === 'plane') {
+    // Bomber im Anflug (Luftangriff)
+    ctx.save(); ctx.translate(p.x, p.y);
+    if ((p.dir || 1) < 0) ctx.scale(-1, 1);
+    ctx.font = '22px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('✈️', 0, 0);
+    ctx.restore();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   } else if (p.kind === 'deadspark') {
     ctx.globalAlpha = 1 - p.t / p.ttl; ctx.fillStyle = p.color || '#fff';
     ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
@@ -1929,6 +2008,7 @@ function frame(now) {
     for (const p of particles) {
       if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum' || p.kind === 'star') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
       else if (p.kind === 'smoke') { p.x += (p.vx || 0) * dt; p.y += (p.vy || -24) * dt; }
+      else if (p.kind === 'plane') p.x += p.vx * dt;
     }
     for (const g of graves) g.t += dt;
     for (const wmx of allWorms()) { if (wmx.celebrate > 0) wmx.celebrate -= dt; if (wmx.saluteT > 0) wmx.saluteT -= dt; }
@@ -1959,6 +2039,7 @@ function frame(now) {
     for (const p of particles) {
       if (p.kind === 'spark' || p.kind === 'deadspark' || p.kind === 'gum' || p.kind === 'star') { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += GRAV * dt; }
       else if (p.kind === 'smoke') { p.x += (p.vx || 0) * dt; p.y += (p.vy || -24) * dt; }
+      else if (p.kind === 'plane') p.x += p.vx * dt;
     }
   }
   for (const g of graves) g.t += dt;
