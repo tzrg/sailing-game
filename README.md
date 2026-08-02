@@ -97,7 +97,9 @@ Docker-Container deployt.
   gespeichert – lokal und eingeloggt in der Datenbank (Slot td_history).
   Die jüngsten 12 Partien tragen ihre komplette Statistik mit sich
   (Turmarten-Tabelle + Kill-Matrix) und lassen sich in der Historie per
-  Antippen aufklappen.
+  Antippen aufklappen – auch auf der **Landing-Page** unter 🏆 Highscores
+  („Deine letzten Tower-Defense-Partien", eingeloggt vom Server, sonst
+  lokal).
   Späte Wellen bringen Resistenzler (Feuer-, Laser- und Blitz-resistent),
   die einen Waffen-Mix erzwingen. Schadensarten + **Panzerung** (Kinetik/Laser
   knacken sie, Säurepfützen der Säureschleuder ätzen sie aktiv weg, die

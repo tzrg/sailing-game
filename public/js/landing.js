@@ -25,6 +25,7 @@ async function afterAuthChange() {
   renderNetStatus();
   if (Auth.serverUp && Auth.isLoggedIn()) await Scores.syncUp();
   await renderLeaderboard();
+  await renderTdHistory();
 }
 
 async function doLogin() {
@@ -123,6 +124,97 @@ async function renderLeaderboard() {
   }
 }
 
+/* -------------------------------- Letzte TD-Partien auf der Titelseite ---- */
+// Zeigt die Spiel-Historie aus Tower Defense (Slot td_history): eingeloggt
+// vom Server (geräteübergreifend), sonst die lokale Historie dieses Browsers.
+// Partien mit gespeicherter Voll-Statistik lassen sich aufklappen.
+const TD_T = {
+  mg: ['🔫', 'MG'], cannon: ['🎯', 'Kanone'], grenade: ['💣', 'Granatkanone'],
+  laser: ['📡', 'Laser'], flame: ['🔥', 'Flammenwerfer'], rocket: ['🚀', 'Raketenturm'],
+  ice: ['❄️', 'Vereiser'], tesla: ['⚡', 'Blitzturm'], ray: ['☣️', 'Bestrahlungsturm'],
+  gift: ['🧪', 'Säureschleuder'], wind: ['🌪️', 'Windmaschine'], gold: ['💰', 'Goldmine'],
+  loader: ['⚙️', 'Auto-Lader'], volt: ['🔋', 'Starkstromaggregat'], chem: ['⚗️', 'Chemiefabrik'],
+  explo: ['🏭', 'Sprengstofffabrik'], improb: ['🎲', 'Unwahrscheinlichkeitskanone'],
+  railgun: ['🧲', 'Railgun'], hypno: ['🌀', 'Hypnoseturm'], tv: ['📺', 'Fernsehturm'],
+  command: ['🛰️', 'Kommandozentrale'],
+};
+const TD_E = {
+  blob: ['🟢', 'Blob'], runner: ['🟡', 'Renner'], tank: ['🟣', 'Panzer'],
+  regen: ['♻️', 'Regenerierer'], ember: ['🔥', 'Glutläufer'], prisma: ['💎', 'Prisma'],
+  blitzer: ['⚡', 'Geerdeter'], boss: ['👹', 'Boss'],
+};
+function fmtK(v) {
+  if (v >= 1e6) return (Math.round(v / 1e5) / 10).toLocaleString('de-DE') + 'M';
+  if (v >= 1000) return (Math.round(v / 100) / 10).toLocaleString('de-DE') + 'k';
+  return String(Math.round(v || 0));
+}
+async function renderTdHistory() {
+  const wrap = $('score-history');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  wrap.classList.add('hidden');
+  let runs = null;
+  const token = localStorage.getItem('tgl_token');
+  if (Auth.serverUp && token) {
+    try {
+      const r = await fetch('/api/save/td_history', { headers: { Authorization: 'Bearer ' + token } });
+      if (r.ok) runs = ((await r.json()).save || {}).runs || null;
+    } catch { /* egal */ }
+  }
+  if (!Array.isArray(runs) || !runs.length) {
+    try { runs = JSON.parse(localStorage.getItem('td_history') || 'null'); } catch { runs = null; }
+  }
+  if (!Array.isArray(runs) || !runs.length) return;
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = '<h3 class="lb-title">🏰 Deine letzten Tower-Defense-Partien – antippen für die Statistik</h3>';
+  const DIFF = { leicht: 'Leicht', normal: 'Normal', schwer: 'Schwer' };
+  const box = document.createElement('div');
+  box.className = 'score-game';
+  for (const run of runs.slice(0, 10)) {
+    if (!run || typeof run.ts !== 'number') continue;
+    const d = new Date(run.ts).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const top = run.top && TD_T[run.top] ? ' · Top ' + TD_T[run.top][0] : '';
+    const hasSt = run.st && Object.keys(run.st.types || {}).length;
+    const row = document.createElement('div');
+    row.className = 'score-row' + (hasSt ? ' lb-click' : '');
+    row.innerHTML = `<span class="s-label">${run.end === 'over' ? '💀' : '🚪'} ${d}` +
+      `<small>${DIFF[run.diff] || run.diff} · Welle ${run.wave}${top}</small></span>` +
+      `<span class="s-val">💀${run.kills} · 💥${fmtK(run.dmg)}${hasSt ? ' <span class="lb-chev">▸</span>' : ''}</span>`;
+    box.appendChild(row);
+    if (!hasSt) continue;
+    // Aufklappbare Voll-Statistik: Turmarten-Tabelle + Monster-Matrix
+    const det = document.createElement('div');
+    det.className = 'lb-list hidden';
+    const types = Object.keys(run.st.types).sort((a, b) => run.st.types[b].dmg - run.st.types[a].dmg);
+    const tn = (k) => { const t = TD_T[k] || ['❓', k]; return `${t[0]} ${t[1]}`; };
+    let html = '<div class="stats-wrap"><table class="stats-table"><tr><th>Turmart</th><th>💀 Kills</th><th>💥 Schaden</th></tr>';
+    for (const k of types) {
+      html += `<tr><td>${tn(k)}</td><td>${run.st.types[k].kills}</td><td>${fmtK(run.st.types[k].dmg)}</td></tr>`;
+    }
+    html += '</table></div>';
+    const vs = run.st.vs || {};
+    const killers = types.filter((k) => vs[k] && Object.keys(vs[k]).length);
+    const monsters = Object.keys(TD_E).filter((m) => killers.some((k) => vs[k][m]));
+    if (killers.length && monsters.length) {
+      html += '<div class="stats-wrap"><table class="stats-table"><tr><th></th>'
+        + monsters.map((m) => `<th title="${TD_E[m][1]}">${TD_E[m][0]}</th>`).join('') + '</tr>';
+      for (const k of killers) {
+        html += `<tr><td>${tn(k)}</td>` + monsters.map((m) => `<td>${vs[k][m] || '–'}</td>`).join('') + '</tr>';
+      }
+      html += '</table></div>';
+    }
+    det.innerHTML = html;
+    row.addEventListener('click', () => {
+      det.classList.toggle('hidden');
+      row.querySelector('.lb-chev').textContent = det.classList.contains('hidden') ? '▸' : '▾';
+    });
+    box.appendChild(det);
+  }
+  box.insertAdjacentHTML('beforeend', '<p class="muted small">💀 Game Over · 🚪 aufgegeben · '
+    + 'die Voll-Statistik reist für die letzten 12 Partien mit. Mehr in der 📊-Statistik im Spiel.</p>');
+  wrap.appendChild(box);
+}
+
 /* ------------------------------------------------------- Caterpillars ---- */
 
 // Warnbanner, wenn der Server ohne echte Datenbank läuft (In-Memory):
@@ -194,6 +286,7 @@ async function init() {
   renderDbWarning();
   if (Auth.serverUp && Auth.isLoggedIn()) await Scores.syncUp();
   await renderLeaderboard();
+  await renderTdHistory();
 }
 
 document.addEventListener('DOMContentLoaded', init);
