@@ -590,6 +590,15 @@ html, body {
   line-height: 1.5;
 }
 
+/* In der gedrehten Bühne (Querformat auf Hochformat-Handys) ist die sichtbare
+   Höhe 100vw, nicht 100vh – sonst wächst das Panel aus dem Bild und der
+   Scrollbereich liegt unerreichbar außerhalb des Bildschirms. */
+#stage.rot #help .panel,
+#stage.rot #stats .panel {
+  max-height: 84vw;
+  max-width: 84vh;
+}
+
 #help h1,
 #stats h1 {
   font-size: 22px;

@@ -703,6 +703,28 @@ try {
   await page.click('#btn-rotate');
   r = await page.evaluate(() => document.getElementById('stage').classList.contains('rot'));
   check('⟳ dreht auch wieder zurück', r === false);
+
+  // ---- Hilfe-Panel im gedrehten Querformat (Handy hochkant): muss in die
+  // gedrehte Bühne passen und scrollbar sein (Bug: max-height in vh lief
+  // aus dem Bild, Scrollen griff ins Leere)
+  const page2 = await browser.newPage({ viewport: { width: 400, height: 800 } });
+  page2.on('pageerror', (e) => check('Hochformat-Seite ohne JS-Fehler', false, e.message));
+  await page2.goto(srv.url + '/clonk.html');
+  await page2.waitForFunction(() => window.__clonk);
+  r = await page2.evaluate(() => {
+    document.getElementById('stage').classList.add('rot');
+    const panel = document.querySelector('#help .panel');
+    const cs = getComputedStyle(panel);
+    panel.scrollTop = 120;
+    return {
+      maxH: parseFloat(cs.maxHeight), iw: innerWidth, overflow: cs.overflowY,
+      scrollable: panel.scrollHeight > panel.clientHeight, scrolled: panel.scrollTop > 0,
+    };
+  });
+  check('Hilfe-Panel passt im Querformat in die gedrehte Bühne',
+    r.maxH <= r.iw && r.overflow === 'auto', JSON.stringify(r));
+  check('Hilfe lässt sich im Querformat scrollen', r.scrollable && r.scrolled, JSON.stringify(r));
+  await page2.close();
 } finally {
   await browser.close();
   srv.stop();
