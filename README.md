@@ -111,27 +111,34 @@ Docker-Container deployt.
   Datenbank). Höchste Welle zählt für die Bestenliste.
 
 - **`clonk.html` – ⛏️ Klonk · Goldrausch**: Hommage an Clonk 4 / Clonk
-  Planet (eigenständig umgesetzt). **Solo gegen die 🤖-KI** oder zwei
-  Klonks an **einer Tastatur** (WASD+Q/E gegen Pfeiltasten+M/Komma/Punkt)
-  auf einer frisch generierten Pixel-Landschaft: Erde und Goldadern
-  lassen sich **graben** (Grabtaste allein senkrecht, mit Richtung
-  waagerecht, mit Sprungtaste schräg nach oben), die Felsschicht knackt
-  nur ein 💣 **Feuerstein** – die liegen vergraben herum, segeln am
-  Fallschirm nach und explodieren beim Aufprall (inkl. Kettenreaktion).
-  Klonks **klettern** an Wänden hoch, nehmen Fallschaden, gehen k. o.
-  (Gold purzelt raus, Respawn an der Hütte) und liefern Goldklumpen an
-  ihrer **Hütte** ab, wo sie auch langsam heilen. Dem Clonk-Objektpaket
-  nachempfunden: die **🛒 Lore** (anschieben, rollt Hänge hinab, sammelt
-  Klumpen, kippt an der eigenen Hütte ab – Explosionen verstreuen die
-  Ladung) und die **🏭 Chemiefabrik** an der Hütte (Kauf-Taste tauscht
-  1 abgeliefertes Gold gegen 2 Feuersteine). Die **Kamera** folgt dem
-  Geschehen: solo reingezoomt am eigenen Klonk, zu zweit so, dass beide
-  im Bild bleiben; ＋/－ zoomt manuell. 📱 Mobile: **Touch-Steuerkreuz**
-  (◀ ⤒ ▶ · ⛏️ 💣 🏭) steuert Rot, ⟳ dreht ins Querformat, auf
-  Hochformat-Handys dreht die Bühne automatisch. Die KI gräbt selbst
-  nach Gold, bringt es heim, sprengt Felsadern frei und wirft auch mal
-  einen Feuerstein nach dir. Wer zuerst das Spielziel erreicht
-  (5/8/12 Gold) oder nach 5 Minuten vorne liegt, gewinnt.
+  Planet (eigenständig umgesetzt) mit dem vollen Standard-Baukasten.
+  **Solo gegen die 🤖-KI** oder zwei Teams an **einer Tastatur**
+  (WASD+Q/E/F gegen Pfeiltasten+M/Komma/Punkt/N), jedes Team hat
+  **zwei Clonks** (Wechsel-Taste), eine Hütte, eine 🛒 Lore und eine
+  🏭 Chemiefabrik. Frisch generierte Pixel-Landschaft mit **Erde, Fels,
+  Granit (unzerstörbar), Goldadern, ⚫ Kohleflözen, Sandtaschen, See und
+  Lavagrotten**; Wasser & Lava **fließen** (Zellautomat), Sand rieselt
+  nach, und **Lava + Wasser = Stein**. Bewegen wie im Original:
+  laufen, springen, **klettern**, an Decken **hangeln**,
+  **schwimmen & tauchen** mit Atem-Anzeige (Ertrinken inklusive),
+  in Lava verbrennt man (Wasser löscht). **Graben** in alle Richtungen
+  (Fels sprengt nur der 💣 Feuerstein, Granit hält allem stand),
+  **🧱 Lehmbrücken** aus vergrabenen Lehmklumpen (Benutzen-Taste
+  unterwegs, mit Sprungtaste als Rampe, trägt auch übers Wasser).
+  **Bäume** lassen sich sprengen oder fackeln ab (Feuer springt über)
+  und geben 🪵 Holz; **Wipfe** buddeln durchs Erdreich und fliehen vor
+  Explosionen. Die **Chemiefabrik** produziert nach Rezept: 1 ⚫ → 2 💣,
+  sonst 2 🪵 → 1 💣, sonst 1 ⭐ → 2 💣. Die **Lore** rollt Hänge hinab,
+  sammelt Klumpen und kippt an der eigenen Hütte ab. Dazu zuschaltbare
+  **Katastrophen** (normal/wild/aus): 🌧 Regen füllt Senken mit Wasser,
+  🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane, die sich mit Lava zur
+  Oberfläche fressen. Die **Kamera** folgt dem Geschehen (solo
+  reingezoomt, zu zweit bleiben beide im Bild, ＋/－ zoomt), 📱 Mobile
+  mit **Touch-Steuerkreuz** (◀ ⤒ ▶ · 🔄 🏭 ⛏️ 💣) und automatischer
+  ⟳ Querformat-Drehung. Die KI gräbt nach Gold, bringt es heim, sprengt
+  Felsadern frei, kauft nach und wirft auch mal einen Feuerstein.
+  Wer zuerst das Spielziel erreicht (5/8/12 Gold) oder nach 5 Minuten
+  vorne liegt, gewinnt.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
@@ -322,12 +329,15 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
-- **`test/clonk.test.mjs`** – Klonk über den Test-Hook `window.__clonk`:
-  Gelände-Materialien (Erde/Fels/Gold/Höhlen), Graben inkl. Fels-Stopp,
-  Sprengungen legen Gold frei, Einsammeln/Abliefern/Sieg, K. o. und
-  Respawn, Klettern, Zwei-Spieler-Tastenbelegung, Lore (anschieben,
-  aufsammeln, entladen), Chemiefabrik-Kauf, Solo-KI, Touch-Steuerkreuz,
-  Kamera/Zoom (solo & 2P) und die Querformat-Drehung.
+- **`test/clonk.test.mjs`** – Klonk (60+ Checks) über den Test-Hook
+  `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/
+  Granit), Graben inkl. Fels-Stopp und Granit-Härte, Sprengungen legen
+  Gold frei, Einsammeln/Abliefern/Sieg, K. o./Respawn samt
+  Mannschafts-Übergabe, Klettern, Hangeln, Schwimmen/Atem,
+  Lava-Verbrennung, Lava+Wasser=Stein, rieselnder Sand, Lehmbrücken,
+  Lore, Chemiefabrik-Rezepte (Kohle/Holz/Gold), Baum→Holz, Wipfe,
+  Katastrophen (Meteor/Vulkan/Erdbeben/Regen), Clonk-Wechsel, Solo-KI,
+  Touch-Steuerkreuz, Kamera/Zoom und die Querformat-Drehung.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
 zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird

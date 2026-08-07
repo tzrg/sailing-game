@@ -31,7 +31,8 @@
     <button id="b-right">▶</button>
   </div>
   <div id="wctrl-right">
-    <button id="b-buy" title="Feuerstein kaufen (an der Hütte)">🏭</button>
+    <button id="b-switch" title="Clonk wechseln">🔄</button>
+    <button id="b-buy" title="Benutzen: kaufen / Lehmbrücke">🏭</button>
     <button id="b-dig">⛏️</button>
     <button id="b-fire">💣</button>
   </div>
@@ -78,6 +79,15 @@
         </select>
       </div>
 
+      <div class="menu-group">
+        <div class="group-title">Katastrophen</div>
+        <select id="sel-disasters" class="menu-select">
+          <option value="aus">Aus – nur ihr zwei</option>
+          <option value="normal" selected>Normal – ab und zu kracht's</option>
+          <option value="wild">Wild – Clonk-Planet-Feeling</option>
+        </select>
+      </div>
+
       <button class="menu-btn" id="btn-restart">🔄 Neue Runde</button>
       <button class="menu-btn" id="btn-help">❓ Hilfe</button>
     </div>
@@ -86,30 +96,39 @@
   <div id="help">
     <div class="panel">
       <h1>⛏️ Klonk · Goldrausch</h1>
-      <p>Hommage an <b>Clonk Planet</b>: Grabt euch durch das Erdreich, sprengt den Fels
-        und bringt das Gold zu eurer Hütte – zu Fuß oder mit der <b>Lore</b>. Wer zuerst das
-        Spielziel erreicht (oder nach 5 Minuten vorne liegt), gewinnt. Solo gegen 🤖 Blau
-        oder zu zweit an einer Tastatur.</p>
+      <p>Hommage an <b>Clonk Planet</b>: Jedes Team hat eine Hütte, eine Lore, eine Chemiefabrik
+        und <b>zwei Clonks</b>. Grabt Gold aus Erde und Fels, liefert es ab – wer zuerst das
+        Spielziel erreicht (oder nach 5 Minuten vorne liegt), gewinnt. Solo gegen 🤖 Blau oder
+        zu zweit an einer Tastatur.</p>
       <ul>
-        <li><b>🔴 Spieler 1:</b> <b>A</b>/<b>D</b> laufen · <b>W</b> springen &amp; klettern · <b>S</b> graben ·
-          <b>Q</b> Feuerstein werfen · <b>E</b> Feuerstein kaufen (an der Hütte)</li>
-        <li><b>🔵 Spieler 2:</b> <b>←</b>/<b>→</b> · <b>↑</b> · <b>↓</b> graben ·
-          <b>M</b>/<b>Komma</b> werfen · <b>Punkt</b> kaufen</li>
-        <li>📱 <b>Touch:</b> Steuerkreuz links (◀ ⤒ ▶), rechts ⛏️ graben, 💣 werfen, 🏭 kaufen –
-          steuert Rot. Mit ⟳ dreht ihr ins Querformat, mit ＋/－ zoomt ihr rein und raus.</li>
-        <li><b>Graben:</b> Grabtaste halten – allein senkrecht runter, mit ←/→ waagerecht,
-          mit Sprungtaste schräg hoch. Durch <b>Fels</b> kommt nur ein 💥 Feuerstein!
-          <b>Klettern:</b> in der Luft gegen eine Wand drücken, Sprungtaste zieht hoch.</li>
-        <li><b>💰 Gold</b> aus Erd- und Felsadern fällt als Klumpen heraus – einsammeln und an der
-          <b>eigenen Hütte</b> abliefern (dort heilt ihr auch langsam).</li>
-        <li><b>🛒 Lore:</b> jede Hütte hat eine Lore. Anschieben (einfach dagegenlaufen), sie rollt
-          Hänge hinab, sammelt Klumpen auf und nimmt dein getragenes Gold – an der eigenen
-          Hütte kippt sie alles in die Kasse.</li>
-        <li><b>🏭 Chemiefabrik:</b> an der Hütte tauscht die Kauf-Taste <b>1 abgeliefertes Gold gegen
-          2 Feuersteine</b> – investieren oder aufs Spielziel sparen? Feuersteine liegen auch
-          vergraben herum und segeln am Fallschirm ein; sie explodieren beim Aufprall.</li>
-        <li>Wer k. o. geht, verliert sein getragenes Gold und startet neu an der Hütte.
-          <b>Leertaste</b> Pause · nach Rundenende <b>R</b> für die Revanche.</li>
+        <li><b>🔴 Spieler 1:</b> <b>A/D</b> laufen · <b>W</b> springen, klettern &amp; hangeln ·
+          <b>S</b> graben · <b>Q</b> werfen · <b>E</b> benutzen (kaufen / 🧱 Lehmbrücke) ·
+          <b>F</b> Clonk wechseln</li>
+        <li><b>🔵 Spieler 2:</b> <b>←→↑↓</b> · <b>M</b>/<b>Komma</b> werfen · <b>Punkt</b> benutzen ·
+          <b>N</b> Clonk wechseln</li>
+        <li>📱 <b>Touch:</b> Steuerkreuz links, rechts 🔄 wechseln, 🏭 benutzen, ⛏️ graben, 💣 werfen.
+          ⟳ dreht ins Querformat, ＋/－ zoomt.</li>
+        <li><b>Bewegen wie in Clonk:</b> Wände hochklettern (dagegen drücken), an Decken
+          <b>hangeln</b> (in der Luft ⤒ halten), <b>schwimmen &amp; tauchen</b> (⤒ hoch, ⛏️ runter –
+          auf die <b>Luftblasen-Anzeige</b> achten!). In 🌋 <b>Lava</b> verbrennt man sich böse –
+          Wasser löscht.</li>
+        <li><b>Graben:</b> ⛏️ halten – allein senkrecht, mit ←/→ waagerecht, mit ⤒ schräg hoch.
+          Erde, Sand, <b>⚫ Kohle</b> und Gold sind grabbar; <b>Fels</b> sprengt nur der Feuerstein,
+          <b>Granit</b> hält sogar dem stand. Sand rieselt nach, Wasser flutet Stollen –
+          und Lava + Wasser = Stein!</li>
+        <li><b>🧱 Lehmbrücken:</b> Lehmklumpen stecken in der Erde. Unterwegs <b>Benutzen halten</b>
+          baut eine Brücke in Blickrichtung (mit ⤒ als Rampe) – auch übers Wasser.</li>
+        <li><b>🏭 Chemiefabrik</b> an der Hütte (Benutzen-Taste): <b>1 ⚫ Kohle → 2 💣</b>,
+          sonst <b>2 🪵 Holz → 1 💣</b>, sonst <b>1 ⭐ → 2 💣</b>. Holz gibt's aus gefällten
+          (oder abgefackelten) Bäumen.</li>
+        <li><b>🛒 Lore:</b> anschieben, rollt Hänge hinab, sammelt Klumpen, nimmt dein Gold und
+          kippt es an der eigenen Hütte ab. Explosionen verstreuen die Ladung.</li>
+        <li><b>🔄 Mannschaft:</b> zwei Clonks pro Team – Wechsel-Taste schaltet um, der andere
+          wartet. Wer k. o. geht, verliert sein Gold und startet nach kurzer Zeit neu an der Hütte.</li>
+        <li><b>Katastrophen</b> (im Menü einstellbar): 🌧 Regen füllt Senken mit Wasser,
+          🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane mischen die Karte auf. Dazu buddeln
+          <b>Wipfe</b> durchs Erdreich.</li>
+        <li><b>Leertaste</b> Pause · nach Rundenende <b>R</b> für die Revanche.</li>
       </ul>
       <button id="btn-start">Los geht's</button>
     </div>

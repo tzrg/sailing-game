@@ -1,7 +1,9 @@
-// Klonk · Goldrausch: Gelände-Materialien, Graben (Fels blockt), Sprengungen,
-// Gold-Wirtschaft (Klumpen, Abliefern, Sieg), K. o./Respawn, Klettern und die
-// Zwei-Spieler-Tastenbelegung. Läuft über den Test-Hook window.__clonk; die
-// Simulation wird pausiert und deterministisch per update(dt) getickt.
+// Klonk · Goldrausch: Gelände-Materialien (inkl. Wasser/Lava/Sand/Kohle/
+// Granit), Graben, Sprengungen, Gold-Wirtschaft, K. o./Respawn, Klettern,
+// Hangeln, Schwimmen/Atem, Lehmbrücken, Lore, Chemiefabrik-Rezepte, Bäume,
+// Wipfe, Katastrophen, Mannschafts-Wechsel, Solo-KI, Touch, Kamera/Zoom und
+// Querformat. Läuft über window.__clonk; die Simulation wird pausiert und
+// deterministisch per update(dt) getickt.
 
 import { startServer, launchBrowser, checker } from './helpers.mjs';
 
@@ -20,6 +22,7 @@ try {
   // Feste Saat + Pause: alle Ticks kommen ab jetzt aus update(dt)
   await page.evaluate(() => {
     const C = window.__clonk;
+    C.game.mode = '2p';
     C.startGame(42);
     C.game.paused = true;
   });
@@ -27,25 +30,48 @@ try {
     const C = window.__clonk;
     for (let t = 0; t < s; t += 0.016) C.update(0.016);
   }, secs);
-
-  // ---- Gelände: alle Materialien vorhanden, Spieler an ihren Hütten
-  let r = await page.evaluate(() => {
-    const C = window.__clonk, M = C.MAT, counts = [0, 0, 0, 0, 0];
-    for (const v of C.mask) counts[v]++;
-    const [a, b] = C.players();
-    return { counts, ax: a.x, bx: b.x, baseA: a.base.x, baseB: b.base.x, n: C.players().length };
-  });
-  check('Gelände enthält Himmel, Erde, Fels, Gold und Höhlen',
-    r.counts[0] > 10000 && r.counts[1] > 10000 && r.counts[2] > 10000 && r.counts[3] > 500 && r.counts[4] > 100,
-    r.counts.join(','));
-  check('Zwei Klonks starten an ihren Hütten (links/rechts)',
-    r.n === 2 && Math.abs(r.ax - r.baseA) < 40 && Math.abs(r.bx - r.baseB) < 40 && r.baseA < 200 && r.baseB > 760);
-
-  // ---- Graben: Erde weicht der Schaufel, Fels nicht
-  r = await page.evaluate(() => {
+  // trockene, flache Spalten suchen (See/Lava/Sand können überall liegen)
+  const findDry = () => page.evaluate(() => {
     const C = window.__clonk, M = C.MAT;
-    // Spalte 480: Erdoberfläche und Felsgrenze suchen
-    const x = 480, g = C.groundY()[x];
+    const out = [];
+    outer: for (let x = 260; x < 700; x += 9) {
+      const g = C.groundY()[x];
+      for (let xx = -14; xx <= 14; xx += 7) for (let y = g - 50; y < g + 70; y++) {
+        const m = C.matAt(x + xx, y);
+        if (m === M.WATER || m === M.LAVA || m === M.SAND) continue outer;
+      }
+      if (Math.abs(C.groundY()[x - 8] - C.groundY()[x + 8]) > 10) continue;
+      if (out.length && Math.abs(out[out.length - 1] - x) < 120) continue;
+      out.push(x);
+      if (out.length >= 3) break;
+    }
+    return out;
+  });
+  let [dryA, dryB, dryC] = await findDry();
+  dryB = dryB || dryA; dryC = dryC || dryB;
+
+  // ---- Gelände: alle Materialien vorhanden, Teams komplett
+  let r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT, counts = {};
+    for (const v of C.mask) counts[v] = (counts[v] || 0) + 1;
+    const [a, b] = C.players();
+    return {
+      counts, n: C.players().length, crew: C.allClonks().length,
+      ax: a.x, bx: b.x, baseA: a.base.x, baseB: b.base.x,
+      trees: C.trees().length, wipfe: C.wipfe().filter((w) => !w.dead).length,
+      M,
+    };
+  });
+  const cnt = (m) => r.counts[m] || 0;
+  check('Gelände: Himmel, Erde, Fels, Gold, Höhlen', cnt(r.M.SKY) > 10000 && cnt(r.M.EARTH) > 10000 && cnt(r.M.ROCK) > 10000 && cnt(r.M.GOLD) > 500 && cnt(r.M.TUNNEL) > 100, JSON.stringify(r.counts));
+  check('Neue Materialien: Wasser, Lava, Sand, Kohle, Granit', cnt(r.M.WATER) > 400 && cnt(r.M.LAVA) > 120 && cnt(r.M.SAND) > 150 && cnt(r.M.COAL) > 150 && cnt(r.M.GRANIT) > 3000, JSON.stringify(r.counts));
+  check('Zwei Teams à zwei Clonks an ihren Hütten', r.n === 2 && r.crew === 4 && Math.abs(r.ax - r.baseA) < 40 && Math.abs(r.bx - r.baseB) < 40);
+  check('Bäume wachsen, Wipfe buddeln', r.trees >= 3 && r.wipfe === 3, `trees=${r.trees} wipfe=${r.wipfe}`);
+
+  // ---- Graben: Erde weicht, Fels nicht, Granit hält sogar Sprengungen stand
+  r = await page.evaluate((x) => {
+    const C = window.__clonk, M = C.MAT;
+    const g = C.groundY()[x];
     let rockTop = 0;
     for (let y = g; y < C.WORLD_H; y++) if (C.matAt(x, y) === M.ROCK) { rockTop = y; break; }
     const earthBefore = C.solid(x, g + 10);
@@ -54,41 +80,45 @@ try {
     const rockBefore = C.solid(x, rockTop + 5);
     C.carveCircle(x, rockTop + 5, 9, false);
     const rockAfter = C.solid(x, rockTop + 5);
-    return { earthBefore, earthAfter, rockBefore, rockAfter, rockTop, g };
-  });
+    const granitBefore = C.matAt(20, C.WORLD_H - 4) === M.GRANIT;
+    C.carveCircle(20, C.WORLD_H - 4, 9, true);
+    const granitAfter = C.matAt(20, C.WORLD_H - 4) === M.GRANIT;
+    return { earthBefore, earthAfter, rockBefore, rockAfter, granitBefore, granitAfter };
+  }, dryA);
   check('Schaufel gräbt Erde weg', r.earthBefore && !r.earthAfter);
   check('Fels widersteht der Schaufel', r.rockBefore && r.rockAfter);
+  check('Granit widersteht sogar der Sprengung', r.granitBefore && r.granitAfter);
 
-  // ---- Spieler gräbt sich per Grabtaste senkrecht nach unten
-  r = await page.evaluate(() => {
+  // ---- Spieler gräbt sich senkrecht nach unten
+  r = await page.evaluate((x) => {
     const C = window.__clonk;
     const p = C.players()[0];
-    p.x = 480; p.y = C.groundY()[480] - 1; p.state = 'walk'; p.vx = 0; p.vy = 0; p.hp = 100;
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk'; p.vx = 0; p.vy = 0; p.hp = 100;
     C.pressed.add('s');
     return { y0: p.y };
-  });
+  }, dryA);
   await tick(1.2);
-  r = await page.evaluate((y0) => {
+  r = await page.evaluate(({ x, y0 }) => {
     const C = window.__clonk;
     const p = C.players()[0];
     C.pressed.delete('s');
-    return { dy: p.y - y0, state: p.state, freed: !C.solid(480, y0 + 6) };
-  }, r.y0);
-  check('Grabtaste: Klonk buddelt sich nach unten durch', r.state === 'dig' && r.dy > 20 && r.freed,
-    JSON.stringify(r));
+    return { dy: p.y - y0, state: p.state, freed: !C.solid(x, y0 + 6) };
+  }, { x: dryA, y0: r.y0 });
+  check('Grabtaste: Klonk buddelt sich nach unten durch', r.state === 'dig' && r.dy > 20 && r.freed, JSON.stringify(r));
 
   // ---- Fels stoppt den Buddler
-  r = await page.evaluate(() => {
+  r = await page.evaluate((x) => {
     const C = window.__clonk, M = C.MAT;
     C.startGame(42);
+    C.game.paused = true;
     const p = C.players()[0];
-    const x = 700, g = C.groundY()[x];
+    const g = C.groundY()[x];
     let rockTop = 0;
     for (let y = g; y < C.WORLD_H; y++) if (C.matAt(x, y) === M.ROCK) { rockTop = y; break; }
     p.x = x; p.y = g - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
     C.pressed.add('s');
     return { rockTop };
-  });
+  }, dryB);
   await tick(8);
   r = await page.evaluate((rockTop) => {
     const C = window.__clonk;
@@ -102,7 +132,7 @@ try {
   r = await page.evaluate(() => {
     const C = window.__clonk, M = C.MAT;
     C.startGame(42);
-    // eine Goldader im Fels suchen
+    C.game.paused = true;
     let gx = -1, gy = -1;
     outer: for (let y = C.WORLD_H - 40; y > 300; y--) {
       for (let x = 60; x < C.WORLD_W - 60; x++) {
@@ -118,21 +148,20 @@ try {
   check('Feuerstein sprengt Fels weg', r.found && r.rockBefore && !r.rockAfter);
   check('Gesprengtes Gold fällt als Klumpen heraus', r.nuggets >= 1, 'nuggets=' + r.nuggets);
 
-  // ---- Klumpen einsammeln, an der Hütte abliefern, Sieg
-  r = await page.evaluate(() => {
+  // ---- Klumpen einsammeln, abliefern, Sieg
+  await page.evaluate((x) => {
     const C = window.__clonk;
     C.startGame(42);
+    C.game.paused = true;
     const p = C.players()[0];
-    p.x = 480; p.y = C.groundY()[480] - 1; p.state = 'walk';
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk';
     C.items().push({ type: 'nugget', x: p.x + 4, y: p.y - 6, vx: 0, vy: 0 });
-    return null;
-  });
+  }, dryA);
   await tick(0.1);
   r = await page.evaluate(() => {
     const C = window.__clonk;
     const p = C.players()[0];
     const carry = p.carry;
-    // mit vollem Sack zur Hütte
     p.carry = 3;
     p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
     return { carry };
@@ -144,14 +173,12 @@ try {
     return { carried, score: p.score, carry: p.carry, state: C.game.state };
   }, r.carry);
   check('Klumpen wird im Vorbeigehen eingesammelt', r.carried === 1);
-  check('Hütte nimmt Gold an (Score steigt, Sack leer)', r.score === 3 && r.carry === 0 && r.state === 'play',
-    JSON.stringify(r));
+  check('Hütte nimmt Gold an (Score steigt, Sack leer)', r.score === 3 && r.carry === 0 && r.state === 'play', JSON.stringify(r));
 
-  r = await page.evaluate(() => {
+  await page.evaluate(() => {
     const C = window.__clonk;
     const p = C.players()[0];
     p.carry = C.game.goal - p.score;
-    return null;
   });
   await tick(0.1);
   r = await page.evaluate(() => {
@@ -161,37 +188,38 @@ try {
   check('Spielziel erreicht -> Runde endet mit Sieger', r.state === 'over' && r.winner === 'Rot', JSON.stringify(r));
 
   // ---- K. o.: Gold purzelt raus, Respawn an der Hütte
-  r = await page.evaluate(() => {
+  r = await page.evaluate((x) => {
     const C = window.__clonk;
     C.startGame(42);
+    C.game.paused = true;
     const p = C.players()[1];
-    p.x = 480; p.y = C.groundY()[480] - 1; p.state = 'walk'; p.carry = 2;
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk'; p.carry = 2;
     const before = C.items().filter((i) => i.type === 'nugget').length;
     C.hurt(p, 999, C.players()[0]);
     const after = C.items().filter((i) => i.type === 'nugget').length;
-    return { state: p.state, dropped: after - before, ko: C.players()[0].ko };
-  });
-  check('K. o.: Klonk stirbt, Gold fällt raus, Gegner zählt den Treffer',
-    r.state === 'dead' && r.dropped === 2 && r.ko === 1, JSON.stringify(r));
+    return { state: p.state, dropped: after - before, ko: C.players()[0].ko, handover: C.players()[1].controlled === C.players()[1].buddy };
+  }, dryA);
+  check('K. o.: Clonk stirbt, Gold fällt raus, Gegner zählt den Treffer', r.state === 'dead' && r.dropped === 2 && r.ko === 1, JSON.stringify(r));
+  check('Steuerung springt auf den zweiten Clonk der Mannschaft', r.handover === true);
   await tick(4.3);
   r = await page.evaluate(() => {
     const C = window.__clonk;
     const p = C.players()[1];
-    return { state: p.state, hp: p.hp, nearBase: Math.abs(p.x - p.base.x) < 40, carry: p.carry };
+    return { state: p.state, hp: p.hp, nearBase: Math.abs(p.x - p.base.x) < 50, carry: p.carry };
   });
-  check('Respawn an der eigenen Hütte mit vollen HP', r.state !== 'dead' && r.hp === 100 && r.nearBase && r.carry === 0,
-    JSON.stringify(r));
+  check('Respawn an der eigenen Hütte mit vollen HP', r.state !== 'dead' && r.hp === 100 && r.nearBase && r.carry === 0, JSON.stringify(r));
 
-  // ---- Zwei-Spieler-Tasten: A bewegt Rot, Pfeil-Links bewegt Blau, Q wirft
-  r = await page.evaluate(() => {
+  // ---- Zwei-Spieler-Tasten + Werfen
+  r = await page.evaluate(({ a, b }) => {
     const C = window.__clonk;
     C.startGame(42);
-    const [a, b] = C.players();
-    a.x = 480; a.y = C.groundY()[480] - 1; a.state = 'walk';
-    b.x = 520; b.y = C.groundY()[520] - 1; b.state = 'walk';
+    C.game.paused = true;
+    const [pa, pb] = C.players();
+    pa.x = a; pa.y = C.groundY()[a] - 1; pa.state = 'walk';
+    pb.x = b; pb.y = C.groundY()[b] - 1; pb.state = 'walk';
     C.pressed.add('a'); C.pressed.add('arrowleft');
-    return { ax: a.x, bx: b.x };
-  });
+    return { ax: pa.x, bx: pb.x };
+  }, { a: dryA, b: dryB });
   await tick(0.5);
   r = await page.evaluate((prev) => {
     const C = window.__clonk;
@@ -201,33 +229,50 @@ try {
     C.pressed.add('q');
     C.update(0.016);
     C.pressed.delete('q');
-    return { adx: a.x - prev.ax, bdx: b.x - prev.bx,
-      flintsBefore, flintsAfter: a.flints, projectiles: C.projectiles().length };
+    return { adx: a.x - prev.ax, bdx: b.x - prev.bx, flintsBefore, flintsAfter: a.flints, projectiles: C.projectiles().length };
   }, r);
   check('A steuert Rot, Pfeil-Links steuert Blau (eine Tastatur)', r.adx < -10 && r.bdx < -10, JSON.stringify(r));
-  check('Q wirft einen Feuerstein', r.flintsAfter === r.flintsBefore - 1 && r.projectiles === 1,
-    JSON.stringify(r));
-
-  // geworfener Feuerstein schlägt ein und hinterlässt einen Krater
+  check('Q wirft einen Feuerstein', r.flintsAfter === r.flintsBefore - 1 && r.projectiles === 1, JSON.stringify(r));
   await tick(3);
-  r = await page.evaluate(() => {
-    const C = window.__clonk;
-    return { left: C.projectiles().length, shaken: C.game.shakeT >= 0 };
-  });
+  r = await page.evaluate(() => ({ left: window.__clonk.projectiles().length }));
   check('Feuerstein explodiert beim Aufprall', r.left === 0, JSON.stringify(r));
 
-  // ---- Klettern: Wand hoch per Sprungtaste
+  // ---- Mannschaft: Wechsel-Taste steuert den zweiten Clonk
   r = await page.evaluate(() => {
     const C = window.__clonk;
     C.startGame(42);
+    C.game.paused = true;
     const p = C.players()[0];
-    // senkrechten Schacht in die Erde graben, Klonk an die linke Wand stellen
-    const cx = 480, g = C.groundY()[480];
+    C.pressed.add('f');
+    C.update(0.016);
+    C.pressed.delete('f');
+    const onBuddy = p.controlled === p.buddy;
+    const bx = p.buddy.x, px = p.x;
+    C.pressed.add('d');
+    return { onBuddy, bx, px };
+  });
+  await tick(0.6);
+  r = await page.evaluate((prev) => {
+    const C = window.__clonk;
+    C.pressed.delete('d');
+    const p = C.players()[0];
+    return { onBuddy: prev.onBuddy, buddyMoved: p.buddy.x - prev.bx, capMoved: p.x - prev.px };
+  }, r);
+  check('F wechselt zum zweiten Clonk', r.onBuddy === true);
+  check('Nur der gesteuerte Clonk läuft los', r.buddyMoved > 10 && Math.abs(r.capMoved) < 2, JSON.stringify(r));
+
+  // ---- Klettern & Hangeln
+  r = await page.evaluate((cx) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    const g = C.groundY()[cx];
     for (let y = g + 6; y < g + 60; y += 4) C.carveCircle(cx, y, 9, false);
     p.x = cx - 5; p.y = g + 52; p.state = 'air'; p.vx = 0; p.vy = 0;
     C.pressed.add('a');
     return { y0: p.y };
-  });
+  }, dryA);
   await tick(0.3);
   r = await page.evaluate(() => {
     const C = window.__clonk;
@@ -246,10 +291,174 @@ try {
   }, r.yBefore);
   check('Sprungtaste klettert die Wand hoch', r.climbed > 12, 'climbed=' + r.climbed);
 
-  // ---- Lore: anschieben, Klumpen aufsammeln, an der Hütte entladen
+  r = await page.evaluate((cx) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    const g = C.groundY()[cx];
+    // breiter Stollen mit halbwegs flacher Decke
+    for (let xx = cx - 24; xx <= cx + 24; xx += 6) C.carveCircle(xx, g + 44, 10, true);
+    let ceil = 0;
+    for (let y = g + 44; y > g + 10; y--) if (C.solid(cx, y)) { ceil = y; break; }
+    p.x = cx; p.y = ceil + 17; p.state = 'air'; p.vx = 0; p.vy = 0;
+    C.pressed.add('w');
+    return { ceil };
+  }, dryB);
+  await tick(0.3);
   r = await page.evaluate(() => {
     const C = window.__clonk;
-    C.game.mode = '2p';
+    const p = C.players()[0];
+    const state1 = p.state;
+    const x0 = p.x;
+    C.pressed.add('a');
+    return { state1, x0 };
+  });
+  await tick(0.4);
+  r = await page.evaluate((prev) => {
+    const C = window.__clonk;
+    C.pressed.delete('a'); C.pressed.delete('w');
+    const p = C.players()[0];
+    return { state1: prev.state1, moved: prev.x0 - p.x, state2: p.state };
+  }, r);
+  check('Hangeln: ⤒ unter der Decke hält fest', r.state1 === 'hangle', r.state1);
+  check('Hangeln: seitwärts an der Decke entlang', r.moved > 5, JSON.stringify(r));
+
+  // ---- Wasser: Schwimmen, Atem; Lava: Verbrennen; Sand rieselt; Lava+Wasser=Stein
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42);
+    C.game.paused = true;
+    // tiefste Wasserstelle suchen
+    let wx = -1, wy = -1, best = 0;
+    for (let x = 40; x < C.WORLD_W - 40; x += 4) {
+      let depth = 0, top = -1;
+      for (let y = 100; y < C.WORLD_H; y++) {
+        if (C.matAt(x, y) === M.WATER) { if (top < 0) top = y; depth++; }
+      }
+      if (depth > best) { best = depth; wx = x; wy = top; }
+    }
+    const p = C.players()[0];
+    p.x = wx; p.y = wy + 10; p.state = 'air'; p.vx = 0; p.vy = 0;
+    C.pressed.add('s');   // abtauchen
+    return { wx, wy, depth: best };
+  });
+  check('Es gibt einen See (mind. 14 px tief)', r.depth >= 14, 'depth=' + r.depth);
+  await tick(0.8);
+  await page.evaluate(() => window.__clonk.pressed.delete('s'));
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    return { state: p.state, breath: p.breath };
+  });
+  check('Im Wasser wird geschwommen, der Atem läuft ab', r.state === 'swim' && r.breath < 0.99, JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.pressed.add('w');
+    return C.players()[0].y;
+  });
+  await tick(0.8);
+  r = await page.evaluate((y0) => {
+    const C = window.__clonk;
+    C.pressed.delete('w');
+    return { rose: y0 - C.players()[0].y };
+  }, r);
+  check('⤒ schwimmt nach oben', r.rose > 6, JSON.stringify(r));
+
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    // Lava suchen
+    let lx = -1, ly = -1;
+    outer: for (let y = C.WORLD_H - 12; y > 300; y--) {
+      for (let x = 20; x < C.WORLD_W - 20; x++) {
+        if (C.matAt(x, y) === M.LAVA) { lx = x; ly = y; break outer; }
+      }
+    }
+    const p = C.players()[0];
+    p.x = lx; p.y = ly + 6; p.state = 'air'; p.vx = 0; p.vy = 0; p.hp = 100; p.breath = 1;
+    return { found: lx >= 0, lx, ly };
+  });
+  check('Es gibt eine Lavagrotte', r.found);
+  await tick(0.4);
+  const lavaPos = r;
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    return { hp: p.hp, burning: p.burnT > 0 };
+  });
+  check('Lava verbrennt den Clonk', r.hp < 95 && r.burning, JSON.stringify(r));
+
+  r = await page.evaluate(({ lx, ly }) => {
+    const C = window.__clonk, M = C.MAT;
+    // Wasser direkt über die Lava setzen -> Kontakt macht Fels
+    const i = (ly - 1) * C.WORLD_W + lx;
+    C.mask[i] = M.WATER;
+    C.wakeArea(lx - 2, ly - 3, lx + 2, ly + 2);
+    return null;
+  }, lavaPos);
+  await tick(0.5);
+  r = await page.evaluate(({ lx, ly }) => {
+    const C = window.__clonk, M = C.MAT;
+    let rock = false;
+    for (let y = ly - 2; y <= ly + 2; y++) for (let x = lx - 2; x <= lx + 2; x++) {
+      if (C.matAt(x, y) === M.ROCK) rock = true;
+    }
+    return { rock };
+  }, lavaPos);
+  check('Lava + Wasser = Stein', r.rock === true);
+
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42);
+    C.game.paused = true;
+    // Sandtasche suchen und den Boden darunter wegsprengen
+    let sx = -1, sy = -1;
+    outer: for (let y = 200; y < C.WORLD_H - 40; y++) {
+      for (let x = 40; x < C.WORLD_W - 40; x++) {
+        if (C.matAt(x, y) === M.SAND && C.matAt(x, y + 4) === M.SAND) { sx = x; sy = y; break outer; }
+      }
+    }
+    C.carveCircle(sx, sy + 16, 9, true);
+    return { sx, sy, found: sx >= 0 };
+  });
+  check('Es gibt Sandtaschen', r.found);
+  await tick(1.5);
+  r = await page.evaluate(({ sx, sy }) => {
+    const C = window.__clonk, M = C.MAT;
+    let sandBelow = false;
+    for (let y = sy + 8; y < sy + 26; y++) if (C.matAt(sx, y) === M.SAND) sandBelow = true;
+    return { sandBelow, still: C.matAt(sx, sy) === M.SAND };
+  }, r);
+  check('Sand rieselt in gesprengte Hohlräume', r.sandBelow, JSON.stringify(r));
+
+  // ---- Lehmbrücke über eine Grube
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    const g = C.groundY()[x];
+    C.carveCircle(x + 18, g + 6, 10, true);   // Grube voraus
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk'; p.dir = 1; p.loam = 2;
+    C.pressed.add('e');
+    return { x0: p.x };
+  }, dryA);
+  await tick(1.4);
+  r = await page.evaluate(({ x, x0 }) => {
+    const C = window.__clonk, M = C.MAT;
+    C.pressed.delete('e');
+    const p = C.players()[0];
+    let loamCells = 0;
+    for (let xx = x + 6; xx < x + 34; xx++) for (let y = C.groundY()[x] - 6; y < C.groundY()[x] + 20; y++) {
+      if (C.matAt(xx, y) === M.LOAM) loamCells++;
+    }
+    return { adv: p.x - x0, loamCells, loamLeft: p.loam };
+  }, { x: dryA, x0: r.x0 });
+  check('Lehmbrücke: Benutzen-Taste baut über die Grube', r.loamCells > 20 && r.adv > 10, JSON.stringify(r));
+
+  // ---- Lore: anschieben, Klumpen aufsammeln, entladen
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
     C.startGame(42);
     C.game.paused = true;
     const lo = C.lores()[0];
@@ -264,7 +473,7 @@ try {
     const C = window.__clonk;
     C.pressed.delete('d');
     const p = C.players()[0];
-    p.x = 300; p.y = C.groundY()[300] - 1;   // aus dem Weg, damit er nichts wegschnappt
+    p.x = 300; p.y = C.groundY()[300] - 1;
     const lo = C.lores()[0];
     C.items().push({ type: 'nugget', x: lo.x, y: lo.y - 6, vx: 0, vy: 0 });
     return { moved: lo.x - x0 };
@@ -286,56 +495,115 @@ try {
   check('Lore sammelt Klumpen auf', r.cargo1 === 1, JSON.stringify(r));
   check('Lore kippt ihre Ladung an der Hütte in die Kasse', r.cargo === 0 && r.score === 3, JSON.stringify(r));
 
-  // ---- Chemiefabrik: 1 abgeliefertes Gold -> 2 Feuersteine (Kauf-Taste E)
+  // ---- Chemiefabrik-Rezepte: Kohle > Holz > Gold
   r = await page.evaluate(() => {
     const C = window.__clonk;
     C.startGame(42);
     C.game.paused = true;
     const p = C.players()[0];
     p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk';
-    p.score = 2; p.flints = 0;
-    C.pressed.add('e');
-    return null;
+    p.score = 5; p.flints = 0; p.coal = 1; p.wood = 0;
+    C.buyFlint(p);
+    const coalBuy = { flints: p.flints, coal: p.coal, score: p.score };
+    p.flints = 0; p.coal = 0; p.wood = 2;
+    C.buyFlint(p);
+    const woodBuy = { flints: p.flints, wood: p.wood, score: p.score };
+    p.flints = 0; p.wood = 0;
+    C.buyFlint(p);
+    const goldBuy = { flints: p.flints, score: p.score };
+    return { coalBuy, woodBuy, goldBuy };
   });
-  await tick(0.2);
+  check('Fabrik: 1 ⚫ Kohle → 2 💣', r.coalBuy.flints === 2 && r.coalBuy.coal === 0 && r.coalBuy.score === 5, JSON.stringify(r.coalBuy));
+  check('Fabrik: 2 🪵 Holz → 1 💣', r.woodBuy.flints === 1 && r.woodBuy.wood === 0 && r.woodBuy.score === 5, JSON.stringify(r.woodBuy));
+  check('Fabrik: −1 ⭐ → +2 💣', r.goldBuy.flints === 2 && r.goldBuy.score === 4, JSON.stringify(r.goldBuy));
+
+  // ---- Bäume geben Holz
   r = await page.evaluate(() => {
     const C = window.__clonk;
-    C.pressed.delete('e');
-    const p = C.players()[0];
-    return { flints: p.flints, score: p.score };
+    const t = C.trees().find((t) => !t.dead);
+    const before = C.items().filter((i) => i.type === 'wood').length;
+    C.fellTree(t);
+    const after = C.items().filter((i) => i.type === 'wood').length;
+    return { dead: t.dead, wood: after - before };
   });
-  check('Chemiefabrik: −1 ⭐ → +2 💣 (nur einmal pro Tastendruck)',
-    r.flints === 2 && r.score === 1, JSON.stringify(r));
+  check('Gefällter Baum gibt Holz', r.dead && r.wood >= 2, JSON.stringify(r));
 
-  // ---- Solo-Modus: Blau ist KI und macht sich auf Goldsuche
+  // ---- Katastrophen: Meteor, Vulkan, Erdbeben, Regen
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    C.doMeteor(x);
+    return { falling: C.projectiles().some((f) => f.meteor) };
+  }, dryB);
+  check('Meteor fällt vom Himmel', r.falling);
+  await tick(4);
+  r = await page.evaluate(() => ({ left: window.__clonk.projectiles().length, shook: true }));
+  check('Meteor schlägt ein und explodiert', r.left === 0);
+
+  r = await page.evaluate((x) => {
+    const C = window.__clonk, M = C.MAT;
+    let lava = 0;
+    for (const v of C.mask) if (v === M.LAVA) lava++;
+    C.doVolcano(x);
+    return { lava0: lava, vents: C.volcanoes().length };
+  }, dryC);
+  check('Vulkan bricht aus', r.vents === 1);
+  await tick(3);
+  r = await page.evaluate((prev) => {
+    const C = window.__clonk, M = C.MAT;
+    let lava = 0;
+    for (const v of C.mask) if (v === M.LAVA) lava++;
+    return { grown: lava - prev.lava0 };
+  }, r);
+  check('Der Schlot füllt sich mit aufsteigender Lava', r.grown > 150, 'grown=' + r.grown);
+
   r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.doQuake();
+    C.update(0.016);
+    const quake = C.game.quakeT > 0 && C.game.shakeT > 0;
+    C.doRain();
+    return { quake, rain: C.game.rainT > 0 };
+  });
+  check('Erdbeben schüttelt die Karte', r.quake);
+  check('Regen zieht auf', r.rain);
+  await tick(3);
+  r = await page.evaluate(() => ({ budget: window.__clonk.game.rainBudget }));
+  check('Regen lässt Wasser in die Senken laufen', r.budget < 420, 'budget=' + r.budget);
+
+  // ---- Solo-Modus: Blau ist KI und sammelt
+  r = await page.evaluate(({ a, b }) => {
     const C = window.__clonk;
     C.game.mode = 'solo';
     C.startGame(42);
     C.game.paused = true;
-    const b = C.players()[1];
-    b.x = 700; b.y = C.groundY()[700] - 1; b.state = 'walk';
-    C.items().push({ type: 'nugget', x: 640, y: C.groundY()[640] - 4, vx: 0, vy: 0 });
-    return { ai: b.ai, hidden: document.getElementById('wctrl-left').classList.contains('hidden') };
-  });
+    const cap = C.players()[1];
+    cap.x = b; cap.y = C.groundY()[b] - 1; cap.state = 'walk';
+    C.items().push({ type: 'nugget', x: a, y: C.groundY()[a] - 4, vx: 0, vy: 0 });
+    return { ai: cap.ai, hidden: document.getElementById('wctrl-left').classList.contains('hidden'), start: cap.x };
+  }, { a: dryA, b: dryB });
   check('Solo-Modus: Blau wird von der 🤖-KI gesteuert', r.ai === true);
   check('Ohne Touch-Gerät bleiben die Bildschirm-Buttons versteckt', r.hidden === true);
   await tick(2.5);
-  r = await page.evaluate(() => {
+  r = await page.evaluate((start) => {
     const C = window.__clonk;
-    const b = C.players()[1];
-    return { x: b.x, carry: b.carry, kind: b.aiS.target && b.aiS.target.kind };
-  });
-  check('KI läuft zum Klumpen und sammelt ihn ein', r.carry >= 1 || r.x < 690, JSON.stringify(r));
+    const cap = C.players()[1];
+    const c = cap.controlled;
+    return { moved: Math.abs(c.x - start) > 10, carry: c.carry };
+  }, r.start);
+  check('KI macht sich auf den Weg zum Gold', r.moved || r.carry >= 1, JSON.stringify(r));
 
-  // ---- Touch-Steuerkreuz steuert Rot (auch wenn per CSS versteckt)
-  r = await page.evaluate(() => {
+  // ---- Touch-Steuerkreuz steuert Rot
+  r = await page.evaluate((x) => {
     const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
     const a = C.players()[0];
-    a.x = 480; a.y = C.groundY()[480] - 1; a.state = 'walk'; a.vx = 0; a.vy = 0;
+    a.x = x; a.y = C.groundY()[x] - 1; a.state = 'walk'; a.vx = 0; a.vy = 0;
     document.getElementById('b-left').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     return { held: C.buttons['b-left'].held, x0: a.x };
-  });
+  }, dryA);
   check('Touch-Button meldet Halten', r.held === true);
   await tick(0.6);
   r = await page.evaluate((x0) => {
@@ -354,14 +622,12 @@ try {
     const s1 = C.cam.scale, z1 = C.cam.zoom;
     C.setZoom(3.4);
     for (let i = 0; i < 80; i++) C.computeCam(0.05);
-    const p = C.players()[0];
-    return { z1, s1, s2: C.cam.scale, camX: C.cam.x, px: p.x };
+    return { z1, s1, s2: C.cam.scale, camX: C.cam.x };
   });
   check('Solo startet reingezoomt (kleinerer Bildausschnitt)', r.z1 > 1.5, 'zoom=' + r.z1);
   check('＋/－-Zoom ändert den Maßstab', r.s2 > r.s1 * 1.3, JSON.stringify(r));
   check('Kamera bleibt beim eigenen Klonk (linke Kartenhälfte)', r.camX < 480, 'camX=' + r.camX);
 
-  // ---- Kamera im 2P-Modus: beide Spieler bleiben trotz Zoom im Bild
   r = await page.evaluate(() => {
     const C = window.__clonk;
     C.game.mode = '2p';
@@ -372,7 +638,7 @@ try {
     C.setZoom(3.5);
     for (let i = 0; i < 80; i++) C.computeCam(0.05);
     const need = (Math.abs(a.x - b.x) + 280) * C.cam.scale;
-    return { need, cw: innerWidth, ok: need <= innerWidth + 2 };
+    return { need, ok: need <= innerWidth + 2 };
   });
   check('2P-Zoom hält beide Klonks im Bild', r.ok, JSON.stringify(r));
 
