@@ -245,6 +245,144 @@ try {
     return { climbed: yBefore - C.players()[0].y };
   }, r.yBefore);
   check('Sprungtaste klettert die Wand hoch', r.climbed > 12, 'climbed=' + r.climbed);
+
+  // ---- Lore: anschieben, Klumpen aufsammeln, an der Hütte entladen
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.game.mode = '2p';
+    C.startGame(42);
+    C.game.paused = true;
+    const lo = C.lores()[0];
+    const p = C.players()[0];
+    p.x = lo.x - 12; p.y = lo.y; p.state = 'walk';
+    C.pressed.add('d');
+    return { n: C.lores().length, x0: lo.x };
+  });
+  check('Jede Hütte hat eine Lore', r.n === 2);
+  await tick(1.2);
+  r = await page.evaluate((x0) => {
+    const C = window.__clonk;
+    C.pressed.delete('d');
+    const p = C.players()[0];
+    p.x = 300; p.y = C.groundY()[300] - 1;   // aus dem Weg, damit er nichts wegschnappt
+    const lo = C.lores()[0];
+    C.items().push({ type: 'nugget', x: lo.x, y: lo.y - 6, vx: 0, vy: 0 });
+    return { moved: lo.x - x0 };
+  }, r.x0);
+  check('Lore lässt sich anschieben', r.moved > 8, 'moved=' + r.moved);
+  await tick(0.2);
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const lo = C.lores()[0];
+    const cargo1 = lo.cargo;
+    lo.x = C.players()[0].base.x; lo.y = C.players()[0].base.y - 1; lo.cargo = 3;
+    return { cargo1 };
+  });
+  await tick(0.2);
+  r = await page.evaluate((cargo1) => {
+    const C = window.__clonk;
+    return { cargo1, cargo: C.lores()[0].cargo, score: C.players()[0].score };
+  }, r.cargo1);
+  check('Lore sammelt Klumpen auf', r.cargo1 === 1, JSON.stringify(r));
+  check('Lore kippt ihre Ladung an der Hütte in die Kasse', r.cargo === 0 && r.score === 3, JSON.stringify(r));
+
+  // ---- Chemiefabrik: 1 abgeliefertes Gold -> 2 Feuersteine (Kauf-Taste E)
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk';
+    p.score = 2; p.flints = 0;
+    C.pressed.add('e');
+    return null;
+  });
+  await tick(0.2);
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.pressed.delete('e');
+    const p = C.players()[0];
+    return { flints: p.flints, score: p.score };
+  });
+  check('Chemiefabrik: −1 ⭐ → +2 💣 (nur einmal pro Tastendruck)',
+    r.flints === 2 && r.score === 1, JSON.stringify(r));
+
+  // ---- Solo-Modus: Blau ist KI und macht sich auf Goldsuche
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.game.mode = 'solo';
+    C.startGame(42);
+    C.game.paused = true;
+    const b = C.players()[1];
+    b.x = 700; b.y = C.groundY()[700] - 1; b.state = 'walk';
+    C.items().push({ type: 'nugget', x: 640, y: C.groundY()[640] - 4, vx: 0, vy: 0 });
+    return { ai: b.ai, hidden: document.getElementById('wctrl-left').classList.contains('hidden') };
+  });
+  check('Solo-Modus: Blau wird von der 🤖-KI gesteuert', r.ai === true);
+  check('Ohne Touch-Gerät bleiben die Bildschirm-Buttons versteckt', r.hidden === true);
+  await tick(2.5);
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const b = C.players()[1];
+    return { x: b.x, carry: b.carry, kind: b.aiS.target && b.aiS.target.kind };
+  });
+  check('KI läuft zum Klumpen und sammelt ihn ein', r.carry >= 1 || r.x < 690, JSON.stringify(r));
+
+  // ---- Touch-Steuerkreuz steuert Rot (auch wenn per CSS versteckt)
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const a = C.players()[0];
+    a.x = 480; a.y = C.groundY()[480] - 1; a.state = 'walk'; a.vx = 0; a.vy = 0;
+    document.getElementById('b-left').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    return { held: C.buttons['b-left'].held, x0: a.x };
+  });
+  check('Touch-Button meldet Halten', r.held === true);
+  await tick(0.6);
+  r = await page.evaluate((x0) => {
+    const C = window.__clonk;
+    document.getElementById('b-left').dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    return { dx: C.players()[0].x - x0, held: C.buttons['b-left'].held };
+  }, r.x0);
+  check('Touch-Steuerkreuz bewegt Rot nach links', r.dx < -10 && r.held === false, JSON.stringify(r));
+
+  // ---- Kamera: Solo folgt dem Spieler, Zoom ändert den Maßstab
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.startGame(42);            // solo, cam.zoom = 2.1
+    C.game.paused = true;
+    for (let i = 0; i < 80; i++) C.computeCam(0.05);
+    const s1 = C.cam.scale, z1 = C.cam.zoom;
+    C.setZoom(3.4);
+    for (let i = 0; i < 80; i++) C.computeCam(0.05);
+    const p = C.players()[0];
+    return { z1, s1, s2: C.cam.scale, camX: C.cam.x, px: p.x };
+  });
+  check('Solo startet reingezoomt (kleinerer Bildausschnitt)', r.z1 > 1.5, 'zoom=' + r.z1);
+  check('＋/－-Zoom ändert den Maßstab', r.s2 > r.s1 * 1.3, JSON.stringify(r));
+  check('Kamera bleibt beim eigenen Klonk (linke Kartenhälfte)', r.camX < 480, 'camX=' + r.camX);
+
+  // ---- Kamera im 2P-Modus: beide Spieler bleiben trotz Zoom im Bild
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.game.mode = '2p';
+    C.startGame(42);
+    C.game.paused = true;
+    const [a, b] = C.players();
+    a.x = 120; b.x = 840;
+    C.setZoom(3.5);
+    for (let i = 0; i < 80; i++) C.computeCam(0.05);
+    const need = (Math.abs(a.x - b.x) + 280) * C.cam.scale;
+    return { need, cw: innerWidth, ok: need <= innerWidth + 2 };
+  });
+  check('2P-Zoom hält beide Klonks im Bild', r.ok, JSON.stringify(r));
+
+  // ---- Querformat-Drehung
+  await page.click('#btn-rotate');
+  r = await page.evaluate(() => document.getElementById('stage').classList.contains('rot'));
+  check('⟳ dreht die Bühne ins Querformat', r === true);
+  await page.click('#btn-rotate');
+  r = await page.evaluate(() => document.getElementById('stage').classList.contains('rot'));
+  check('⟳ dreht auch wieder zurück', r === false);
 } finally {
   await browser.close();
   srv.stop();

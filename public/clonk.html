@@ -9,11 +9,31 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⛏️%3C/text%3E%3C/svg%3E">
 </head>
 <body>
+ <div id="stage">
   <canvas id="game"></canvas>
 
   <div id="toolbar">
     <button id="btn-menu">☰</button>
+    <button id="btn-rotate" title="Querformat">⟳</button>
     <button id="btn-pause" title="Pause">⏸</button>
+  </div>
+
+  <!-- Zoom (linke Kante) -->
+  <div id="wzoom">
+    <button id="b-zoomin" title="Ranzoomen">＋</button>
+    <button id="b-zoomout" title="Rauszoomen">－</button>
+  </div>
+
+  <!-- Touch-Steuerung (steuert Spieler Rot) -->
+  <div id="wctrl-left">
+    <button id="b-left">◀</button>
+    <button id="b-jump">⤒</button>
+    <button id="b-right">▶</button>
+  </div>
+  <div id="wctrl-right">
+    <button id="b-buy" title="Feuerstein kaufen (an der Hütte)">🏭</button>
+    <button id="b-dig">⛏️</button>
+    <button id="b-fire">💣</button>
   </div>
 
   <div id="menu" class="hidden">
@@ -42,6 +62,14 @@
       </div>
 
       <div class="menu-group">
+        <div class="group-title">Modus</div>
+        <select id="sel-mode" class="menu-select">
+          <option value="solo">1 Spieler – gegen 🤖 Blau</option>
+          <option value="2p">2 Spieler – eine Tastatur</option>
+        </select>
+      </div>
+
+      <div class="menu-group">
         <div class="group-title">Spielziel</div>
         <select id="sel-goal" class="menu-select">
           <option value="5">5 Gold – schnelle Runde</option>
@@ -58,27 +86,35 @@
   <div id="help">
     <div class="panel">
       <h1>⛏️ Klonk · Goldrausch</h1>
-      <p>Hommage an <b>Clonk Planet</b>: Zwei Klonks, eine Tastatur, ein Berg voller Gold.
-        Grabt euch durch das Erdreich, sprengt den Fels und bringt das Gold zu eurer Hütte –
-        wer zuerst das Spielziel erreicht (oder nach 5 Minuten vorne liegt), gewinnt.</p>
+      <p>Hommage an <b>Clonk Planet</b>: Grabt euch durch das Erdreich, sprengt den Fels
+        und bringt das Gold zu eurer Hütte – zu Fuß oder mit der <b>Lore</b>. Wer zuerst das
+        Spielziel erreicht (oder nach 5 Minuten vorne liegt), gewinnt. Solo gegen 🤖 Blau
+        oder zu zweit an einer Tastatur.</p>
       <ul>
-        <li><b>🔴 Spieler 1:</b> <b>A</b>/<b>D</b> laufen · <b>W</b> springen &amp; klettern · <b>S</b> graben · <b>Q</b> Feuerstein werfen</li>
-        <li><b>🔵 Spieler 2:</b> <b>←</b>/<b>→</b> laufen · <b>↑</b> springen &amp; klettern · <b>↓</b> graben · <b>M</b> oder <b>Komma</b> Feuerstein werfen</li>
-        <li><b>Graben:</b> Grabtaste halten – dazu Richtung: allein geht's senkrecht nach unten,
-          mit ←/→ waagerecht, mit Sprungtaste schräg nach oben. Durch <b>Fels</b> kommt nur ein 💥 Feuerstein!</li>
-        <li><b>Klettern:</b> in der Luft gegen eine Wand drücken – der Klonk hält sich fest;
-          mit der Sprungtaste geht's hoch, weg von der Wand lässt los.</li>
-        <li><b>💰 Gold</b> steckt als Ader in der Erde (auch tief im Fels). Ausgegraben oder freigesprengt
-          fallen Klumpen heraus – einsammeln und <b>an der eigenen Hütte abliefern</b>. Dort heilt ihr auch langsam.</li>
-        <li><b>💣 Feuersteine</b> liegen vergraben herum und segeln ab und zu am Fallschirm vom Himmel.
-          Sie explodieren beim Aufprall – gut gegen Fels und gegen den Mitspieler. Wer k. o. geht,
-          verliert sein getragenes Gold und startet neu an der Hütte.</li>
-        <li><b>Leertaste</b> Pause · nach Rundenende <b>R</b> für die Revanche.</li>
+        <li><b>🔴 Spieler 1:</b> <b>A</b>/<b>D</b> laufen · <b>W</b> springen &amp; klettern · <b>S</b> graben ·
+          <b>Q</b> Feuerstein werfen · <b>E</b> Feuerstein kaufen (an der Hütte)</li>
+        <li><b>🔵 Spieler 2:</b> <b>←</b>/<b>→</b> · <b>↑</b> · <b>↓</b> graben ·
+          <b>M</b>/<b>Komma</b> werfen · <b>Punkt</b> kaufen</li>
+        <li>📱 <b>Touch:</b> Steuerkreuz links (◀ ⤒ ▶), rechts ⛏️ graben, 💣 werfen, 🏭 kaufen –
+          steuert Rot. Mit ⟳ dreht ihr ins Querformat, mit ＋/－ zoomt ihr rein und raus.</li>
+        <li><b>Graben:</b> Grabtaste halten – allein senkrecht runter, mit ←/→ waagerecht,
+          mit Sprungtaste schräg hoch. Durch <b>Fels</b> kommt nur ein 💥 Feuerstein!
+          <b>Klettern:</b> in der Luft gegen eine Wand drücken, Sprungtaste zieht hoch.</li>
+        <li><b>💰 Gold</b> aus Erd- und Felsadern fällt als Klumpen heraus – einsammeln und an der
+          <b>eigenen Hütte</b> abliefern (dort heilt ihr auch langsam).</li>
+        <li><b>🛒 Lore:</b> jede Hütte hat eine Lore. Anschieben (einfach dagegenlaufen), sie rollt
+          Hänge hinab, sammelt Klumpen auf und nimmt dein getragenes Gold – an der eigenen
+          Hütte kippt sie alles in die Kasse.</li>
+        <li><b>🏭 Chemiefabrik:</b> an der Hütte tauscht die Kauf-Taste <b>1 abgeliefertes Gold gegen
+          2 Feuersteine</b> – investieren oder aufs Spielziel sparen? Feuersteine liegen auch
+          vergraben herum und segeln am Fallschirm ein; sie explodieren beim Aufprall.</li>
+        <li>Wer k. o. geht, verliert sein getragenes Gold und startet neu an der Hütte.
+          <b>Leertaste</b> Pause · nach Rundenende <b>R</b> für die Revanche.</li>
       </ul>
-      <p class="muted">Am besten zu zweit am Desktop – jede Runde bekommt eine frisch generierte Landschaft.</p>
       <button id="btn-start">Los geht's</button>
     </div>
   </div>
+ </div>
 
   <script type="module" src="js/clonk.js"></script>
 </body>

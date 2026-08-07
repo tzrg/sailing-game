@@ -1,7 +1,10 @@
 // Klonk · Goldrausch – Hommage an Clonk 4 / Clonk Planet (eigenständig umgesetzt).
-// Zwei Klonks an einer Tastatur graben sich durch zerstörbares Pixel-Gelände,
-// klettern Wände hoch, sprengen mit Feuersteinen den Fels auf und liefern
-// Goldklumpen an ihrer Hütte ab. Wer zuerst das Spielziel erreicht, gewinnt.
+// Zwei Klonks (oder einer gegen die 🤖-KI) graben sich durch zerstörbares
+// Pixel-Gelände, klettern Wände hoch, sprengen mit Feuersteinen den Fels auf
+// und liefern Goldklumpen an ihrer Hütte ab – zu Fuß oder mit der Lore.
+// Die Chemiefabrik an der Hütte tauscht abgeliefertes Gold gegen Feuersteine
+// (wie im Standard-Objektpaket von Clonk Planet). Kamera mit Zoom folgt dem
+// Geschehen, Touch-Steuerkreuz + Querformat-Drehung für Handys.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const WORLD_W = 960, WORLD_H = 640;
@@ -14,6 +17,7 @@ const SOLID = [false, true, true, true, false];
 
 let mask;                    // Uint8Array WORLD_W*WORLD_H mit MAT-Werten
 let groundY;                 // Oberflächen-Höhe je Spalte (Startzustand)
+let goldSpots = [];          // Zentren der Goldadern (für die KI)
 let terrainCanvas, terrainCtx, terrainImage;
 const idx = (x, y) => y * WORLD_W + x;
 
@@ -44,6 +48,7 @@ const BASE_X = [92, WORLD_W - 92];   // Hütten-Positionen (links / rechts)
 function genTerrain() {
   mask = new Uint8Array(WORLD_W * WORLD_H);
   groundY = new Int16Array(WORLD_W);
+  goldSpots = [];
   const p1 = rng() * 6.28, p2 = rng() * 6.28, p3 = rng() * 6.28, p4 = rng() * 6.28;
 
   // Hügelige Oberfläche; rund um die Hütten wird sanft eingeebnet
@@ -52,7 +57,12 @@ function genTerrain() {
       + Math.sin(x * 0.055 + p3) * 9;
     for (const bx of BASE_X) {
       const d = Math.abs(x - bx);
-      if (d < 90) { const w = 1 - d / 90; h = h * (1 - w * w) + 296 * w * w; }
+      if (d < 110) {
+        // flacher Kern fürs Hütten-Plateau, außen weicher Übergang (Smoothstep)
+        const w = d < 60 ? 1 : 1 - (d - 60) / 50;
+        const ww = w * w * (3 - 2 * w);
+        h = h * (1 - ww) + 296 * ww;
+      }
     }
     groundY[x] = Math.round(clamp(h, 120, WORLD_H - 160));
   }
@@ -78,13 +88,15 @@ function genTerrain() {
   };
   for (let i = 0; i < 8; i++) {
     const x = 40 + ((rng() * (WORLD_W - 80)) | 0);
-    const y = groundY[clamp(x, 0, WORLD_W - 1)] + 45 + rng() * 70;
-    blob(x, y | 0, 7 + rng() * 6, MAT.GOLD, [MAT.EARTH]);
+    const y = (groundY[clamp(x, 0, WORLD_W - 1)] + 45 + rng() * 70) | 0;
+    blob(x, y, 7 + rng() * 6, MAT.GOLD, [MAT.EARTH]);
+    goldSpots.push({ x, y, rock: false });
   }
   for (let i = 0; i < 5; i++) {
     const x = 60 + ((rng() * (WORLD_W - 120)) | 0);
-    const y = WORLD_H - 60 - rng() * 110;
-    blob(x, y | 0, 10 + rng() * 8, MAT.GOLD, [MAT.ROCK, MAT.EARTH]);
+    const y = (WORLD_H - 60 - rng() * 110) | 0;
+    blob(x, y, 10 + rng() * 8, MAT.GOLD, [MAT.ROCK, MAT.EARTH]);
+    goldSpots.push({ x, y, rock: true });
   }
   // ein paar natürliche Höhlen in der Erdschicht
   for (let i = 0; i < 4; i++) {
@@ -161,16 +173,22 @@ function carveCircle(cx, cy, r, breakRock) {
 // ---- Spielzustand -----------------------------------------------------------
 const GOLD_PER_NUGGET = 42;   // so viele Gold-Pixel ergeben einen Klumpen
 const FLINT_MAX = 4;
+const LORE_MAX = 8;
 const ROUND_TIME = 300;
+const IS_TOUCH = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+  || 'ontouchstart' in window;
 
 const game = {
   state: 'play', paused: false, t: ROUND_TIME, goal: 8, winner: null,
+  mode: '2p',                 // '2p' | 'solo' (gegen die KI)
   flintDropT: 12, shakeT: 0, shakeA: 0,
 };
+try { game.mode = localStorage.getItem('clonk_mode') || (IS_TOUCH ? 'solo' : '2p'); } catch { /* egal */ }
 
 let players = [];
 let items = [];          // { type:'nugget'|'flint', x,y,vx,vy, buried, chute, rest }
 let projectiles = [];    // geworfene Feuersteine { x,y,vx,vy, owner, t, spin }
+let lores = [];          // Minen-Loren { team, x, y, vx, vy, cargo }
 let parts = [];          // Partikel
 let floats = [];         // aufsteigende Textchen
 
@@ -188,7 +206,10 @@ function makePlayer(id, name, color, keys, baseX) {
     x: 0, y: 0, vx: 0, vy: 0, dir: id === 0 ? 1 : -1,
     state: 'air', hp: 100, carry: 0, flints: 3, score: 0, ko: 0,
     goldPix: 0, rem: 0, respawnT: 0, tumbleT: 0, throwCd: 0, hurtT: 0,
-    walkPhase: 0, prevThrow: false,
+    walkPhase: 0, prevThrow: false, prevBuy: false,
+    ai: false,
+    virt: { left: false, right: false, jump: false, dig: false, throw: false, buy: false },
+    aiS: { thinkT: 0, target: null, lastX: 0, lastY: 0, stuckT: 0, phase: 'seek', backoffT: 0, backDir: 0, throwAfter: false, waitT: 0, throwNow: false },
   };
 }
 
@@ -202,15 +223,22 @@ function startGame(seed) {
 
   players = [
     makePlayer(0, 'Rot', '#e74c3c',
-      { left: ['a'], right: ['d'], jump: ['w'], dig: ['s'], throw: ['q'] }, BASE_X[0]),
+      { left: ['a'], right: ['d'], jump: ['w'], dig: ['s'], throw: ['q'], buy: ['e'] }, BASE_X[0]),
     makePlayer(1, 'Blau', '#3f7fd6',
-      { left: ['arrowleft'], right: ['arrowright'], jump: ['arrowup'], dig: ['arrowdown'], throw: [',', '.', '-', 'm'] }, BASE_X[1]),
+      { left: ['arrowleft'], right: ['arrowright'], jump: ['arrowup'], dig: ['arrowdown'], throw: [',', 'm'], buy: ['.', '-'] }, BASE_X[1]),
   ];
+  players[1].ai = game.mode === 'solo';
   for (const p of players) {
     p.base.y = groundY[p.base.x];
     p.x = p.base.x + (p.id === 0 ? 26 : -26);
     p.y = groundY[p.x | 0] - 1;
+    p.aiS.lastX = p.x; p.aiS.lastY = p.y;
   }
+  // je Hütte eine Lore (Richtung Kartenmitte geparkt, auf der Oberfläche)
+  lores = players.map((p) => {
+    const lx = p.base.x + (p.id === 0 ? 44 : -44);
+    return { team: p.id, x: lx, y: groundY[lx] - 1, vx: 0, vy: 0, cargo: 0 };
+  });
 
   // Feuersteine: ein paar offen an der Oberfläche, der Rest vergraben
   for (let i = 0; i < 3; i++) {
@@ -222,11 +250,23 @@ function startGame(seed) {
     const y = groundY[x] + 25 + rng() * (WORLD_H - groundY[x] - 80);
     items.push({ type: 'flint', x, y: y | 0, vx: 0, vy: 0, buried: true });
   }
+
+  // Kamera zurücksetzen
+  cam.zoom = game.mode === 'solo' ? 2.1 : 1;
+  cam.x = WORLD_W / 2; cam.y = WORLD_H / 2; cam.scale = 0;
 }
 
-// ---- Eingabe (zwei Spieler, eine Tastatur) ---------------------------------
+// ---- Eingabe (Tastatur + Touch-Buttons + KI) --------------------------------
 const pressed = new Set();
-function down(p, action) { return p.keys[action].some((k) => pressed.has(k)); }
+const buttons = {};   // Touch-Buttons, steuern immer Spieler Rot
+const TOUCH_MAP = { left: 'b-left', right: 'b-right', jump: 'b-jump', dig: 'b-dig', throw: 'b-fire', buy: 'b-buy' };
+
+function down(p, action) {
+  if (p.ai) return !!p.virt[action];
+  if (p.keys[action].some((k) => pressed.has(k))) return true;
+  if (p.id === 0) { const b = buttons[TOUCH_MAP[action]]; if (b && b.held) return true; }
+  return false;
+}
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
@@ -238,8 +278,23 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => pressed.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => pressed.clear());
 
+// Bildschirm-Buttons (Muster wie bei Raupen): held-Zustand fürs Halten
+function setBtn(id, onDown) {
+  const el = document.getElementById(id);
+  buttons[id] = { held: false };
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch { /* egal */ }
+    buttons[id].held = true;
+    if (onDown) onDown();
+  });
+  const rel = (e) => { e.preventDefault(); buttons[id].held = false; };
+  el.addEventListener('pointerup', rel);
+  el.addEventListener('pointercancel', rel);
+}
+
 // ---- Kollisionshelfer -------------------------------------------------------
-// Körper-Kasten: x-HW..x+HW, y-PH+1..y (Füße auf y)
+// Körper-Kasten: x-CWH..x+CWH, y-PH+1..y (Füße auf y)
 function bodyBlocked(x, fy) {
   x |= 0; fy |= 0;
   for (let yy = fy - PH + 1; yy <= fy; yy++) {
@@ -278,6 +333,7 @@ function stepWalk(p, dir) {
 }
 
 function updatePlayer(p, dt) {
+  if (p.ai) aiControl(p, dt);
   if (p.state === 'dead') {
     p.respawnT -= dt;
     if (p.respawnT <= 0) respawn(p);
@@ -290,10 +346,13 @@ function updatePlayer(p, dt) {
   const dirIn = (R ? 1 : 0) - (L ? 1 : 0);
   if (dirIn && p.state !== 'scale') p.dir = dirIn;
 
-  // Werfen (Flanke, nicht Dauerfeuer)
+  // Werfen & Kaufen (Flanke, nicht Dauerfeuer)
   const T = down(p, 'throw');
   if (T && !p.prevThrow && p.state !== 'tumble') throwFlint(p);
   p.prevThrow = T;
+  const B = down(p, 'buy');
+  if (B && !p.prevBuy) buyFlint(p);
+  p.prevBuy = B;
 
   switch (p.state) {
     case 'walk': {
@@ -469,6 +528,20 @@ function throwFlint(p) {
   });
 }
 
+// Chemiefabrik an der eigenen Hütte: 1 abgeliefertes Gold -> 2 Feuersteine
+function buyFlint(p) {
+  if (game.state !== 'play' || p.state === 'dead') return;
+  if (Math.abs(p.x - p.base.x) >= 46 || Math.abs(p.y - p.base.y) >= 54) return;
+  if (p.flints >= FLINT_MAX) { addFloat(p.x, p.y - PH - 8, '💣 voll!', '#ffb0a0'); return; }
+  if (p.score < 1) { addFloat(p.x, p.y - PH - 8, 'Erst ⭐ abliefern!', '#ffb0a0'); return; }
+  p.score -= 1;
+  p.flints = Math.min(FLINT_MAX, p.flints + 2);
+  addFloat(p.x, p.y - PH - 8, '−1 ⭐ → +2 💣', '#ffe6a0');
+  const fx = factoryX(p);
+  for (let i = 0; i < 6; i++) puff(fx + 8, p.base.y - 40 - i * 3, 1, '#aab4bd');
+}
+const factoryX = (p) => p.base.x + (p.id === 0 ? -34 : 34);
+
 function updateProjectiles(dt) {
   for (const f of projectiles) {
     f.t += dt; f.spin += dt * 9;
@@ -512,6 +585,18 @@ function explode(x, y, src) {
       p.state = 'tumble'; p.tumbleT = 0.8;
     }
   }
+  // Loren: Wumms + Ladung fliegt raus
+  for (const lo of lores) {
+    const d = Math.hypot(lo.x - x, (lo.y - 6) - y);
+    if (d > R + 24) continue;
+    const f = 1 - d / (R + 28);
+    lo.vx += Math.sign(lo.x - x || 1) * 220 * f;
+    lo.vy = -120 * f; lo.y -= 2;
+    while (lo.cargo > 0) {
+      lo.cargo--;
+      items.push({ type: 'nugget', x: lo.x, y: lo.y - 8, vx: rng() * 140 - 70, vy: -90 - rng() * 80 });
+    }
+  }
   // Feuersteine in der Nähe gehen mit hoch (Kettenreaktion, leicht verzögert)
   for (const it of items) {
     if (it.dead || it.type !== 'flint') continue;
@@ -550,6 +635,191 @@ function respawn(p) {
   p.vx = 0; p.vy = 0; p.tumbleT = 0;
   p.x = p.base.x + (p.id === 0 ? 26 : -26);
   p.y = groundY[p.x | 0] - 30;
+  p.aiS.target = null; p.aiS.phase = 'seek'; p.aiS.stuckT = 0;
+}
+
+// ---- KI (🤖 Blau im Solo-Modus) --------------------------------------------
+// Einfacher Goldgräber: sucht Klumpen oder Adern, gräbt hin, bringt das Gold
+// heim. Bei Fels: zurückziehen, Feuerstein werfen. Gelegentliche Angriffe.
+function aiThink(p) {
+  const s = p.aiS;
+  const enemy = players[0];
+  // Angriffslust: Gegner nah + genug Feuersteine
+  if (enemy.state !== 'dead' && p.flints >= 2 && Math.abs(enemy.x - p.x) < 90
+    && Math.abs(enemy.y - p.y) < 40 && rng() < 0.3) {
+    p.dir = enemy.x >= p.x ? 1 : -1;
+    s.throwNow = true;
+  }
+  // heim, wenn Sack voll, angeschlagen oder Zeitnot
+  if (p.carry >= 3 || (p.carry > 0 && p.hp < 40) || p.hp < 30
+    || (p.carry > 0 && game.t < 25)) {
+    s.target = { x: p.base.x, y: p.base.y - 1, kind: 'base' };
+    return;
+  }
+  // liegender Klumpen in der Nähe?
+  let best = null, bd = 1e9;
+  for (const it of items) {
+    if (it.dead || it.buried || it.type !== 'nugget') continue;
+    const d = Math.hypot(it.x - p.x, it.y - p.y);
+    if (d < bd) { bd = d; best = it; }
+  }
+  if (best && bd < 260) { s.target = { x: best.x, y: best.y, kind: 'nugget' }; return; }
+  // nächste lebende Goldader (Fels-Adern nur mit Feuerstein im Gepäck)
+  let bs = null; bd = 1e9;
+  for (const g of goldSpots) {
+    if (!goldAlive(g)) continue;
+    if (g.rock && p.flints === 0) continue;
+    const d = Math.hypot(g.x - p.x, g.y - p.y) + (g.rock ? 200 : 0);
+    if (d < bd) { bd = d; bs = g; }
+  }
+  if (bs) { s.target = { x: bs.x, y: bs.y, kind: 'gold' }; return; }
+  s.target = { x: p.base.x, y: p.base.y - 1, kind: 'base' };
+}
+function goldAlive(g) {
+  for (let yy = -5; yy <= 5; yy += 2) for (let xx = -5; xx <= 5; xx += 2) {
+    if (matAt(g.x + xx, g.y + yy) === MAT.GOLD) return true;
+  }
+  return false;
+}
+function aiControl(p, dt) {
+  const s = p.aiS, v = p.virt;
+  v.left = v.right = v.jump = v.dig = v.throw = v.buy = false;
+  if (p.state === 'dead' || game.state !== 'play') return;
+
+  s.thinkT -= dt;
+  if (s.thinkT <= 0) { s.thinkT = 0.3; aiThink(p); }
+  if (Math.abs(p.x - s.lastX) < 1 && Math.abs(p.y - s.lastY) < 1) s.stuckT += dt;
+  else s.stuckT = 0;
+  s.lastX = p.x; s.lastY = p.y;
+
+  if (s.throwNow) { s.throwNow = false; v.throw = true; }
+
+  // Rückzug vor dem eigenen Feuerstein-Wurf auf den Fels
+  if (s.phase === 'backoff') {
+    s.backoffT -= dt;
+    if (s.backDir < 0) v.left = true; else v.right = true;
+    if (s.backoffT <= 0) {
+      if (s.throwAfter && p.flints > 0 && s.target) {
+        p.dir = s.target.x >= p.x ? 1 : -1;
+        v.left = v.right = false;
+        v.throw = true;
+      }
+      s.throwAfter = false; s.phase = 'wait'; s.waitT = 1.0;
+    }
+    return;
+  }
+  if (s.phase === 'wait') { s.waitT -= dt; if (s.waitT <= 0) s.phase = 'seek'; return; }
+
+  const t = s.target;
+  if (!t) return;
+  const dx = t.x - p.x, dy = t.y - p.y, adx = Math.abs(dx);
+  if (adx > 6) { if (dx < 0) v.left = true; else v.right = true; }
+
+  // Graben Richtung Ziel
+  if (dy > 14 && adx < 46) { v.dig = true; if (adx < 10) { v.left = v.right = false; } }
+  else if (dy < -26 && adx < 40 && p.state !== 'scale') { v.dig = true; v.jump = true; }
+
+  // Klettern & Anti-Klemm
+  if (p.state === 'scale') v.jump = true;
+  else if (s.stuckT > 0.7) {
+    v.jump = true;
+    if (s.stuckT > 1.8) {
+      if (p.state === 'dig' && p.flints > 0) {
+        // Fels im Weg: 50 px zurück, dann sprengen
+        s.phase = 'backoff'; s.backoffT = 0.7; s.backDir = dx >= 0 ? -1 : 1; s.throwAfter = true;
+      } else { s.target = null; s.thinkT = 0; }
+      s.stuckT = 0;
+    }
+  }
+
+  // an der Hütte: leere Taschen mit der Fabrik auffüllen
+  if (t.kind === 'base' && Math.abs(p.x - p.base.x) < 40 && p.flints === 0 && p.score >= 2) v.buy = true;
+}
+
+// ---- Loren (Goldtransport wie im Clonk-Objektpaket) -------------------------
+function probeDown(x, yStart) {
+  for (let d = 0; d <= 14; d++) if (solid(x, yStart + d)) return yStart + d;
+  return null;
+}
+function updateLores(dt) {
+  for (const lo of lores) {
+    const supported = solid(lo.x - 5, lo.y + 1) || solid(lo.x + 5, lo.y + 1);
+    if (!supported) {
+      lo.vy = Math.min(420, lo.vy + 420 * dt);
+      lo.y += lo.vy * dt;
+      if (solid(lo.x - 5, lo.y + 1) || solid(lo.x + 5, lo.y + 1)) {
+        while (solid(lo.x - 5, lo.y) || solid(lo.x + 5, lo.y)) lo.y--;
+        lo.vy = 0;
+      }
+      if (lo.y > WORLD_H + 30) {   // in die Tiefe gestürzt: neue Lore an der Hütte
+        const home = players[lo.team];
+        lo.x = home.base.x + (lo.team === 0 ? 44 : -44); lo.y = home.base.y - 1;
+        lo.vx = 0; lo.vy = 0; lo.cargo = 0;
+      }
+    } else {
+      // Hangneigung lässt die Lore rollen
+      const yl = probeDown(lo.x - 5, lo.y - 4), yr = probeDown(lo.x + 5, lo.y - 4);
+      if (yl !== null && yr !== null) lo.vx += (yr - yl) * 30 * dt;
+      lo.vx *= Math.exp(-1.7 * dt);
+      if (Math.abs(lo.vx) < 1) lo.vx = 0;
+    }
+
+    // Anschieben + getragenes Gold einladen
+    for (const p of players) {
+      if (p.state === 'dead') continue;
+      const dx = lo.x - p.x;
+      if (Math.abs(dx) < 17 && Math.abs(lo.y - p.y) < 16) {
+        const dirIn = (down(p, 'right') ? 1 : 0) - (down(p, 'left') ? 1 : 0);
+        if (dirIn && Math.sign(dx) === dirIn) lo.vx = dirIn * 62;
+        if (p.carry > 0 && lo.cargo < LORE_MAX) {
+          const n = Math.min(p.carry, LORE_MAX - lo.cargo);
+          lo.cargo += n; p.carry -= n;
+          addFloat(lo.x, lo.y - 16, `+${n} 🛒`, '#ffd166');
+        }
+      }
+    }
+
+    // Rollen mit Hangfolgen und Wand-Abprall
+    if (lo.vx) {
+      let m = Math.abs(lo.vx * dt), dir = Math.sign(lo.vx);
+      while (m > 0) {
+        const step = Math.min(1, m); m -= step;
+        const nx = clamp(lo.x + dir * step, 10, WORLD_W - 10);
+        // Wand? (feste Säule vor der Lore oberhalb der Radhöhe)
+        let wall = 0;
+        for (let yy = -2; yy >= -9; yy--) if (solid(nx + dir * 8, lo.y + yy)) wall++;
+        if (wall >= 4) { lo.vx = -lo.vx * 0.3; break; }
+        lo.x = nx;
+        // Boden folgen (kleine Stufen hoch/runter)
+        let up = 0;
+        while (up <= 4 && (solid(lo.x - 5, lo.y - up) || solid(lo.x + 5, lo.y - up))) up++;
+        if (up > 0 && up <= 4) lo.y -= up - 1;
+        let d = 0;
+        while (d <= 5 && !(solid(lo.x - 5, lo.y + 1 + d) || solid(lo.x + 5, lo.y + 1 + d))) d++;
+        if (d > 0 && d <= 5) lo.y += d;
+      }
+    }
+
+    // Klumpen aufsammeln
+    if (lo.cargo < LORE_MAX) {
+      for (const it of items) {
+        if (it.dead || it.buried || it.type !== 'nugget') continue;
+        if (Math.hypot(it.x - lo.x, it.y - (lo.y - 5)) < 13) {
+          it.dead = true; lo.cargo++;
+          if (lo.cargo >= LORE_MAX) break;
+        }
+      }
+    }
+
+    // an der eigenen Hütte entladen
+    const home = players[lo.team];
+    if (lo.cargo > 0 && Math.abs(lo.x - home.base.x) < 42 && Math.abs(lo.y - home.base.y) < 50) {
+      home.score += lo.cargo;
+      addFloat(lo.x, lo.y - 18, `+${lo.cargo} 💰`, '#ffd166');
+      lo.cargo = 0;
+      checkWin();
+    }
+  }
 }
 
 // ---- Items (Klumpen, Feuersteine) ------------------------------------------
@@ -637,25 +907,57 @@ function update(dt) {
   }
   for (const p of players) updatePlayer(p, dt);
   updateProjectiles(dt);
+  updateLores(dt);
   updateItems(dt);
   updateFlintDrops(dt);
   updateFx(dt);
 }
 
+// ---- Kamera -----------------------------------------------------------------
+// zoom = 1: ganze Karte im Bild. Reingezoomt folgt die Kamera dem Klonk
+// (solo) bzw. hält beide Spieler im Bild (2P). ＋/－ ändern den Zoom.
+const cam = { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1, scale: 0 };
+function setZoom(z) { cam.zoom = clamp(z, 1, 3.5); }
+function posOf(p) { return p.state === 'dead' ? { x: p.base.x, y: p.base.y - 30 } : p; }
+function computeCam(dt) {
+  const fit = Math.min(CW / WORLD_W, (CH - TOP_UI - 8) / WORLD_H);
+  let tx, ty, targetScale;
+  if (game.mode === 'solo') {
+    const p = posOf(players[0]);
+    tx = p.x; ty = p.y - 26;
+    targetScale = fit * cam.zoom;
+  } else {
+    const a = posOf(players[0]), b = posOf(players[1]);
+    tx = (a.x + b.x) / 2; ty = (a.y + b.y) / 2 - 20;
+    // nie so weit ranzoomen, dass einer aus dem Bild fällt
+    const needW = Math.abs(a.x - b.x) + 280, needH = Math.abs(a.y - b.y) + 240;
+    const fitBoth = Math.max(fit, Math.min(CW / needW, (CH - TOP_UI) / needH));
+    targetScale = Math.min(fit * cam.zoom, fitBoth);
+  }
+  if (!cam.scale) cam.scale = targetScale;
+  const k = Math.min(1, dt * 5);
+  cam.scale += (targetScale - cam.scale) * k;
+  const vw = CW / cam.scale, vh = (CH - TOP_UI) / cam.scale;
+  tx = vw >= WORLD_W ? WORLD_W / 2 : clamp(tx, vw / 2, WORLD_W - vw / 2);
+  ty = vh >= WORLD_H ? WORLD_H / 2 : clamp(ty, vh / 2, WORLD_H - vh / 2);
+  cam.x += (tx - cam.x) * k;
+  cam.y += (ty - cam.y) * k;
+}
+
 // ---- Rendering --------------------------------------------------------------
+const stage = document.getElementById('stage');
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-let CW = 0, CH = 0, S = 1, OX = 0, OY = 0;
+let CW = 0, CH = 0;
 const TOP_UI = 64;
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  CW = window.innerWidth; CH = window.innerHeight;
+  const rot = stage.classList.contains('rot');   // Querformat: Bühne 90° gedreht
+  CW = rot ? window.innerHeight : window.innerWidth;
+  CH = rot ? window.innerWidth : window.innerHeight;
   canvas.width = Math.round(CW * dpr); canvas.height = Math.round(CH * dpr);
   canvas.style.width = CW + 'px'; canvas.style.height = CH + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  S = clamp(Math.min(CW / WORLD_W, (CH - TOP_UI - 8) / WORLD_H), 0.2, 3);
-  OX = (CW - WORLD_W * S) / 2;
-  OY = TOP_UI + Math.max(0, (CH - TOP_UI - 8 - WORLD_H * S) / 2);
 }
 window.addEventListener('resize', resize);
 
@@ -668,13 +970,17 @@ function draw(time) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#0d1b28'; ctx.fillRect(0, 0, CW, CH);
 
-  ctx.save();
+  const S = cam.scale || 0.5;
   let shx = 0, shy = 0;
   if (game.shakeT > 0) {
     shx = (rng() - 0.5) * game.shakeA * game.shakeT * 8;
     shy = (rng() - 0.5) * game.shakeA * game.shakeT * 8;
   }
-  ctx.translate(OX + shx, OY + shy); ctx.scale(S, S);
+  const OX = CW / 2 - cam.x * S + shx;
+  const OY = TOP_UI + (CH - TOP_UI) / 2 - cam.y * S + shy;
+
+  ctx.save();
+  ctx.translate(OX, OY); ctx.scale(S, S);
 
   // Himmel
   const sky = ctx.createLinearGradient(0, 0, 0, WORLD_H);
@@ -698,8 +1004,9 @@ function draw(time) {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(terrainCanvas, 0, 0);
 
-  // Hütten
+  // Hütten + Fabriken + Loren
   for (const p of players) drawHut(p);
+  for (const lo of lores) drawLore(lo);
   // Items & Projektile
   for (const it of items) drawItem(it, time);
   for (const f of projectiles) drawFlint(f.x, f.y, f.spin);
@@ -735,6 +1042,13 @@ function drawHut(p) {
   // Abliefer-Zone dezent markieren
   ctx.fillStyle = p.id === 0 ? 'rgba(231,76,60,0.10)' : 'rgba(63,127,214,0.10)';
   ctx.fillRect(-40, -46, 80, 46);
+  // Chemiefabrik (Anbau auf der Außenseite)
+  const fx = p.id === 0 ? -34 : 34;
+  ctx.fillStyle = '#77808a'; ctx.fillRect(fx - 11, -18, 22, 18);
+  ctx.fillStyle = '#5c646d'; ctx.fillRect(fx - 12, -20, 24, 4);
+  ctx.fillStyle = '#4a525a'; ctx.fillRect(fx + 3, -32, 5, 13);           // Schornstein
+  ctx.fillStyle = '#39424b'; ctx.font = '8px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText('🏭', fx, -6);
   // Holzhütte
   ctx.fillStyle = '#8a6238'; ctx.fillRect(-20, -26, 40, 26);
   ctx.fillStyle = '#6d4c2a';
@@ -747,6 +1061,32 @@ function drawHut(p) {
   ctx.beginPath(); ctx.moveTo(-14, -44); ctx.lineTo(-14, -66); ctx.stroke();
   ctx.fillStyle = p.color;
   ctx.beginPath(); ctx.moveTo(-14, -66); ctx.lineTo(2, -61); ctx.lineTo(-14, -56); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawLore(lo) {
+  ctx.save(); ctx.translate(lo.x, lo.y);
+  // Wanne
+  ctx.fillStyle = '#6b4a2c';
+  ctx.beginPath();
+  ctx.moveTo(-9, -12); ctx.lineTo(-7, -3); ctx.lineTo(7, -3); ctx.lineTo(9, -12);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#4c3218'; ctx.lineWidth = 1.4; ctx.stroke();
+  // Teamfarbe als Streifen
+  ctx.fillStyle = players[lo.team].color;
+  ctx.fillRect(-7, -7, 14, 2);
+  // Ladung
+  if (lo.cargo > 0) {
+    const h = Math.min(6, 1.4 + lo.cargo);
+    ctx.fillStyle = '#e0b13a';
+    ctx.beginPath(); ctx.ellipse(0, -12, 7, h * 0.7, 0, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#ffe28a'; ctx.fillRect(-2, -13 - h * 0.3, 2, 2);
+  }
+  // Räder
+  ctx.fillStyle = '#2e2e34';
+  ctx.beginPath(); ctx.arc(-5, -2, 3, 0, Math.PI * 2); ctx.arc(5, -2, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#8a8a95';
+  ctx.fillRect(-5.7, -2.7, 1.4, 1.4); ctx.fillRect(4.3, -2.7, 1.4, 1.4);
   ctx.restore();
 }
 
@@ -832,38 +1172,50 @@ function drawClonk(p, time) {
   ctx.textAlign = 'center';
   ctx.font = 'bold 9px system-ui';
   ctx.fillStyle = p.color;
-  ctx.fillText(p.name, p.x, p.y - PH - 10);
+  ctx.fillText((p.ai ? '🤖 ' : '') + p.name, p.x, p.y - PH - 10);
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(p.x - 9, p.y - PH - 8, 18, 3);
   ctx.fillStyle = p.hp > 35 ? '#5ad06e' : '#ff6a5a';
   ctx.fillRect(p.x - 9, p.y - PH - 8, 18 * clamp(p.hp / 100, 0, 1), 3);
 }
 
 function drawHUD() {
-  const y0 = 8, h = 48, w = 200;
-  for (const p of players) {
-    const left = p.id === 0;
-    const x0 = left ? 104 : CW - 104 - w;
-    ctx.fillStyle = 'rgba(8,25,42,0.72)';
-    roundRect(x0, y0, w, h, 10); ctx.fill();
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = p.color; ctx.font = 'bold 14px system-ui';
-    ctx.fillText((left ? '🔴 ' : '🔵 ') + p.name, x0 + 10, y0 + 14);
-    ctx.fillStyle = '#eaf3fa'; ctx.font = '12px system-ui';
-    ctx.fillText(`⭐ ${p.score}/${game.goal}`, x0 + 84, y0 + 14);
-    ctx.fillText(`💰 ${p.carry}  💣 ${p.flints}  🥊 ${p.ko}`, x0 + 10, y0 + 35);
-    // HP
-    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0 + 126, y0 + 31, 64, 7);
-    ctx.fillStyle = p.hp > 35 ? '#5ad06e' : '#ff6a5a';
-    ctx.fillRect(x0 + 126, y0 + 31, 64 * clamp(p.hp / 100, 0, 1), 7);
-  }
+  const y0 = 8;
   // Uhr in der Mitte
   ctx.fillStyle = 'rgba(8,25,42,0.72)';
-  roundRect(CW / 2 - 46, y0, 92, 30, 10); ctx.fill();
+  roundRect(CW / 2 - 42, y0, 84, 28, 10); ctx.fill();
   const mm = Math.floor(game.t / 60), ss = Math.floor(game.t % 60);
-  ctx.textAlign = 'center';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = game.t < 30 && game.state === 'play' ? '#ff6a5a' : '#eaf3fa';
-  ctx.font = 'bold 15px system-ui';
-  ctx.fillText(`⏱ ${mm}:${ss.toString().padStart(2, '0')}`, CW / 2, y0 + 16);
+  ctx.font = 'bold 14px system-ui';
+  ctx.fillText(`⏱ ${mm}:${ss.toString().padStart(2, '0')}`, CW / 2, y0 + 15);
+
+  const wide = CW >= 720;
+  if (wide) {
+    const w = 200, h = 48;
+    for (const p of players) {
+      const left = p.id === 0;
+      const x0 = left ? 158 : CW - 12 - w;
+      ctx.fillStyle = 'rgba(8,25,42,0.72)';
+      roundRect(x0, y0, w, h, 10); ctx.fill();
+      ctx.textAlign = 'left';
+      ctx.fillStyle = p.color; ctx.font = 'bold 14px system-ui';
+      ctx.fillText((p.ai ? '🤖 ' : left ? '🔴 ' : '🔵 ') + p.name, x0 + 10, y0 + 14);
+      ctx.fillStyle = '#eaf3fa'; ctx.font = '12px system-ui';
+      ctx.fillText(`⭐ ${p.score}/${game.goal}`, x0 + 92, y0 + 14);
+      ctx.fillText(`💰 ${p.carry}  💣 ${p.flints}  🥊 ${p.ko}`, x0 + 10, y0 + 35);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0 + 126, y0 + 31, 64, 7);
+      ctx.fillStyle = p.hp > 35 ? '#5ad06e' : '#ff6a5a';
+      ctx.fillRect(x0 + 126, y0 + 31, 64 * clamp(p.hp / 100, 0, 1), 7);
+    }
+  } else {
+    // Kompakt: eine Zeile unter Uhr/Toolbar
+    ctx.font = 'bold 12px system-ui';
+    const [a, b] = players;
+    ctx.textAlign = 'left'; ctx.fillStyle = a.color;
+    ctx.fillText(`🔴⭐${a.score}/${game.goal} 💰${a.carry} 💣${a.flints}`, 10, 50);
+    ctx.textAlign = 'right'; ctx.fillStyle = b.color;
+    ctx.fillText(`⭐${b.score}/${game.goal} 💰${b.carry} 💣${b.flints} ${b.ai ? '🤖' : '🔵'}`, CW - 10, 50);
+  }
   ctx.textBaseline = 'alphabetic';
 }
 function banner(title, sub) {
@@ -892,25 +1244,50 @@ document.getElementById('btn-help').addEventListener('click', () => { menuEl.cla
 document.getElementById('btn-start').addEventListener('click', () => helpEl.classList.add('hidden'));
 document.getElementById('btn-restart').addEventListener('click', () => { menuEl.classList.add('hidden'); restart(); });
 document.getElementById('btn-pause').addEventListener('click', togglePause);
+document.getElementById('btn-rotate').addEventListener('click', () => { stage.classList.toggle('rot'); resize(); });
+document.getElementById('b-zoomin').addEventListener('click', () => setZoom(cam.zoom * 1.3));
+document.getElementById('b-zoomout').addEventListener('click', () => setZoom(cam.zoom / 1.3));
+
 const selGoal = document.getElementById('sel-goal');
 selGoal.addEventListener('change', () => { game.goal = parseInt(selGoal.value, 10) || 8; checkWin(); });
+const selMode = document.getElementById('sel-mode');
+selMode.value = game.mode;
+selMode.addEventListener('change', () => {
+  game.mode = selMode.value === 'solo' ? 'solo' : '2p';
+  try { localStorage.setItem('clonk_mode', game.mode); } catch { /* egal */ }
+  menuEl.classList.add('hidden');
+  restart();
+});
+
+// Touch-Steuerkreuz (steuert Rot); ohne Touch-Gerät ausgeblendet
+setBtn('b-left'); setBtn('b-right'); setBtn('b-jump'); setBtn('b-dig');
+setBtn('b-fire'); setBtn('b-buy');
+if (!IS_TOUCH) {
+  document.getElementById('wctrl-left').classList.add('hidden');
+  document.getElementById('wctrl-right').classList.add('hidden');
+}
+// Hochformat-Handys: automatisch ins Querformat drehen
+if (IS_TOUCH && window.innerWidth < window.innerHeight) stage.classList.add('rot');
 
 // ---- Schleife ---------------------------------------------------------------
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.04, (now - last) / 1000); last = now;
   if (!game.paused) update(dt);
+  computeCam(dt);
   draw(now / 1000);
   requestAnimationFrame(frame);
 }
 
 // Test-Hook (Muster wie window.__td / window.__lem)
 window.__clonk = {
-  MAT, game, WORLD_W, WORLD_H,
+  MAT, game, WORLD_W, WORLD_H, cam, setZoom, IS_TOUCH,
   get mask() { return mask; },
   matAt, solid, grounded, carveCircle, explode, update, startGame, restart,
+  computeCam, buyFlint,
   players: () => players, items: () => items, projectiles: () => projectiles,
-  groundY: () => groundY, pressed, throwFlint, hurt,
+  lores: () => lores, goldSpots: () => goldSpots,
+  groundY: () => groundY, pressed, buttons, throwFlint, hurt,
 };
 
 resize();

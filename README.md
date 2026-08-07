@@ -111,17 +111,27 @@ Docker-Container deployt.
   Datenbank). Höchste Welle zählt für die Bestenliste.
 
 - **`clonk.html` – ⛏️ Klonk · Goldrausch**: Hommage an Clonk 4 / Clonk
-  Planet (eigenständig umgesetzt). Zwei Klonks an **einer Tastatur**
-  (WASD+Q gegen Pfeiltasten+M/Komma) auf einer frisch generierten
-  Pixel-Landschaft: Erde und Goldadern lassen sich **graben** (Grabtaste
-  allein senkrecht, mit Richtung waagerecht, mit Sprungtaste schräg nach
-  oben), die Felsschicht knackt nur ein 💣 **Feuerstein** – die liegen
-  vergraben herum, segeln am Fallschirm nach und explodieren beim
-  Aufprall (inkl. Kettenreaktion). Klonks **klettern** an Wänden hoch,
-  nehmen Fallschaden, gehen k. o. (Gold purzelt raus, Respawn an der
-  Hütte) und liefern Goldklumpen an ihrer **Hütte** ab, wo sie auch
-  langsam heilen. Wer zuerst das Spielziel erreicht (5/8/12 Gold) oder
-  nach 5 Minuten vorne liegt, gewinnt.
+  Planet (eigenständig umgesetzt). **Solo gegen die 🤖-KI** oder zwei
+  Klonks an **einer Tastatur** (WASD+Q/E gegen Pfeiltasten+M/Komma/Punkt)
+  auf einer frisch generierten Pixel-Landschaft: Erde und Goldadern
+  lassen sich **graben** (Grabtaste allein senkrecht, mit Richtung
+  waagerecht, mit Sprungtaste schräg nach oben), die Felsschicht knackt
+  nur ein 💣 **Feuerstein** – die liegen vergraben herum, segeln am
+  Fallschirm nach und explodieren beim Aufprall (inkl. Kettenreaktion).
+  Klonks **klettern** an Wänden hoch, nehmen Fallschaden, gehen k. o.
+  (Gold purzelt raus, Respawn an der Hütte) und liefern Goldklumpen an
+  ihrer **Hütte** ab, wo sie auch langsam heilen. Dem Clonk-Objektpaket
+  nachempfunden: die **🛒 Lore** (anschieben, rollt Hänge hinab, sammelt
+  Klumpen, kippt an der eigenen Hütte ab – Explosionen verstreuen die
+  Ladung) und die **🏭 Chemiefabrik** an der Hütte (Kauf-Taste tauscht
+  1 abgeliefertes Gold gegen 2 Feuersteine). Die **Kamera** folgt dem
+  Geschehen: solo reingezoomt am eigenen Klonk, zu zweit so, dass beide
+  im Bild bleiben; ＋/－ zoomt manuell. 📱 Mobile: **Touch-Steuerkreuz**
+  (◀ ⤒ ▶ · ⛏️ 💣 🏭) steuert Rot, ⟳ dreht ins Querformat, auf
+  Hochformat-Handys dreht die Bühne automatisch. Die KI gräbt selbst
+  nach Gold, bringt es heim, sprengt Felsadern frei und wirft auch mal
+  einen Feuerstein nach dir. Wer zuerst das Spielziel erreicht
+  (5/8/12 Gold) oder nach 5 Minuten vorne liegt, gewinnt.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
@@ -315,7 +325,9 @@ railway.json
 - **`test/clonk.test.mjs`** – Klonk über den Test-Hook `window.__clonk`:
   Gelände-Materialien (Erde/Fels/Gold/Höhlen), Graben inkl. Fels-Stopp,
   Sprengungen legen Gold frei, Einsammeln/Abliefern/Sieg, K. o. und
-  Respawn, Klettern und die Zwei-Spieler-Tastenbelegung.
+  Respawn, Klettern, Zwei-Spieler-Tastenbelegung, Lore (anschieben,
+  aufsammeln, entladen), Chemiefabrik-Kauf, Solo-KI, Touch-Steuerkreuz,
+  Kamera/Zoom (solo & 2P) und die Querformat-Drehung.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
 zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird
