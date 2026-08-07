@@ -134,9 +134,16 @@ Docker-Container deployt.
   🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane, die sich mit Lava zur
   Oberfläche fressen. Die **Kamera** folgt dem Geschehen (solo
   reingezoomt, zu zweit bleiben beide im Bild, ＋/－ zoomt), 📱 Mobile
-  mit **Touch-Steuerkreuz** (◀ ⤒ ▶ · 🔄 🏭 ⛏️ 💣) und automatischer
-  ⟳ Querformat-Drehung. Die KI gräbt nach Gold, bringt es heim, sprengt
-  Felsadern frei, kauft nach und wirft auch mal einen Feuerstein.
+  mit **virtuellem Joystick** (seitlich laufen, oben springen/klettern,
+  unten graben – schräg gräbt schräg) plus Aktionstasten (🔄 🏭 ⛏️ 💣)
+  und automatischer ⟳ Querformat-Drehung; im 2-Spieler-Modus bekommt
+  Blau einen **eigenen Joystick samt Tasten** (Tablet quer aufstellen).
+  **💾 Spielstände** über das Menü: kompletter Weltzustand (RLE-gepackte
+  Maske), eingeloggt im Server-Slot `/api/save/clonk`
+  (geräteübergreifend), sonst lokal im Browser. Das Spieltempo läuft
+  bewusst leicht gedrosselt (GAME_SPEED 0.8). Die KI gräbt nach Gold,
+  bringt es heim, sprengt Felsadern frei, kauft nach und wirft auch mal
+  einen Feuerstein.
   Jedes Team hat außerdem einen **🏗 Grubenlift** (Förderturm wie im
   Clonk-Objektpaket): der Stahlkorb ist begehbare Plattform (auch für
   die Lore), **bohrt** auf ⛏️/↓ den Schacht nach unten (durch Fels nur
@@ -343,7 +350,9 @@ railway.json
   Lore, Grubenlift (begehbarer Korb, bohren/hochfahren, explosionsfest),
   Chemiefabrik-Rezepte (Kohle/Holz/Gold), Baum→Holz, Wipfe,
   Katastrophen (Meteor/Vulkan/Erdbeben/Regen), Clonk-Wechsel, Solo-KI,
-  Touch-Steuerkreuz, Kamera/Zoom und die Querformat-Drehung.
+  Touch-Joysticks (beide Teams, 2P-Layout), Graben aus dem Grubenlift,
+  Spielstand-Roundtrip (RLE-Maske, localStorage), Kamera/Zoom und die
+  Querformat-Drehung.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
 zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird

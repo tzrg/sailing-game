@@ -71,8 +71,12 @@ try {
   check('Spielstand ohne Login -> 401', (await fetch(B + '/api/save/td')).status === 401);
   check('Ungültiger Spielname -> 400', (await fetch(B + '/api/save/TD%20x', { headers: authJson(t1) })).status === 400);
   check('Forum ohne Login -> 401', (await fetch(B + '/api/forum/threads')).status === 401);
-  const big = await fetch(B + '/api/save/td', { method: 'PUT', headers: authJson(t1),
+  // Limit liegt bei 200 kB (Klonk-Spielstände tragen die RLE-Weltmaske)
+  const okSize = await fetch(B + '/api/save/td', { method: 'PUT', headers: authJson(t1),
     body: JSON.stringify({ data: { blob: 'x'.repeat(40000) } }) });
+  check('40-kB-Spielstand wird angenommen', okSize.status === 200);
+  const big = await fetch(B + '/api/save/td', { method: 'PUT', headers: authJson(t1),
+    body: JSON.stringify({ data: { blob: 'x'.repeat(210000) } }) });
   check('Zu großer Spielstand -> 400', big.status === 400);
 } finally {
   srv.stop();

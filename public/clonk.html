@@ -24,17 +24,24 @@
     <button id="b-zoomout" title="Rauszoomen">－</button>
   </div>
 
-  <!-- Touch-Steuerung (steuert Spieler Rot) -->
-  <div id="wctrl-left">
-    <button id="b-left">◀</button>
-    <button id="b-jump">⤒</button>
-    <button id="b-right">▶</button>
+  <!-- Touch-Steuerung: Joystick + Aktionen je Team (Blau nur im 2-Spieler-Modus) -->
+  <div id="wctrl-left" class="tcol">
+    <div id="joy-a" class="joy"><div class="knob"></div></div>
   </div>
-  <div id="wctrl-right">
-    <button id="b-switch" title="Clonk wechseln">🔄</button>
-    <button id="b-buy" title="Benutzen: kaufen / Lehmbrücke">🏭</button>
-    <button id="b-dig">⛏️</button>
-    <button id="b-fire">💣</button>
+  <div id="wctrl-right" class="tcol">
+    <div id="tc-a-actions" class="trow">
+      <button id="b-switch" title="Clonk wechseln">🔄</button>
+      <button id="b-buy" title="Benutzen: kaufen / Lehmbrücke">🏭</button>
+      <button id="b-dig">⛏️</button>
+      <button id="b-fire">💣</button>
+    </div>
+    <div id="tc-b-actions" class="trow hidden">
+      <button id="b2-switch" title="Clonk wechseln">🔄</button>
+      <button id="b2-buy" title="Benutzen: kaufen / Lehmbrücke">🏭</button>
+      <button id="b2-dig">⛏️</button>
+      <button id="b2-fire">💣</button>
+    </div>
+    <div id="joy-b" class="joy hidden"><div class="knob"></div></div>
   </div>
 
   <div id="menu" class="hidden">
@@ -88,6 +95,8 @@
         </select>
       </div>
 
+      <button class="menu-btn" id="btn-save">💾 Spielstand speichern</button>
+      <button class="menu-btn" id="btn-load">📂 Spielstand laden</button>
       <button class="menu-btn" id="btn-restart">🔄 Neue Runde</button>
       <button class="menu-btn" id="btn-help">❓ Hilfe</button>
     </div>
@@ -106,7 +115,10 @@
           <b>F</b> Clonk wechseln</li>
         <li><b>🔵 Spieler 2:</b> <b>←→↑↓</b> · <b>M</b>/<b>Komma</b> werfen · <b>Punkt</b> benutzen ·
           <b>N</b> Clonk wechseln</li>
-        <li>📱 <b>Touch:</b> Steuerkreuz links, rechts 🔄 wechseln, 🏭 benutzen, ⛏️ graben, 💣 werfen.
+        <li>📱 <b>Touch:</b> <b>Joystick</b> links – seitlich laufen, oben springen/klettern/
+          hochschwimmen, unten graben/abtauchen (schräg = schräg graben!). Rechts 🔄 wechseln,
+          🏭 benutzen, ⛏️ graben (mit Joystick-Richtung), 💣 werfen. Im <b>2-Spieler-Modus</b>
+          bekommt Blau rechts einen eigenen Joystick samt Tasten – Tablet quer aufstellen!
           ⟳ dreht ins Querformat, ＋/－ zoomt.</li>
         <li><b>Bewegen wie in Clonk:</b> Wände hochklettern (dagegen drücken), an Decken
           <b>hangeln</b> (in der Luft ⤒ halten), <b>schwimmen &amp; tauchen</b> (⤒ hoch, ⛏️ runter –
@@ -132,6 +144,8 @@
         <li><b>Katastrophen</b> (im Menü einstellbar): 🌧 Regen füllt Senken mit Wasser,
           🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane mischen die Karte auf. Dazu buddeln
           <b>Wipfe</b> durchs Erdreich.</li>
+        <li><b>💾 Spielstand:</b> über das ☰-Menü speichern und laden – eingeloggt liegt der
+          Stand auf dem Server (geräteübergreifend), sonst lokal im Browser.</li>
         <li><b>Leertaste</b> Pause · nach Rundenende <b>R</b> für die Revanche.</li>
       </ul>
       <button id="btn-start">Los geht's</button>

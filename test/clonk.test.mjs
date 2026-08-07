@@ -648,29 +648,126 @@ try {
   }, r.start);
   check('KI macht sich auf den Weg zum Gold', r.moved || r.carry >= 1, JSON.stringify(r));
 
-  // ---- Touch-Steuerkreuz steuert Rot
+  // ---- Touch-Joysticks: Rot links; im 2P-Modus bekommt Blau eigene Controls
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.game.mode = '2p';
+    C.startGame(42);
+    C.game.paused = true;
+    const [a, b] = C.players();
+    a.x = x; a.y = C.groundY()[x] - 1; a.state = 'walk'; a.vx = 0; a.vy = 0;
+    b.x = x + 60; b.y = C.groundY()[x + 60] - 1; b.state = 'walk'; b.vx = 0; b.vy = 0;
+    C.joys[0].dx = -1;                 // Rot-Joystick nach links
+    C.joys[1].dx = 1;                  // Blau-Joystick nach rechts
+    return {
+      x0: a.x, bx0: b.x,
+      leftHasActions: document.getElementById('tc-a-actions').parentElement.id === 'wctrl-left',
+      joyBShown: !document.getElementById('joy-b').classList.contains('hidden'),
+      b2fire: !!document.getElementById('b2-fire'),
+    };
+  }, dryA);
+  check('2P-Layout: Rot-Aktionen wandern nach links, Blau bekommt Joystick + Tasten',
+    r.leftHasActions && r.joyBShown && r.b2fire, JSON.stringify(r));
+  await tick(0.6);
+  r = await page.evaluate(({ x0, bx0 }) => {
+    const C = window.__clonk;
+    const [a, b] = C.players();
+    const res = { adx: a.x - x0, bdx: b.x - bx0 };
+    C.joys[0].dx = 0; C.joys[1].dx = 0;
+    // Joystick nach unten = graben
+    a.state = 'walk'; a.vx = 0; a.vy = 0;
+    C.joys[0].dy = 1;
+    res.y0 = a.y;
+    return res;
+  }, r);
+  check('Joystick links bewegt Rot, Blau-Joystick bewegt Blau', r.adx < -10 && r.bdx > 10, JSON.stringify(r));
+  await tick(0.8);
+  r = await page.evaluate((y0) => {
+    const C = window.__clonk;
+    C.joys[0].dy = 0;
+    const a = C.players()[0];
+    return { state: a.state, dy: a.y - y0 };
+  }, r.y0);
+  check('Joystick nach unten gräbt', r.state === 'dig' && r.dy > 10, JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.game.mode = 'solo';
+    C.startGame(42);
+    return {
+      rightHasActions: document.getElementById('tc-a-actions').parentElement.id === 'wctrl-right',
+      joyBHidden: document.getElementById('joy-b').classList.contains('hidden'),
+    };
+  });
+  check('Solo-Layout: Aktionen rechts, Blau-Controls versteckt', r.rightHasActions && r.joyBHidden, JSON.stringify(r));
+
+  // ---- Aus dem Fahrstuhl heraus graben (Grabtaste + Richtung)
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.game.mode = '2p';
+    C.startGame(42);
+    C.game.paused = true;
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    p.x = el.x; p.y = el.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.pressed.add('s');
+    C.pressed.add('d');   // Grabtaste MIT Richtung: seitlich rausgraben
+    return { elY0: el.y, x0: p.x };
+  });
+  await tick(1);
+  r = await page.evaluate(({ elY0, x0 }) => {
+    const C = window.__clonk;
+    C.pressed.delete('s'); C.pressed.delete('d');
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    return { state: p.state, moved: p.x - x0, drilled: el.y - elY0 };
+  }, r);
+  check('Grabtaste + Richtung gräbt seitlich aus dem Fahrstuhl (Korb bohrt nicht)',
+    r.state === 'dig' && r.moved > 8 && r.drilled === 0, JSON.stringify(r));
+
+  // ---- Spielstände: kompletter Roundtrip über die RLE-Maske
   r = await page.evaluate((x) => {
     const C = window.__clonk;
     C.startGame(42);
     C.game.paused = true;
-    const a = C.players()[0];
-    a.x = x; a.y = C.groundY()[x] - 1; a.state = 'walk'; a.vx = 0; a.vy = 0;
-    document.getElementById('b-left').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-    return { held: C.buttons['b-left'].held, x0: a.x };
+    const p = C.players()[0];
+    C.carveCircle(x, C.groundY()[x] + 30, 12, true);   // markante Höhle graben
+    p.score = 4; p.carry = 2; p.flints = 3; p.coal = 2;
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk';   // weg von der Hütte,
+    C.game.t = 123;                                        // sonst liefert er beim Laden ab
+    const snap = C.serialize();
+    const size = JSON.stringify({ data: snap }).length;
+    C.startGame(99);                                    // ganz andere Welt
+    const holeGone = C.solid(x, C.groundY()[x] + 30);
+    const ok = C.applyLoad(snap);
+    return {
+      ok, size, holeGone,
+      holeBack: !C.solid(x, C.groundY()[x] + 30),
+      score: C.players()[0].score, carry: C.players()[0].carry,
+      flints: C.players()[0].flints, coal: C.players()[0].coal,
+      t: Math.round(C.game.t), lifts: C.elevators().length,
+    };
   }, dryA);
-  check('Touch-Button meldet Halten', r.held === true);
-  await tick(0.6);
-  r = await page.evaluate((x0) => {
+  check('Spielstand: Serialisieren + Laden stellt die Welt wieder her',
+    r.ok && r.holeBack && r.score === 4 && r.carry === 2 && r.flints === 3 && r.coal === 2 && r.t === 123 && r.lifts === 2,
+    JSON.stringify(r));
+  check('Spielstand passt in den Server-Slot (< 200 kB)', r.size < 200000, 'size=' + r.size);
+  r = await page.evaluate(async () => {
     const C = window.__clonk;
-    document.getElementById('b-left').dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-    return { dx: C.players()[0].x - x0, held: C.buttons['b-left'].held };
-  }, r.x0);
-  check('Touch-Steuerkreuz bewegt Rot nach links', r.dx < -10 && r.held === false, JSON.stringify(r));
+    await C.saveGame();                                  // ohne Login -> localStorage
+    const p = C.players()[0];
+    p.score = 0;
+    C.startGame(7);
+    const loaded = await C.loadGame();
+    return { loaded, score: C.players()[0].score, hasLocal: !!localStorage.getItem('clonk_save') };
+  });
+  check('💾 Speichern/📂 Laden über localStorage funktioniert',
+    r.loaded && r.score === 4 && r.hasLocal, JSON.stringify(r));
 
   // ---- Kamera: Solo folgt dem Spieler, Zoom ändert den Maßstab
   r = await page.evaluate(() => {
     const C = window.__clonk;
-    C.startGame(42);            // solo, cam.zoom = 2.1
+    C.game.mode = 'solo';
+    C.startGame(42);            // solo -> cam.zoom = 2.1
     C.game.paused = true;
     for (let i = 0; i < 80; i++) C.computeCam(0.05);
     const s1 = C.cam.scale, z1 = C.cam.zoom;

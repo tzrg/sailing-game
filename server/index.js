@@ -20,7 +20,7 @@ const PORT = process.env.PORT || 8080;
 const app = express();
 app.set('trust proxy', true);   // hinter Railway-Proxy -> echte Client-IP aus X-Forwarded-For
 app.use(securityHeaders);
-app.use(express.json({ limit: '64kb' }));
+app.use(express.json({ limit: '256kb' }));   // Klonk-Spielstände enthalten die RLE-gepackte Weltmaske
 
 // Rate-Limits pro IP (gleitendes Fenster)
 const limitChallenge = rateLimiter({ windowMs: 5 * 60 * 1000, max: 40 });
@@ -192,7 +192,7 @@ app.put('/api/save/:game', limitSave, async (req, res) => {
     return res.json({ ok: true });
   }
   const str = JSON.stringify(data);
-  if (typeof data !== 'object' || str.length > 32000) return res.status(400).json({ error: 'Spielstand ungültig oder zu groß.' });
+  if (typeof data !== 'object' || str.length > 200000) return res.status(400).json({ error: 'Spielstand ungültig oder zu groß.' });
   await db.setSave(u.name, g, str);
   res.json({ ok: true });
 });

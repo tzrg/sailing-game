@@ -184,56 +184,80 @@ function buildTerrainCanvas() {
   recolor(0, 0, WORLD_W, WORLD_H);
   terrainCtx.putImageData(terrainImage, 0, 0);
 }
+// körniges Textur-Rauschen (zwei "Oktaven": fein + blockig) für den
+// erdig-handgemalten Clonk-Look
+function texNoise(x, y) {
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) & 255) / 255;
+}
 function recolor(x0, y0, x1, y1) {
   x0 = clamp(x0 | 0, 0, WORLD_W); x1 = clamp(x1 | 0, 0, WORLD_W);
   y0 = clamp(y0 | 0, 0, WORLD_H); y1 = clamp(y1 | 0, 0, WORLD_H);
   const d = terrainImage.data;
   for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
     const i = idx(x, y), p = i * 4, m = mask[i];
-    const nz = ((x * 13 + y * 7) % 17) / 17;
+    const n = texNoise(x, y);                 // feines Korn
+    const n2 = texNoise(x >> 2, y >> 2);      // blockige Flecken
     if (m === MAT.SKY) { d[p + 3] = 0; continue; }
-    if (m === MAT.TUNNEL) {           // Stollen: dunkler Erd-Hintergrund
-      d[p] = 46 + nz * 8; d[p + 1] = 32 + nz * 6; d[p + 2] = 22; d[p + 3] = 255; continue;
+    d[p + 3] = 255;
+    if (m === MAT.TUNNEL) {                   // Stollen: dunkler Erd-Hintergrund
+      d[p] = 42 + n * 10 + n2 * 6; d[p + 1] = 29 + n * 7; d[p + 2] = 19; continue;
     }
-    if (m === MAT.WATER) {            // halbtransparent, der Himmel scheint durch
-      d[p] = 38 + nz * 10; d[p + 1] = 106 + nz * 14; d[p + 2] = 196; d[p + 3] = 172; continue;
+    if (m === MAT.WATER) {                    // halbtransparent, leichte Wellenbänder
+      const band = y % 9 < 2 ? 10 : 0;
+      d[p] = 36 + n * 10 + band; d[p + 1] = 102 + n * 14 + band; d[p + 2] = 192 + band; d[p + 3] = 170; continue;
     }
-    if (m === MAT.LAVA) {
-      const g = (x * 5 + y * 3) % 11 === 0 ? 60 : 0;
-      d[p] = 226 + nz * 20; d[p + 1] = 84 + nz * 30 + g; d[p + 2] = 28; d[p + 3] = 255; continue;
+    if (m === MAT.LAVA) {                     // glühende Schlieren
+      const hot = n2 > 0.55;
+      d[p] = hot ? 250 : 205 + n * 24; d[p + 1] = (hot ? 140 : 68) + n * 26; d[p + 2] = hot ? 46 : 24; continue;
     }
     if (m === MAT.SAND) {
-      d[p] = 203 + nz * 22; d[p + 1] = 178 + nz * 18; d[p + 2] = 118; d[p + 3] = 255; continue;
+      const spk = n > 0.92 ? 26 : 0;
+      d[p] = 202 + n * 18 + spk; d[p + 1] = 178 + n * 14 + spk; d[p + 2] = 118 + spk; continue;
     }
-    if (m === MAT.COAL) {
-      const s = (x * 11 + y * 5) % 17 === 0 ? 40 : 0;
-      d[p] = 44 + nz * 10 + s; d[p + 1] = 44 + nz * 10 + s; d[p + 2] = 50 + s; d[p + 3] = 255; continue;
+    if (m === MAT.COAL) {                     // fast schwarz mit Glanzpunkten
+      const shine = n > 0.94 ? 62 : 0;
+      d[p] = 38 + n * 10 + shine; d[p + 1] = 38 + n * 10 + shine; d[p + 2] = 44 + shine; continue;
     }
-    if (m === MAT.GRANIT) {
-      const g = 62 + nz * 14 + ((x * 17 + y * 23) % 19 === 0 ? 26 : 0);
-      d[p] = g; d[p + 1] = g; d[p + 2] = g + 8; d[p + 3] = 255; continue;
+    if (m === MAT.GRANIT) {                   // dunkles, grob geflecktes Gestein
+      const g = 56 + n * 10 + (n2 > 0.75 ? 22 : 0);
+      d[p] = g; d[p + 1] = g; d[p + 2] = g + 9; continue;
     }
     if (m === MAT.LOAM) {
-      d[p] = 168 + nz * 16; d[p + 1] = 136 + nz * 12; d[p + 2] = 82; d[p + 3] = 255; continue;
+      d[p] = 164 + n * 18; d[p + 1] = 132 + n * 14; d[p + 2] = 80 + n2 * 10; continue;
     }
-    if (m === MAT.PLATFORM) {       // Stahlkorb mit Nieten
+    if (m === MAT.PLATFORM) {                 // Stahlkorb mit Nieten
       const b = (x + y) % 5 === 0 ? 34 : 0;
-      d[p] = 116 + nz * 10 + b; d[p + 1] = 112 + nz * 10 + b; d[p + 2] = 124 + b; d[p + 3] = 255; continue;
+      d[p] = 116 + n * 10 + b; d[p + 1] = 112 + n * 10 + b; d[p + 2] = 124 + b; continue;
     }
-    if (m === MAT.ROCK) {
-      const g = 96 + nz * 26 + ((x * 31 + y * 17) % 23 === 0 ? 24 : 0);
-      d[p] = g; d[p + 1] = g + 4; d[p + 2] = g + 10; d[p + 3] = 255; continue;
+    if (m === MAT.ROCK) {                     // Fels mit Schichten und Rissen
+      let g = 94 + n * 18 + (n2 > 0.62 ? 13 : 0);
+      if (texNoise(x >> 1, y >> 1) > 0.96) g -= 34;   // Risse
+      d[p] = g; d[p + 1] = g + 4; d[p + 2] = g + 10; continue;
     }
-    if (m === MAT.GOLD) {
-      const s = (x * 7 + y * 11) % 13 === 0 ? 60 : 0;
-      d[p] = 214 + s * 0.6; d[p + 1] = 168 + nz * 20 + s * 0.5; d[p + 2] = 40; d[p + 3] = 255; continue;
+    if (m === MAT.GOLD) {                     // glitzernde Klumpen-Klüfte
+      const blk = texNoise(x >> 1, y >> 1);
+      if (blk > 0.72) { d[p] = 255; d[p + 1] = 218 + n * 20; d[p + 2] = 90; }
+      else if (n < 0.07) { d[p] = 150; d[p + 1] = 110; d[p + 2] = 26; }
+      else { d[p] = 204 + n * 18; d[p + 1] = 158 + n * 18; d[p + 2] = 42; }
+      continue;
     }
-    // Erde – mit Grasnarbe, wo oberhalb Himmel ist
-    let grass = false;
-    for (let k = 1; k <= 4; k++) { if (matAt(x, y - k) === MAT.SKY) { grass = true; break; } }
-    if (grass) { d[p] = 88 + nz * 18; d[p + 1] = 148 + nz * 16; d[p + 2] = 66; }
-    else { d[p] = 121 + nz * 16; d[p + 1] = 90 + nz * 10; d[p + 2] = 56; }
-    d[p + 3] = 255;
+    // Erde – Grasnarbe (mit unregelmäßigen Halmen) nur, wo oberhalb Himmel ist
+    let skyDist = 0;
+    for (let k = 1; k <= 5; k++) { if (matAt(x, y - k) === MAT.SKY) { skyDist = k; break; } }
+    const grassDepth = 2 + ((texNoise(x, 0) * 3) | 0);
+    if (skyDist && skyDist <= grassDepth) {
+      const light = skyDist === 1 ? 22 : 0;
+      d[p] = 78 + n * 20 + light * 0.4; d[p + 1] = 136 + n * 20 + light; d[p + 2] = 58 + light * 0.3;
+      continue;
+    }
+    const pebble = n > 0.955;
+    const fleck = n < 0.04;
+    let r = 118 + n * 14 + n2 * 10, g2 = 86 + n * 11 + n2 * 8, b = 52 + n * 7;
+    if (pebble) { r -= 34; g2 -= 28; b -= 18; }
+    if (fleck) { r += 22; g2 += 18; b += 10; }
+    d[p] = r; d[p + 1] = g2; d[p + 2] = b;
   }
 }
 function applyRegion(x, y, w, h) {
@@ -496,20 +520,36 @@ function startGame(seed) {
     items.push({ type: 'loam', x, y: y | 0, vx: 0, vy: 0, buried: true });
   }
 
-  // Kamera zurücksetzen
+  // Kamera zurücksetzen + Touch-Layout an den Modus anpassen
   cam.zoom = game.mode === 'solo' ? 2.1 : 1;
   cam.x = WORLD_W / 2; cam.y = WORLD_H / 2; cam.scale = 0;
+  layoutTouch();
 }
 
-// ---- Eingabe (Tastatur + Touch-Buttons + KI) --------------------------------
+// ---- Eingabe (Tastatur + Touch-Joysticks/-Buttons + KI) ---------------------
 const pressed = new Set();
-const buttons = {};   // Touch-Buttons, steuern immer Team Rot
-const TOUCH_MAP = { left: 'b-left', right: 'b-right', jump: 'b-jump', dig: 'b-dig', throw: 'b-fire', use: 'b-buy', switch: 'b-switch' };
+const buttons = {};   // Touch-Buttons (Aktionen)
+// Virtuelle Joysticks: Team Rot links, Team Blau (nur 2P) rechts.
+// dx/dy sind normiert (-1..1) und bereits um die Bühnendrehung bereinigt.
+const joys = [{ dx: 0, dy: 0 }, { dx: 0, dy: 0 }];
+const JOY_X = 0.38, JOY_Y = 0.45;
+const TOUCH_MAPS = [
+  { dig: 'b-dig', throw: 'b-fire', use: 'b-buy', switch: 'b-switch' },
+  { dig: 'b2-dig', throw: 'b2-fire', use: 'b2-buy', switch: 'b2-switch' },
+];
 
 function down(p, action) {
   if (p.ai) return !!p.virt[action];
   if (p.keys[action].some((k) => pressed.has(k))) return true;
-  if (p.id === 0) { const b = buttons[TOUCH_MAP[action]]; if (b && b.held) return true; }
+  const b = buttons[TOUCH_MAPS[p.id][action]];
+  if (b && b.held) return true;
+  const js = joys[p.id];
+  if (js) {
+    if (action === 'left') return js.dx < -JOY_X;
+    if (action === 'right') return js.dx > JOY_X;
+    if (action === 'jump') return js.dy < -JOY_Y;
+    if (action === 'dig') return js.dy > JOY_Y;
+  }
   return false;
 }
 // Eingabe für einen konkreten Clonk: nur der gesteuerte der Mannschaft hört zu
@@ -541,6 +581,62 @@ function setBtn(id, onDown) {
   const rel = (e) => { e.preventDefault(); buttons[id].held = false; };
   el.addEventListener('pointerup', rel);
   el.addEventListener('pointercancel', rel);
+}
+
+// Virtueller Joystick: Knüppel folgt dem Finger, Richtung liegt in joys[team]
+function setupJoy(id, team) {
+  const el = document.getElementById(id);
+  const knob = el.querySelector('.knob');
+  const R = 38;
+  let pid = null, cx = 0, cy = 0;
+  const setKnob = () => { knob.style.transform = `translate(${joys[team].dx * R * 0.7}px, ${joys[team].dy * R * 0.7}px)`; };
+  const move = (e) => {
+    if (pid === null || e.pointerId !== pid) return;
+    e.preventDefault();
+    let dx = (e.clientX - cx) / R, dy = (e.clientY - cy) / R;
+    // Bühnendrehung rausrechnen: im rotierten Querformat ist Spiel-X = Screen-Y
+    if (stage.classList.contains('rot')) { const t = dx; dx = dy; dy = -t; }
+    const len = Math.hypot(dx, dy);
+    if (len > 1) { dx /= len; dy /= len; }
+    joys[team].dx = dx; joys[team].dy = dy;
+    setKnob();
+  };
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch { /* egal */ }
+    pid = e.pointerId;
+    const r = el.getBoundingClientRect();
+    cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+    move(e);
+  });
+  el.addEventListener('pointermove', move);
+  const up = (e) => {
+    if (e.pointerId !== pid) return;
+    pid = null; joys[team].dx = 0; joys[team].dy = 0; setKnob();
+  };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+}
+
+// Touch-Layout: solo = Joystick links + Rot-Aktionen rechts;
+// 2P = links Rot (Aktionen über Joystick), rechts Blau genauso
+function layoutTouch() {
+  const two = game.mode === '2p';
+  const left = document.getElementById('wctrl-left');
+  const right = document.getElementById('wctrl-right');
+  const aActs = document.getElementById('tc-a-actions');
+  const bActs = document.getElementById('tc-b-actions');
+  const joyA = document.getElementById('joy-a');
+  const joyB = document.getElementById('joy-b');
+  if (two) {
+    left.insertBefore(aActs, joyA);
+    bActs.classList.remove('hidden');
+    joyB.classList.remove('hidden');
+  } else {
+    right.insertBefore(aActs, right.firstChild);
+    bActs.classList.add('hidden');
+    joyB.classList.add('hidden');
+  }
 }
 
 // ---- Kollisionshelfer -------------------------------------------------------
@@ -635,7 +731,9 @@ function updateClonk(c, dt) {
 
   switch (c.state) {
     case 'walk': {
-      if (D && !onElevatorCase(c)) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
+      // auf dem Aufzugskorb: Grabtaste ohne Richtung bohrt (der Lift übernimmt),
+      // MIT Richtung/Sprungtaste gräbt man sich normal seitlich/schräg heraus
+      if (D && !(onElevatorCase(c) && dirIn === 0 && !J)) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
       // auf dem Aufzugskorb: ⤒ ohne Richtung fährt hoch statt zu springen
       if (J && !U && !(dirIn === 0 && onElevatorCase(c))) { c.vy = JUMP_VY; c.vx = dirIn * WALK; c.state = 'air'; break; }
       if (dirIn) {
@@ -835,10 +933,15 @@ function digStep(c, dt) {
     const cx = c.x + dx * 3, cy = c.y - PH / 2 + dy * 3;
     const gold = carveCircle(cx, cy, DIG_R, false);
     collectGoldPix(c, gold, carveCircle.lastCoal, cx, cy);
-    const nx = clamp(c.x + dx, HW + 1, WORLD_W - HW - 2), ny = c.y + dy;
-    if (bodyBlocked(Math.round(nx), Math.round(ny))) {          // Fels im Weg
-      spark(c.x + dx * 8, c.y - PH / 2 + dy * 8, 2, '#c9c9d4');
-      break;
+    const nx = clamp(c.x + dx, HW + 1, WORLD_W - HW - 2);
+    let ny = c.y + dy;
+    if (bodyBlocked(Math.round(nx), Math.round(ny))) {
+      // hartes Material (Fels, Aufzugskorb) unter den Füßen: waagerecht weiter
+      if (dy > 0 && dx !== 0 && !bodyBlocked(Math.round(nx), Math.round(c.y))) ny = c.y;
+      else {                                                    // Fels im Weg
+        spark(c.x + dx * 8, c.y - PH / 2 + dy * 8, 2, '#c9c9d4');
+        break;
+      }
     }
     c.x = nx; c.y = ny;
     if (!J && dy < 0.8) {
@@ -1228,7 +1331,8 @@ function updateElevators(dt) {
     let move = 0, rockBelow = false;
     for (const c of allClonks()) {
       if (c.state === 'dead' || !onElevatorCase(c) || Math.abs(c.x - el.x) > CASE_HW + 2) continue;
-      if (cIn(c, 'dig')) move = 1;
+      // nur Grabtaste OHNE Richtung bohrt (mit Richtung gräbt der Clonk selbst)
+      if (cIn(c, 'dig') && !cIn(c, 'left') && !cIn(c, 'right') && !cIn(c, 'jump')) move = 1;
       else if (cIn(c, 'jump') && !cIn(c, 'left') && !cIn(c, 'right')) move = -1;
     }
     if (move === 1) {
@@ -1513,6 +1617,125 @@ function doVolcano(x) {
   addFloat(clamp(vx, 60, WORLD_W - 60), 60, '🌋 Vulkan!', '#ff7030');
 }
 
+// ---- Spielstände ------------------------------------------------------------
+// Die Weltmaske wird lauflängen-kodiert ("b3k.a12..." = Material+Anzahl in
+// Base36) – so passt der komplette Stand in den Server-Slot /api/save/clonk
+// (eingeloggt, geräteübergreifend) bzw. in localStorage.
+function packMask() {
+  const out = [];
+  let cur = mask[0], n = 1;
+  for (let i = 1; i < mask.length; i++) {
+    if (mask[i] === cur) n++;
+    else { out.push(String.fromCharCode(97 + cur) + n.toString(36)); cur = mask[i]; n = 1; }
+  }
+  out.push(String.fromCharCode(97 + cur) + n.toString(36));
+  return out.join('.');
+}
+function unpackMask(s) {
+  const m = new Uint8Array(WORLD_W * WORLD_H);
+  let i = 0;
+  for (const tok of s.split('.')) {
+    const v = tok.charCodeAt(0) - 97;
+    const n = parseInt(tok.slice(1), 36);
+    m.fill(v, i, i + n); i += n;
+  }
+  return m;
+}
+function serialize() {
+  const clk = (c) => ({
+    x: Math.round(c.x), y: Math.round(c.y), hp: Math.round(c.hp), carry: c.carry,
+    flints: c.flints, coal: c.coal, wood: c.wood, loam: c.loam, dir: c.dir,
+    dead: c.state === 'dead' ? 1 : 0,
+  });
+  return {
+    v: 1, ts: Date.now(),
+    mode: game.mode, goal: game.goal, disasters: game.disasters, t: Math.round(game.t),
+    mask: packMask(), groundY: Array.from(groundY),
+    teams: players.map((p) => ({
+      score: p.score, ko: p.ko, onBuddy: p.controlled === p.buddy ? 1 : 0,
+      a: clk(p), b: clk(p.buddy),
+    })),
+    items: items.filter((i) => !i.dead).map((i) => ({ t: i.type, x: Math.round(i.x), y: Math.round(i.y), bu: i.buried ? 1 : 0 })),
+    lores: lores.map((l) => ({ x: Math.round(l.x), y: Math.round(l.y), cargo: l.cargo })),
+    elevators: elevators.map((e) => ({ x: e.x, y: e.y, topY: e.topY })),
+    trees: trees.map((t) => ({ x: t.x, y: Math.round(t.y), h: Math.round(t.h), dead: t.dead ? 1 : 0 })),
+    goldSpots,
+  };
+}
+function applyLoad(s) {
+  if (!s || s.v !== 1 || typeof s.mask !== 'string' || !Array.isArray(s.teams)) return false;
+  game.mode = s.mode === 'solo' ? 'solo' : '2p';
+  startGame(0);                        // Grundgerüst (Teams, Loren, Lifte) aufbauen
+  mask = unpackMask(s.mask);
+  groundY = Int16Array.from(s.groundY || groundY);
+  goldSpots = s.goldSpots || goldSpots;
+  game.goal = s.goal || 8;
+  game.t = typeof s.t === 'number' ? s.t : ROUND_TIME;
+  game.state = 'play'; game.winner = null;
+  const setClk = (c, d) => {
+    Object.assign(c, { x: d.x, y: d.y, hp: d.hp, carry: d.carry, flints: d.flints, coal: d.coal, wood: d.wood, loam: d.loam, dir: d.dir });
+    c.vx = 0; c.vy = 0; c.tumbleT = 0; c.burnT = 0; c.breath = 1;
+    c.state = d.dead ? 'dead' : 'air';
+    if (d.dead) c.respawnT = 3;
+  };
+  s.teams.forEach((t, i) => {
+    const p = players[i];
+    if (!p) return;
+    p.score = t.score || 0; p.ko = t.ko || 0;
+    setClk(p, t.a); setClk(p.buddy, t.b);
+    p.controlled = t.onBuddy ? p.buddy : p;
+  });
+  items = (s.items || []).map((i) => ({ type: i.t, x: i.x, y: i.y, vx: 0, vy: 0, buried: !!i.bu }));
+  (s.lores || []).forEach((l, i) => { if (lores[i]) Object.assign(lores[i], { x: l.x, y: l.y, vx: 0, vy: 0, cargo: l.cargo || 0 }); });
+  (s.elevators || []).forEach((e, i) => { if (elevators[i]) Object.assign(elevators[i], { x: e.x, y: e.y, topY: e.topY, acc: 0 }); });
+  trees = (s.trees || []).map((t) => ({ x: t.x, y: t.y, h: t.h, sway: rng() * 6.28, burn: 0, dead: !!t.dead }));
+  // Wipfe auf die geladene Oberfläche setzen
+  for (const w of wipfe) { const x = 150 + ((rng() * (WORLD_W - 300)) | 0); w.x = x; w.y = groundY[x] - 1; w.dead = false; w.fleeT = 0; }
+  projectiles = []; volcanoes = []; parts = []; floats = []; pendingBooms.length = 0;
+  buildTerrainCanvas();
+  activeFlag = new Uint8Array(WORLD_W * WORLD_H);
+  active = []; dirty = null;
+  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) wake(x, y);
+  cam.zoom = game.mode === 'solo' ? 2.1 : 1; cam.scale = 0;
+  layoutTouch();
+  return true;
+}
+function toast(text, color) { addFloat(cam.x, cam.y - 30, text, color || '#eaf3fa'); }
+function authToken() { try { return localStorage.getItem('tgl_token'); } catch { return null; } }
+async function saveGame() {
+  const data = serialize();
+  let local = false;
+  try { localStorage.setItem('clonk_save', JSON.stringify(data)); local = true; } catch { /* egal */ }
+  let server = false;
+  const token = authToken();
+  if (token) {
+    try {
+      const r = await fetch('/api/save/clonk', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ data }),
+      });
+      server = r.ok;
+    } catch { /* offline */ }
+  }
+  toast(server ? '💾 Gespeichert (Server + lokal)' : local ? '💾 Lokal gespeichert' : '⚠️ Speichern fehlgeschlagen',
+    server || local ? '#8fe0b6' : '#ff8a7a');
+}
+async function loadGame() {
+  let data = null;
+  const token = authToken();
+  if (token) {
+    try {
+      const r = await fetch('/api/save/clonk', { headers: { Authorization: 'Bearer ' + token } });
+      if (r.ok) data = (await r.json()).save;
+    } catch { /* offline */ }
+  }
+  if (!data) { try { data = JSON.parse(localStorage.getItem('clonk_save') || 'null'); } catch { /* egal */ } }
+  if (!data || !applyLoad(data)) { toast('⚠️ Kein Spielstand gefunden', '#ff8a7a'); return false; }
+  toast('📂 Spielstand geladen', '#8fe0b6');
+  return true;
+}
+
 // ---- Sieg & Rundenende ------------------------------------------------------
 function checkWin() {
   for (const p of players) {
@@ -1661,6 +1884,10 @@ function draw(time) {
     ctx.fill();
   }
 
+  // ferne Bergketten mit leichter Parallaxe (rein dekorativ)
+  drawHills(0.18, 'rgba(150,180,200,0.75)', 208, 46);
+  drawHills(0.34, 'rgba(120,156,180,0.8)', 252, 58);
+
   // Bäume hinter dem Gelände (wurzeln im Boden)
   for (const t of trees) drawTree(t, time);
 
@@ -1697,18 +1924,48 @@ function draw(time) {
   }
 }
 
+function drawHills(par, col, base, amp) {
+  const off = (cam.x - WORLD_W / 2) * par;
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(-60, WORLD_H);
+  for (let x = -60; x <= WORLD_W + 60; x += 16) {
+    const wx = x + off;
+    ctx.lineTo(x, base + Math.sin(wx * 0.006 + 1.7) * amp + Math.sin(wx * 0.017 + 4.1) * amp * 0.35);
+  }
+  ctx.lineTo(WORLD_W + 60, WORLD_H);
+  ctx.closePath(); ctx.fill();
+}
 function drawTree(t, time) {
   if (t.dead) return;
   const sway = Math.sin(time * 1.2 + t.sway) * 1.5;
   ctx.save(); ctx.translate(t.x, t.y);
+  // Stamm mit Umriss und Astansatz
+  ctx.fillStyle = '#3a2812';
+  ctx.fillRect(-3.4, -t.h - 1, 6.8, t.h + 2);
   ctx.fillStyle = t.burn > 0 ? '#4a2c14' : '#6b4a2c';
   ctx.fillRect(-2.5, -t.h, 5, t.h);
-  const leaf = t.burn > 0 ? '#7a4a20' : '#3f7d3a';
+  ctx.fillStyle = t.burn > 0 ? '#3a2210' : '#59391f';
+  ctx.fillRect(-1, -t.h * 0.55, 3.4, 2);
+  // Krone: dunkler Umriss, darüber zwei Grüntöne
+  const leaf = t.burn > 0 ? '#7a4a20' : '#356b31';
+  const leaf2 = t.burn > 0 ? '#8a5a28' : '#4f9040';
+  ctx.fillStyle = '#1e3a1c';
+  ctx.beginPath();
+  ctx.ellipse(sway, -t.h - 6, 14.4, 12.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(sway - 8, -t.h + 2, 10.4, 9.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(sway + 8, -t.h + 2, 10.4, 9.4, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = leaf;
   ctx.beginPath();
   ctx.ellipse(sway, -t.h - 6, 13, 11, 0, 0, Math.PI * 2);
   ctx.ellipse(sway - 8, -t.h + 2, 9, 8, 0, 0, Math.PI * 2);
   ctx.ellipse(sway + 8, -t.h + 2, 9, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = leaf2;
+  ctx.beginPath();
+  ctx.ellipse(sway - 3, -t.h - 9, 7.5, 5.5, -0.3, 0, Math.PI * 2);
+  ctx.ellipse(sway + 6, -t.h - 2, 5.5, 4, 0.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -1866,35 +2123,55 @@ function drawClonk(c, time) {
   ctx.scale(c.dir, 1);
   if (c.hurtT > 0 && ((time * 18) | 0) % 2) ctx.globalAlpha = 0.55;
 
+  // Clonk-Look: großer Kopf, kleiner Kittel, dunkle Umrisse
+  const oRect = (x, y, w, h, fill) => {
+    ctx.fillStyle = 'rgba(28,20,12,0.9)';
+    ctx.fillRect(x - 0.7, y - 0.7, w + 1.4, h + 1.4);
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, w, h);
+  };
   const legA = (c.state === 'walk' || c.state === 'dig') ? Math.sin(c.walkPhase) * 2.2
     : (c.state === 'swim' ? Math.sin(time * 6) * 2 : c.state === 'air' ? 1.5 : 0);
-  ctx.fillStyle = '#43301e';
-  ctx.fillRect(-3 + legA, -3, 3, 3); ctx.fillRect(1 - legA, -3, 3, 3);
-  ctx.fillStyle = '#c8a06a';
-  ctx.fillRect(-4, -11, 9, 8);
-  ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(-4, -5, 9, 2);
-  ctx.fillStyle = '#b98f5c';
-  if (c.state === 'scale') { ctx.fillRect(2, -14, 3, 5); ctx.fillRect(2, -8, 3, 4); }
-  else if (c.state === 'hangle') { ctx.fillRect(-3, -18, 3, 5); ctx.fillRect(2, -18, 3, 5); }
-  else if (c.state === 'dig') { ctx.fillRect(2, -9 + Math.sin(c.walkPhase) * 1.5, 4, 3); }
-  else if (c.state === 'swim') { ctx.fillRect(2, -12 + Math.sin(time * 6) * 2, 5, 3); }
-  else ctx.fillRect(-5, -10, 2, 5);
+  // Stiefel
+  oRect(-3.4 + legA, -3, 3.2, 3, '#3a2a18');
+  oRect(0.6 - legA, -3, 3.2, 3, '#3a2a18');
+  // Kittel
+  oRect(-4, -10, 9, 8, '#c8a06a');
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(-4, -4.5, 9, 1.6);
+  ctx.fillStyle = '#8a6a3c'; ctx.fillRect(-1, -8.4, 1.4, 1.4);   // Knopf
+  // Arme
+  if (c.state === 'scale') { oRect(2, -15, 3, 5, '#b98f5c'); oRect(2, -8, 3, 4, '#b98f5c'); }
+  else if (c.state === 'hangle') { oRect(-3.4, -19, 3, 5, '#b98f5c'); oRect(1.6, -19, 3, 5, '#b98f5c'); }
+  else if (c.state === 'dig') { oRect(2, -9 + Math.sin(c.walkPhase) * 1.5, 4, 3, '#b98f5c'); }
+  else if (c.state === 'swim') { oRect(2, -12 + Math.sin(time * 6) * 2, 5, 3, '#b98f5c'); }
+  else oRect(-5.4, -9.6, 2.4, 5, '#b98f5c');
   if (c.state === 'dig') {
     ctx.save(); ctx.translate(6, -7); ctx.rotate(0.6 + Math.sin(c.walkPhase) * 0.35);
+    ctx.fillStyle = '#5a3f22'; ctx.fillRect(-0.6, -1.6, 8.2, 2.8);
     ctx.fillStyle = '#7a5a34'; ctx.fillRect(0, -1, 7, 1.6);
-    ctx.fillStyle = '#9aa0aa'; ctx.fillRect(6, -2.6, 3.4, 4.4);
+    ctx.fillStyle = '#6a707a'; ctx.fillRect(5.6, -3.2, 4.6, 5.6);
+    ctx.fillStyle = '#aab2bc'; ctx.fillRect(6.2, -2.6, 3.4, 4.4);
     ctx.restore();
   }
-  ctx.fillStyle = '#f0c9a0'; ctx.fillRect(-3, -16, 7, 6);
-  ctx.fillStyle = '#241a10'; ctx.fillRect(1.6, -14, 1.4, 1.6);
+  // großer Kopf mit Knopfauge
+  oRect(-4.5, -17, 9, 8, '#f0c9a0');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(1.2, -15.2, 2.6, 2.8);
+  ctx.fillStyle = '#241a10'; ctx.fillRect(2.4, -14.6, 1.4, 1.8);
+  ctx.fillStyle = '#d8a988'; ctx.fillRect(-3.6, -11.4, 2.4, 1.4);  // Wange
+  // Zipfelmütze in Teamfarbe (mit Umriss)
+  ctx.fillStyle = 'rgba(28,20,12,0.9)';
+  ctx.beginPath();
+  ctx.moveTo(-5.9, -16); ctx.lineTo(5.6, -16); ctx.lineTo(1.4, -23); ctx.lineTo(-7.4, -19.6);
+  ctx.closePath(); ctx.fill();
   ctx.fillStyle = c.color;
   ctx.beginPath();
-  ctx.moveTo(-4, -15.5); ctx.lineTo(4.5, -15.5); ctx.lineTo(1, -21); ctx.lineTo(-6, -18.5);
+  ctx.moveTo(-5, -16.5); ctx.lineTo(4.8, -16.5); ctx.lineTo(1, -22); ctx.lineTo(-6.4, -19.2);
   ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.fillRect(-6.6, -19.4, 2.2, 2.2);
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6.2, -19.8, 1.5, 0, Math.PI * 2); ctx.fill();
   if (c.carry > 0) {
-    ctx.fillStyle = '#8a6a3c'; ctx.beginPath(); ctx.arc(-5.5, -7, 3.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#ffd166'; ctx.fillRect(-6.4, -8.2, 1.6, 1.6);
+    ctx.fillStyle = 'rgba(28,20,12,0.9)'; ctx.beginPath(); ctx.arc(-5.5, -6.5, 3.9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8a6a3c'; ctx.beginPath(); ctx.arc(-5.5, -6.5, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffd166'; ctx.fillRect(-6.4, -7.7, 1.6, 1.6);
   }
   ctx.restore();
 
@@ -1978,6 +2255,8 @@ menuEl.addEventListener('click', (e) => { if (e.target === menuEl) menuEl.classL
 document.getElementById('btn-help').addEventListener('click', () => { menuEl.classList.add('hidden'); helpEl.classList.remove('hidden'); });
 document.getElementById('btn-start').addEventListener('click', () => helpEl.classList.add('hidden'));
 document.getElementById('btn-restart').addEventListener('click', () => { menuEl.classList.add('hidden'); restart(); });
+document.getElementById('btn-save').addEventListener('click', () => { menuEl.classList.add('hidden'); saveGame(); });
+document.getElementById('btn-load').addEventListener('click', () => { menuEl.classList.add('hidden'); loadGame(); });
 document.getElementById('btn-pause').addEventListener('click', togglePause);
 document.getElementById('btn-rotate').addEventListener('click', () => { stage.classList.toggle('rot'); resize(); });
 document.getElementById('b-zoomin').addEventListener('click', () => setZoom(cam.zoom * 1.3));
@@ -2001,9 +2280,11 @@ selDis.addEventListener('change', () => {
   game.disasterT = (game.disasters === 'wild' ? 25 : 55) + rng() * 30;
 });
 
-// Touch-Steuerkreuz (steuert Rot); ohne Touch-Gerät ausgeblendet
-setBtn('b-left'); setBtn('b-right'); setBtn('b-jump'); setBtn('b-dig');
-setBtn('b-fire'); setBtn('b-buy'); setBtn('b-switch');
+// Touch-Steuerung: Joysticks + Aktions-Buttons; ohne Touch-Gerät ausgeblendet
+setBtn('b-dig'); setBtn('b-fire'); setBtn('b-buy'); setBtn('b-switch');
+setBtn('b2-dig'); setBtn('b2-fire'); setBtn('b2-buy'); setBtn('b2-switch');
+setupJoy('joy-a', 0); setupJoy('joy-b', 1);
+layoutTouch();
 if (!IS_TOUCH) {
   document.getElementById('wctrl-left').classList.add('hidden');
   document.getElementById('wctrl-right').classList.add('hidden');
@@ -2011,10 +2292,12 @@ if (!IS_TOUCH) {
 if (IS_TOUCH && window.innerWidth < window.innerHeight) stage.classList.add('rot');
 
 // ---- Schleife ---------------------------------------------------------------
+// Etwas gemächlicheres Tempo als Echtzeit – mehr Clonk, weniger Hektik
+const GAME_SPEED = 0.8;
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.04, (now - last) / 1000); last = now;
-  if (!game.paused) update(dt);
+  if (!game.paused) update(dt * GAME_SPEED);
   computeCam(dt);
   draw(now / 1000);
   requestAnimationFrame(frame);
@@ -2027,6 +2310,7 @@ window.__clonk = {
   matAt, solid, grounded, carveCircle, explode, update, startGame, restart,
   computeCam, buyFlint, fillMat, simStep, wakeArea, switchClonk, fellTree,
   doRain, doQuake, doMeteor, doVolcano,
+  serialize, applyLoad, saveGame, loadGame, joys, layoutTouch, GAME_SPEED,
   players: () => players, allClonks, items: () => items, projectiles: () => projectiles,
   lores: () => lores, elevators: () => elevators, onElevatorCase,
   goldSpots: () => goldSpots, trees: () => trees, wipfe: () => wipfe,
