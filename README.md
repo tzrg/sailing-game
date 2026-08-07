@@ -137,8 +137,13 @@ Docker-Container deployt.
   mit **Touch-Steuerkreuz** (◀ ⤒ ▶ · 🔄 🏭 ⛏️ 💣) und automatischer
   ⟳ Querformat-Drehung. Die KI gräbt nach Gold, bringt es heim, sprengt
   Felsadern frei, kauft nach und wirft auch mal einen Feuerstein.
-  Wer zuerst das Spielziel erreicht (5/8/12 Gold) oder nach 5 Minuten
-  vorne liegt, gewinnt.
+  Jedes Team hat außerdem einen **🏗 Grubenlift** (Förderturm wie im
+  Clonk-Objektpaket): der Stahlkorb ist begehbare Plattform (auch für
+  die Lore), **bohrt** auf ⛏️/↓ den Schacht nach unten (durch Fels nur
+  langsam, Granit stoppt ihn), fährt auf ⤒ zurück nach oben und schaufelt
+  dabei nachgerieselten Sand beiseite; erbohrtes Gold und Kohle fällt
+  direkt in den Korb. Wer zuerst das Spielziel erreicht (5/8/12 Gold)
+  oder nach 5 Minuten vorne liegt, gewinnt.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
@@ -335,7 +340,8 @@ railway.json
   Gold frei, Einsammeln/Abliefern/Sieg, K. o./Respawn samt
   Mannschafts-Übergabe, Klettern, Hangeln, Schwimmen/Atem,
   Lava-Verbrennung, Lava+Wasser=Stein, rieselnder Sand, Lehmbrücken,
-  Lore, Chemiefabrik-Rezepte (Kohle/Holz/Gold), Baum→Holz, Wipfe,
+  Lore, Grubenlift (begehbarer Korb, bohren/hochfahren, explosionsfest),
+  Chemiefabrik-Rezepte (Kohle/Holz/Gold), Baum→Holz, Wipfe,
   Katastrophen (Meteor/Vulkan/Erdbeben/Regen), Clonk-Wechsel, Solo-KI,
   Touch-Steuerkreuz, Kamera/Zoom und die Querformat-Drehung.
 

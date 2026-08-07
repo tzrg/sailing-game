@@ -14,10 +14,11 @@ const WORLD_W = 960, WORLD_H = 640;
 const MAT = {
   SKY: 0, EARTH: 1, ROCK: 2, GOLD: 3, TUNNEL: 4,
   WATER: 5, LAVA: 6, SAND: 7, COAL: 8, GRANIT: 9, LOAM: 10,
+  PLATFORM: 11,   // Aufzugskorb des Grubenlifts (beweglich, unzerstörbar)
 };
-//                  SKY    EARTH ROCK  GOLD  TUNNEL WATER  LAVA   SAND  COAL  GRANIT LOAM
-const SOLID =      [false, true, true, true, false, false, false, true, true, true,  true];
-const DIGGABLE =   [false, true, false, true, false, false, false, true, true, false, true];
+//                  SKY    EARTH ROCK  GOLD  TUNNEL WATER  LAVA   SAND  COAL  GRANIT LOAM  PLATTF.
+const SOLID =      [false, true, true, true, false, false, false, true, true, true,  true, true];
+const DIGGABLE =   [false, true, false, true, false, false, false, true, true, false, true, false];
 const isFree = (m) => m === MAT.SKY || m === MAT.TUNNEL;
 const isGrain = (m) => m === MAT.WATER || m === MAT.LAVA || m === MAT.SAND;
 
@@ -215,6 +216,10 @@ function recolor(x0, y0, x1, y1) {
     if (m === MAT.LOAM) {
       d[p] = 168 + nz * 16; d[p + 1] = 136 + nz * 12; d[p + 2] = 82; d[p + 3] = 255; continue;
     }
+    if (m === MAT.PLATFORM) {       // Stahlkorb mit Nieten
+      const b = (x + y) % 5 === 0 ? 34 : 0;
+      d[p] = 116 + nz * 10 + b; d[p + 1] = 112 + nz * 10 + b; d[p + 2] = 124 + b; d[p + 3] = 255; continue;
+    }
     if (m === MAT.ROCK) {
       const g = 96 + nz * 26 + ((x * 31 + y * 17) % 23 === 0 ? 24 : 0);
       d[p] = g; d[p + 1] = g + 4; d[p + 2] = g + 10; d[p + 3] = 255; continue;
@@ -257,7 +262,7 @@ function carveCircle(cx, cy, r, breakRock) {
       if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) continue;
       if ((x - cx) ** 2 + (y - cy) ** 2 > r2) continue;
       const i = idx(x, y), m = mask[i];
-      if (isFree(m) || m === MAT.GRANIT) continue;
+      if (isFree(m) || m === MAT.GRANIT || m === MAT.PLATFORM) continue;
       if (!breakRock && !DIGGABLE[m]) continue;         // Fels/Wasser/Lava: Schaufel scheitert
       if (breakRock && (m === MAT.WATER || m === MAT.LAVA)) {
         mask[i] = MAT.TUNNEL;                            // Sprengung verdrängt Flüssigkeit
@@ -377,6 +382,7 @@ let players = [];        // die beiden Team-Anführer (zugleich Clonk Nr. 1)
 let items = [];          // { type, x, y, vx, vy, buried, chute, rest }
 let projectiles = [];    // Feuersteine + Meteore
 let lores = [];          // Minen-Loren { team, x, y, vx, vy, cargo }
+let elevators = [];      // Grubenlifte { team, x, y (Korb-Oberkante), topY, acc }
 let volcanoes = [];      // aktive Vulkanschlote
 let parts = [];          // Partikel
 let floats = [];         // aufsteigende Textchen
@@ -453,6 +459,25 @@ function startGame(seed) {
   lores = players.map((p) => {
     const lx = p.base.x + (p.id === 0 ? 44 : -44);
     return { team: p.id, x: lx, y: groundY[lx] - 1, vx: 0, vy: 0, cargo: 0 };
+  });
+  // je Team ein Grubenlift mit Förderturm (Richtung Kartenmitte)
+  elevators = players.map((p) => {
+    const ex = p.base.x + (p.id === 0 ? 66 : -66);
+    // Korb (3 px hoch) sitzt zu Beginn auf der Oberfläche
+    const el = { team: p.id, x: ex, y: groundY[ex] - 3, topY: groundY[ex] - 3, acc: 0, goldPix: 0, coalPix: 0 };
+    // Schachtstation freiräumen: kein Geländeüberhang über dem Korb,
+    // damit Fahrgäste oben sauber ein- und aussteigen können
+    for (let y = el.topY - 18; y <= el.topY + 2; y++) {
+      for (let x = el.x - CASE_HW - 1; x <= el.x + CASE_HW + 1; x++) {
+        const m = matAt(x, y);
+        if (m !== MAT.GRANIT && SOLID[m]) {
+          mask[idx(x, y)] = (y === 0 || mask[idx(x, y - 1)] === MAT.SKY) ? MAT.SKY : MAT.TUNNEL;
+        }
+      }
+    }
+    writeCase(el);
+    applyRegion(el.x - CASE_HW - 2, el.topY - 20, CASE_HW * 2 + 5, 26);
+    return el;
   });
 
   // Fundsachen: Feuersteine offen + vergraben, Lehmklumpen vergraben
@@ -610,8 +635,9 @@ function updateClonk(c, dt) {
 
   switch (c.state) {
     case 'walk': {
-      if (D) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
-      if (J && !U) { c.vy = JUMP_VY; c.vx = dirIn * WALK; c.state = 'air'; break; }
+      if (D && !onElevatorCase(c)) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
+      // auf dem Aufzugskorb: ⤒ ohne Richtung fährt hoch statt zu springen
+      if (J && !U && !(dirIn === 0 && onElevatorCase(c))) { c.vy = JUMP_VY; c.vx = dirIn * WALK; c.state = 'air'; break; }
       if (dirIn) {
         c.walkPhase += dt * 11;
         c.rem += WALK * dt;
@@ -1116,6 +1142,110 @@ function aiControl(cap, dt) {
     && (c.coal >= 1 || c.wood >= 2 || cap.score >= 2)) v.use = true;
 }
 
+// ---- Grubenlift (Aufzug mit Förderturm, wie im Clonk-Objektpaket) ----------
+// Der Korb liegt als PLATFORM-Material in der Maske: Clonks, Loren und Items
+// stehen ganz normal darauf. Auf dem Korb: ⛏️/↓ bohrt nach unten (durch Fels
+// nur langsam, Granit stoppt), ⤒ fährt hoch. Erbohrtes Gold/Kohle fällt als
+// Brocken auf den Korb.
+const CASE_HW = 8;                    // halbe Korbbreite
+function onElevatorCase(c) {
+  return elevators.some((el) => Math.abs(c.x - el.x) <= CASE_HW + 2 && Math.abs((c.y + 1) - el.y) <= 2);
+}
+function eraseCase(el) {
+  for (let y = el.y; y < el.y + 3; y++) for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
+    if (matAt(x, y) === MAT.PLATFORM) {
+      mask[idx(x, y)] = (y === 0 || mask[idx(x, y - 1)] === MAT.SKY) ? MAT.SKY : MAT.TUNNEL;
+    }
+  }
+}
+function writeCase(el) {
+  for (let y = el.y; y < el.y + 3; y++) for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
+    const m = matAt(x, y);
+    if (isFree(m) || m === MAT.WATER || m === MAT.LAVA) mask[idx(x, y)] = MAT.PLATFORM;
+  }
+  applyRegion(el.x - CASE_HW - 1, el.y - 2, CASE_HW * 2 + 3, 7);
+}
+function moveCase(el, dir) {
+  if (dir > 0) {
+    // Zeile unter dem Korb wegbohren (Granit blockiert)
+    let gold = 0, coal = 0;
+    for (let xx = el.x - CASE_HW - 1; xx <= el.x + CASE_HW + 1; xx++) {
+      const m = matAt(xx, el.y + 3);
+      if (m === MAT.GRANIT) return false;
+      if (m === MAT.GOLD) gold++;
+      if (m === MAT.COAL) coal++;
+      if (!isFree(m) && m !== MAT.PLATFORM) mask[idx(xx, el.y + 3)] = MAT.TUNNEL;
+    }
+    el.goldPix += gold; el.coalPix += coal;
+    while (el.goldPix >= GOLD_PER_NUGGET) {
+      el.goldPix -= GOLD_PER_NUGGET;
+      items.push({ type: 'nugget', x: el.x + rng() * 10 - 5, y: el.y - 3, vx: 0, vy: -20 });
+      spark(el.x, el.y + 3, 4, '#ffd166');
+    }
+    while (el.coalPix >= COAL_PER_CHUNK) {
+      el.coalPix -= COAL_PER_CHUNK;
+      items.push({ type: 'coal', x: el.x + rng() * 10 - 5, y: el.y - 3, vx: 0, vy: -20 });
+    }
+  } else {
+    if (el.y <= el.topY) return false;
+    // Räumschild: nachgerieselter Sand / eingelaufenes Wasser im Schacht
+    // über dem Korb wird beiseitegeschaufelt
+    for (let y = el.y - 19; y <= el.y + 1; y++) {
+      for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
+        if (isGrain(matAt(x, y))) {
+          mask[idx(x, y)] = (y === 0 || mask[idx(x, y - 1)] === MAT.SKY) ? MAT.SKY : MAT.TUNNEL;
+          markDirty(x, y);
+        }
+      }
+    }
+    // festes Hindernis über einem Fahrgast? Dann stoppt der Lift
+    for (const c of allClonks()) {
+      if (c.state === 'dead') continue;
+      if (Math.abs(c.x - el.x) <= CASE_HW + 2 && Math.abs((c.y + 1) - el.y) <= 2
+        && bodyBlocked(Math.round(c.x), Math.round(c.y) - 1)) return false;
+    }
+  }
+  eraseCase(el);
+  el.y += dir;
+  writeCase(el);
+  // Fahrgäste (Clonks + Loren) mitnehmen
+  for (const c of allClonks()) {
+    if (c.state === 'dead') continue;
+    if (Math.abs(c.x - el.x) <= CASE_HW + 2 && Math.abs((c.y + 1) - (el.y - dir)) <= 2) {
+      const ny = c.y + dir;
+      if (dir > 0 || !bodyBlocked(Math.round(c.x), Math.round(ny))) c.y = ny;
+    }
+  }
+  for (const lo of lores) {
+    if (Math.abs(lo.x - el.x) <= CASE_HW + 2 && Math.abs((lo.y + 1) - (el.y - dir)) <= 3) lo.y += dir;
+  }
+  wakeArea(el.x - CASE_HW - 3, el.y - 3, el.x + CASE_HW + 3, el.y + 6);
+  return true;
+}
+function updateElevators(dt) {
+  for (const el of elevators) {
+    // Fahrgast-Wunsch: ⛏️/↓ bohrt runter, ⤒ (ohne Richtung) fährt hoch
+    let move = 0, rockBelow = false;
+    for (const c of allClonks()) {
+      if (c.state === 'dead' || !onElevatorCase(c) || Math.abs(c.x - el.x) > CASE_HW + 2) continue;
+      if (cIn(c, 'dig')) move = 1;
+      else if (cIn(c, 'jump') && !cIn(c, 'left') && !cIn(c, 'right')) move = -1;
+    }
+    if (move === 1) {
+      for (let xx = el.x - CASE_HW; xx <= el.x + CASE_HW; xx++) {
+        if (matAt(xx, el.y + 3) === MAT.ROCK) { rockBelow = true; break; }
+      }
+      if (el.y + 6 >= WORLD_H - 8) move = 0;                 // Granitsohle erreicht
+    }
+    if (!move) { el.acc = 0; continue; }
+    el.acc += (move === 1 ? (rockBelow ? 9 : 34) : 48) * dt;
+    let n = el.acc | 0; el.acc -= n;
+    while (n-- > 0) {
+      if (!moveCase(el, move)) { spark(el.x, el.y + 3, 2, '#c9c9d4'); break; }
+    }
+  }
+}
+
 // ---- Loren (Goldtransport wie im Clonk-Objektpaket) -------------------------
 function probeDown(x, yStart) {
   for (let d = 0; d <= 14; d++) if (solid(x, yStart + d)) return yStart + d;
@@ -1437,6 +1567,7 @@ function update(dt) {
   }
   for (const c of allClonks()) updateClonk(c, dt);
   updateProjectiles(dt);
+  updateElevators(dt);
   updateLores(dt);
   updateItems(dt);
   updateFlintDrops(dt);
@@ -1537,6 +1668,7 @@ function draw(time) {
   ctx.drawImage(terrainCanvas, 0, 0);
 
   for (const p of players) drawHut(p);
+  for (const el of elevators) drawElevator(el);
   for (const lo of lores) drawLore(lo);
   for (const w of wipfe) drawWipf(w, time);
   for (const it of items) drawItem(it, time);
@@ -1625,6 +1757,35 @@ function drawHut(p) {
   ctx.fillStyle = p.color;
   ctx.beginPath(); ctx.moveTo(-14, -66); ctx.lineTo(2, -61); ctx.lineTo(-14, -56); ctx.closePath(); ctx.fill();
   ctx.restore();
+}
+
+function drawElevator(el) {
+  const p = players[el.team];
+  ctx.save(); ctx.translate(el.x, el.topY);
+  // Förderturm: Beine, Streben, Seilrad
+  ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-11, 0); ctx.lineTo(0, -34);
+  ctx.moveTo(11, 0); ctx.lineTo(0, -34);
+  ctx.moveTo(-7.5, -11); ctx.lineTo(7.5, -11);
+  ctx.moveTo(-4.5, -21); ctx.lineTo(4.5, -21);
+  ctx.stroke();
+  ctx.fillStyle = '#39424b';
+  ctx.beginPath(); ctx.arc(0, -35, 4.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#8a8a95';
+  ctx.beginPath(); ctx.arc(0, -35, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = p.color;                                  // Team-Wimpel
+  ctx.beginPath(); ctx.moveTo(0, -40); ctx.lineTo(9, -37.5); ctx.lineTo(0, -35); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // Förderseil bis zum Korb
+  ctx.strokeStyle = '#2e2e34'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(el.x, el.topY - 35); ctx.lineTo(el.x, el.y); ctx.stroke();
+  // Korb-Geländer (die Plattform selbst liegt als Material in der Maske)
+  ctx.strokeStyle = '#4c4c56'; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(el.x - CASE_HW, el.y + 1); ctx.lineTo(el.x - CASE_HW, el.y - 9);
+  ctx.moveTo(el.x + CASE_HW, el.y + 1); ctx.lineTo(el.x + CASE_HW, el.y - 9);
+  ctx.stroke();
 }
 
 function drawLore(lo) {
@@ -1867,7 +2028,8 @@ window.__clonk = {
   computeCam, buyFlint, fillMat, simStep, wakeArea, switchClonk, fellTree,
   doRain, doQuake, doMeteor, doVolcano,
   players: () => players, allClonks, items: () => items, projectiles: () => projectiles,
-  lores: () => lores, goldSpots: () => goldSpots, trees: () => trees, wipfe: () => wipfe,
+  lores: () => lores, elevators: () => elevators, onElevatorCase,
+  goldSpots: () => goldSpots, trees: () => trees, wipfe: () => wipfe,
   volcanoes: () => volcanoes,
   groundY: () => groundY, pressed, buttons, throwFlint, hurt,
 };

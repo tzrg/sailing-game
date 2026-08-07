@@ -456,25 +456,28 @@ try {
   }, { x: dryA, x0: r.x0 });
   check('Lehmbrücke: Benutzen-Taste baut über die Grube', r.loamCells > 20 && r.adv > 10, JSON.stringify(r));
 
-  // ---- Lore: anschieben, Klumpen aufsammeln, entladen
-  r = await page.evaluate(() => {
+  // ---- Lore: anschieben, Klumpen aufsammeln, entladen (auf freier Fläche,
+  // damit weder Förderturm noch Gefälle an der Hütte dazwischenfunken)
+  r = await page.evaluate((x) => {
     const C = window.__clonk;
     C.startGame(42);
     C.game.paused = true;
     const lo = C.lores()[0];
     const p = C.players()[0];
-    p.x = lo.x - 12; p.y = lo.y; p.state = 'walk';
+    lo.x = x; lo.y = C.groundY()[x] - 1; lo.vx = 0;
+    p.x = x - 12; p.y = C.groundY()[x - 12] - 1; p.state = 'walk';
     C.pressed.add('d');
     return { n: C.lores().length, x0: lo.x };
-  });
+  }, dryA);
   check('Jede Hütte hat eine Lore', r.n === 2);
   await tick(1.2);
   r = await page.evaluate((x0) => {
     const C = window.__clonk;
     C.pressed.delete('d');
     const p = C.players()[0];
-    p.x = 300; p.y = C.groundY()[300] - 1;
+    p.x = 60; p.y = C.groundY()[60] - 1;
     const lo = C.lores()[0];
+    lo.vx = 0;
     C.items().push({ type: 'nugget', x: lo.x, y: lo.y - 6, vx: 0, vy: 0 });
     return { moved: lo.x - x0 };
   }, r.x0);
@@ -494,6 +497,57 @@ try {
   }, r.cargo1);
   check('Lore sammelt Klumpen auf', r.cargo1 === 1, JSON.stringify(r));
   check('Lore kippt ihre Ladung an der Hütte in die Kasse', r.cargo === 0 && r.score === 3, JSON.stringify(r));
+
+  // ---- Grubenlift: Korb ist begehbar, bohrt nach unten, fährt wieder hoch
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42);
+    C.game.paused = true;
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    p.x = el.x; p.y = el.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    const platform = C.matAt(el.x, el.y) === M.PLATFORM && C.solid(el.x, el.y);
+    const riding = C.onElevatorCase(p);
+    C.pressed.add('s');   // bohren
+    return { n: C.elevators().length, platform, riding, y0: el.y, py0: p.y };
+  });
+  check('Jedes Team hat einen Grubenlift mit Förderturm', r.n === 2);
+  check('Der Aufzugskorb ist festes, begehbares Material', r.platform && r.riding, JSON.stringify(r));
+  await tick(2);
+  r = await page.evaluate(({ y0, py0 }) => {
+    const C = window.__clonk, M = C.MAT;
+    C.pressed.delete('s');
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    return {
+      drilled: el.y - y0, rode: p.y - py0, still: C.onElevatorCase(p),
+      shaft: C.matAt(el.x, el.y - 6) === M.TUNNEL || C.matAt(el.x, el.y - 6) === M.SKY,
+    };
+  }, r);
+  check('⛏️ auf dem Korb bohrt den Schacht nach unten', r.drilled > 30, JSON.stringify(r));
+  check('Der Clonk fährt auf dem Korb mit', r.rode > 30 && r.still, JSON.stringify(r));
+  check('Hinter dem Korb bleibt ein offener Schacht', r.shaft === true);
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.pressed.add('w');   // hochfahren
+    return { y0: C.elevators()[0].y };
+  });
+  await tick(2);
+  r = await page.evaluate((y0) => {
+    const C = window.__clonk;
+    C.pressed.delete('w');
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    return { rose: y0 - el.y, atTop: el.y === el.topY, riding: C.onElevatorCase(p) };
+  }, r.y0);
+  check('⤒ fährt den Korb zurück zum Förderturm', r.rose > 30 && r.atTop && r.riding, JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    const el = C.elevators()[0];
+    C.explode(el.x, el.y - 6, null);
+    return { survives: C.matAt(el.x, el.y) === M.PLATFORM };
+  });
+  check('Der Stahlkorb übersteht Explosionen', r.survives === true);
 
   // ---- Chemiefabrik-Rezepte: Kohle > Holz > Gold
   r = await page.evaluate(() => {
