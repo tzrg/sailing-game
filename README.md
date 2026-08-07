@@ -110,6 +110,19 @@ Docker-Container deployt.
   zwischen den Wellen automatisch gespeichert (eingeloggt auch in der
   Datenbank). Höchste Welle zählt für die Bestenliste.
 
+- **`clonk.html` – ⛏️ Klonk · Goldrausch**: Hommage an Clonk 4 / Clonk
+  Planet (eigenständig umgesetzt). Zwei Klonks an **einer Tastatur**
+  (WASD+Q gegen Pfeiltasten+M/Komma) auf einer frisch generierten
+  Pixel-Landschaft: Erde und Goldadern lassen sich **graben** (Grabtaste
+  allein senkrecht, mit Richtung waagerecht, mit Sprungtaste schräg nach
+  oben), die Felsschicht knackt nur ein 💣 **Feuerstein** – die liegen
+  vergraben herum, segeln am Fallschirm nach und explodieren beim
+  Aufprall (inkl. Kettenreaktion). Klonks **klettern** an Wänden hoch,
+  nehmen Fallschaden, gehen k. o. (Gold purzelt raus, Respawn an der
+  Hütte) und liefern Goldklumpen an ihrer **Hütte** ab, wo sie auch
+  langsam heilen. Wer zuerst das Spielziel erreicht (5/8/12 Gold) oder
+  nach 5 Minuten vorne liegt, gewinnt.
+
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
 (🏠 führt zurück zur Landing-Page). Neue Spiele lassen sich analog ergänzen.
@@ -259,6 +272,7 @@ public/            statische Spielesammlung
   mampf.html       🟡 Mampf (Labyrinth-Arcade)
   maze.html        🧩 Super Maze (prozedurale Labyrinthe)
   snake.html       🐍 Snake (Klassiker)
+  clonk.html       ⛏️ Klonk · Goldrausch (Clonk-Hommage, 2 Spieler)
   style.css
   js/
     lib.js         Auth + Scores (Server mit localStorage-Fallback)
@@ -278,6 +292,7 @@ public/            statische Spielesammlung
     mampf.js       Mampf (Labyrinth, Geister-KI, Highscore)
     maze.js        Super Maze (Backtracker-Generator, Nebel, Sterne)
     snake.js       Snake (Grid, Wachstum, Bonus, zwei Modi)
+    clonk.js       Klonk (Material-Maske, Graben/Klettern, Feuersteine)
 Dockerfile
 railway.json
 ```
@@ -297,6 +312,10 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
+- **`test/clonk.test.mjs`** – Klonk über den Test-Hook `window.__clonk`:
+  Gelände-Materialien (Erde/Fels/Gold/Höhlen), Graben inkl. Fels-Stopp,
+  Sprengungen legen Gold frei, Einsammeln/Abliefern/Sieg, K. o. und
+  Respawn, Klettern und die Zwei-Spieler-Tastenbelegung.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
 zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird
