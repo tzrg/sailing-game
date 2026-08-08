@@ -118,8 +118,8 @@ Docker-Container deployt.
   Wettkampf an **einer Tastatur** (WASD+Q/E/F gegen
   Pfeiltasten+M/Komma/Punkt/N). Jedes Team hat **zwei Clonks**
   (Wechsel-Taste), eine Hütte, eine 🛒 Lore und eine 🏭 Chemiefabrik.
-  Schräg hochgraben geht pro Grabvorgang nur in eine Richtung (kein
-  Zickzack-Leitern durchs Erdreich). Frisch generierte Pixel-Landschaft mit **Erde, Fels,
+  **Nach oben gräbt kein Clonk** – wie im Original führen Lehmbrücken,
+  Klettern oder der Grubenlift zurück ans Licht. Frisch generierte Pixel-Landschaft mit **Erde, Fels,
   Granit (unzerstörbar), Goldadern, ⚫ Kohleflözen, Sandtaschen, See und
   Lavagrotten**; Wasser & Lava **fließen** (Zellautomat), Sand rieselt
   nach, und **Lava + Wasser = Stein**. Bewegen wie im Original:
@@ -140,7 +140,9 @@ Docker-Container deployt.
   reingezoomt, zu zweit bleiben beide im Bild, ＋/－ zoomt), 📱 Mobile
   mit **virtuellem Joystick** (bewegen: seitlich laufen, oben
   springen/klettern, unten abtauchen/abseilen/Lift bohren – **gegraben
-  wird mit der ⛏️-Taste**, Richtung vom Joystick, schräg hoch inklusive)
+  wird mit der ⛏️-Taste**, Richtung vom Joystick, gehaltene Tasten
+  leuchten; die gedrehte Bühne nutzt dvh-Einheiten, damit hinter der
+  mobilen Browserleiste nichts verschwindet)
   plus Aktionstasten (🔄 🏭 ⛏️ 💣) und automatischer ⟳
   Querformat-Drehung; im 2-Spieler-Modus bekommt Blau einen **eigenen
   Joystick samt Tasten** (Tablet quer aufstellen). Menü-Optionen als
@@ -358,8 +360,9 @@ railway.json
   Chemiefabrik-Rezepte (Kohle/Holz/Gold), Baum→Holz, Wipfe,
   Katastrophen (Meteor/Vulkan/Erdbeben/Regen), Clonk-Wechsel, Solo-KI,
   Touch-Joysticks (beide Teams, 2P-Layout, ⛏️-Taste statt Stick-runter
-  zum Graben), Graben aus dem Grubenlift, Zickzack-Hochgrab-Sperre,
-  Buddel-Modus (Standard, offen, Koop-Kamera), Menü-Button-Reihen,
+  zum Graben), Graben aus dem Grubenlift, Hochgrab-Verbot (wie im
+  Original), Buddel-Modus (Standard, offen, Koop-Kamera),
+  Menü-Button-Reihen,
   Spielstand-Roundtrip (RLE-Maske, localStorage), Kamera/Zoom und die
   Querformat-Drehung.
 

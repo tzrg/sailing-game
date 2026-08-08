@@ -760,37 +760,28 @@ try {
   }, r.y0);
   check('Joystick nach unten bohrt auf dem Aufzugskorb', r.drilled > 15, JSON.stringify(r));
 
-  // ---- Kein Zickzack-Leitern: Richtungswechsel beim Hochgraben geht nur waagerecht weiter
+  // ---- Nach oben graben geht NICHT (wie im Original – nur Brücke/Klettern/Lift)
   r = await page.evaluate((x) => {
     const C = window.__clonk;
     C.startGame(42);
     C.game.paused = true;
     const p = C.players()[0];
     const g = C.groundY()[x];
-    C.carveCircle(x, g + 50, 13, true);   // Höhle, von der aus hochgegraben wird
+    C.carveCircle(x, g + 50, 13, true);   // Höhle als Startpunkt
     let floor = g + 50;
     while (!C.solid(x, floor + 1)) floor++;
     p.x = x; p.y = floor; p.state = 'walk'; p.vx = 0; p.vy = 0;
-    C.pressed.add('s'); C.pressed.add('w'); C.pressed.add('d');
-    return { y0: p.y };
+    C.pressed.add('s'); C.pressed.add('w'); C.pressed.add('d');   // Grab + Sprung + Richtung
+    return { y0: p.y, x0: p.x };
   }, dryB);
-  await tick(0.7);
-  r = await page.evaluate((y0) => {
+  await tick(0.9);
+  r = await page.evaluate(({ y0, x0 }) => {
     const C = window.__clonk;
+    C.pressed.delete('s'); C.pressed.delete('w'); C.pressed.delete('d');
     const p = C.players()[0];
-    const rose1 = y0 - p.y;
-    C.pressed.delete('d'); C.pressed.add('a');   // Richtungswechsel mitten im Aufstieg
-    return { rose1, y1: p.y };
-  }, r.y0);
-  await tick(0.7);
-  r = await page.evaluate(({ rose1, y1 }) => {
-    const C = window.__clonk;
-    C.pressed.delete('s'); C.pressed.delete('w'); C.pressed.delete('a');
-    const p = C.players()[0];
-    return { rose1, rose2: y1 - p.y };
+    return { rose: y0 - p.y, moved: p.x - x0 };
   }, r);
-  check('Schräg hochgraben klappt in eine Richtung', r.rose1 > 8, JSON.stringify(r));
-  check('Nach Richtungswechsel geht es nicht weiter nach oben (kein Zickzack)', r.rose2 < 4, JSON.stringify(r));
+  check('Hochgraben ist unmöglich – es geht nur waagerecht weiter', r.rose < 4 && r.moved > 6, JSON.stringify(r));
 
   // ---- Buddel-Modus (Sandbox): offen, ohne Gegner, koop-fähig
   r = await page.evaluate(() => {

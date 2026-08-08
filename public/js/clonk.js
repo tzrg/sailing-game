@@ -582,9 +582,10 @@ function setBtn(id, onDown) {
     e.preventDefault();
     try { el.setPointerCapture(e.pointerId); } catch { /* egal */ }
     buttons[id].held = true;
+    el.classList.add('held');
     if (onDown) onDown();
   });
-  const rel = (e) => { e.preventDefault(); buttons[id].held = false; };
+  const rel = (e) => { e.preventDefault(); buttons[id].held = false; el.classList.remove('held'); };
   el.addEventListener('pointerup', rel);
   el.addEventListener('pointercancel', rel);
 }
@@ -743,7 +744,7 @@ function updateClonk(c, dt) {
     case 'walk': {
       // auf dem Aufzugskorb: Grabtaste ohne Richtung bohrt (der Lift übernimmt),
       // MIT Richtung/Sprungtaste gräbt man sich normal seitlich/schräg heraus
-      if (D && !(onElevatorCase(c) && dirIn === 0 && !J)) { c.state = 'dig'; c.rem = 0; c.digUpDir = 0; digStep(c, dt); break; }
+      if (D && !(onElevatorCase(c) && dirIn === 0)) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
       // auf dem Aufzugskorb: ⤒ ohne Richtung fährt hoch statt zu springen
       if (J && !U && !(dirIn === 0 && onElevatorCase(c))) { c.vy = JUMP_VY; c.vx = dirIn * WALK; c.state = 'air'; break; }
       if (dirIn) {
@@ -923,23 +924,17 @@ function land(p) {
   }
 }
 
-// Graben: Grabtaste allein = senkrecht runter, mit Richtung = waagerecht
-// (leicht fallend), mit Sprungtaste = schräg nach oben. Fels stoppt die
-// Schaufel – da hilft nur ein Feuerstein. Granit stoppt sogar den.
+// Graben wie im Original: Grabtaste allein = senkrecht runter, mit Richtung
+// = waagerecht (leicht fallend). Nach OBEN gräbt kein Clonk – dafür gibt es
+// Lehmbrücken, Klettern und den Grubenlift. Fels stoppt die Schaufel
+// (Feuerstein!), Granit sogar die Sprengung.
 function digStep(c, dt) {
-  const L = cIn(c, 'left'), R = cIn(c, 'right'), J = cIn(c, 'jump');
+  const L = cIn(c, 'left'), R = cIn(c, 'right');
   const dirIn = (R ? 1 : 0) - (L ? 1 : 0);
   if (dirIn) c.dir = dirIn;
   let dx, dy;
-  if (J) {
-    const d = dirIn || c.dir;
-    // Schräg nach oben nur in EINE Richtung pro Grabvorgang – wer mitten im
-    // Aufstieg wendet, gräbt waagerecht weiter (kein Zickzack-Leitern)
-    if (c.digUpDir && d !== c.digUpDir) { dx = d; dy = 0.28; }
-    else { c.digUpDir = d; dx = d; dy = -0.62; }
-  }
-  else if (dirIn) { dx = dirIn; dy = 0.28; c.digUpDir = 0; }
-  else { dx = 0; dy = 1; c.digUpDir = 0; }
+  if (dirIn) { dx = dirIn; dy = 0.28; }
+  else { dx = 0; dy = 1; }
   const len = Math.hypot(dx, dy); dx /= len; dy /= len;
 
   c.walkPhase += dt * 14;
@@ -960,7 +955,7 @@ function digStep(c, dt) {
       }
     }
     c.x = nx; c.y = ny;
-    if (!J && dy < 0.8) {
+    if (dy < 0.8) {
       let d = 0;
       while (d <= 4 && !grounded(c.x, c.y)) { c.y += 1; d++; }
       if (d > 4) { c.y -= d; c.state = 'air'; c.vy = 30; break; }
@@ -1243,7 +1238,7 @@ function aiControl(cap, dt) {
   if (adx > 6) { if (dx < 0) v.left = true; else v.right = true; }
 
   if (dy > 14 && adx < 46) { v.dig = true; if (adx < 10) { v.left = v.right = false; } }
-  else if (dy < -26 && adx < 40 && c.state !== 'scale') { v.dig = true; v.jump = true; }
+  else if (dy < -26 && adx < 30 && c.state !== 'scale') { v.jump = true; }   // hoch geht's nur kletternd
 
   if (c.state === 'scale') v.jump = true;
   else if (c.state === 'hangle') { v.dig = true; }

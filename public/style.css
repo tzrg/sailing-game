@@ -256,6 +256,17 @@ html, body {
   transform: rotate(90deg);
 }
 
+/* Auf Handys ist 100vh größer als der sichtbare Bereich (URL-Leiste!) –
+   dynamische Viewport-Einheiten halten die gedrehte Bühne im Sichtfeld,
+   sonst liegen die rechten Bedienelemente hinter der Browserleiste. */
+@supports (width: 1dvh) {
+  #stage.rot {
+    left: 100dvw;
+    width: 100dvh;
+    height: 100dvw;
+  }
+}
+
 #btn-rotate {
   background: rgba(8, 25, 42, 0.55);
   color: #fff;
@@ -323,6 +334,12 @@ html, body {
 }
 
 #wctrl-left button:active, #wctrl-right button:active { background: rgba(8, 25, 42, 0.9); }
+
+/* gehaltene Touch-Taste deutlich markieren (z. B. ⛏️ beim Graben) */
+#wctrl-left button.held, #wctrl-right button.held {
+  background: #2f6fae;
+  border-color: #79b8e8;
+}
 #wctrl-right #b-fire:active { background: #e0453e; }
 
 /* kleine Handys im Hochformat: kompakter, damit nichts überlappt */
