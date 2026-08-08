@@ -390,15 +390,17 @@ const ROUND_TIME = 300;
 const IS_TOUCH = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
   || 'ontouchstart' in window;
 
+const MODES = ['sandbox', 'solo', '2p'];
 const game = {
   state: 'play', paused: false, t: ROUND_TIME, goal: 8, winner: null,
-  mode: '2p',                 // '2p' | 'solo' (gegen die KI)
+  mode: 'sandbox',            // 'sandbox' (offen, koop) | 'solo' (gegen KI) | '2p'
   disasters: 'normal',        // 'aus' | 'normal' | 'wild'
   flintDropT: 12, shakeT: 0, shakeA: 0,
   disasterT: 60, rainT: 0, rainBudget: 0, quakeT: 0,
 };
 try {
-  game.mode = localStorage.getItem('clonk_mode') || (IS_TOUCH ? 'solo' : '2p');
+  const m = localStorage.getItem('clonk_mode');
+  game.mode = MODES.includes(m) ? m : 'sandbox';
   game.disasters = localStorage.getItem('clonk_disasters') || 'normal';
 } catch { /* egal */ }
 
@@ -521,7 +523,7 @@ function startGame(seed) {
   }
 
   // Kamera zurücksetzen + Touch-Layout an den Modus anpassen
-  cam.zoom = game.mode === 'solo' ? 2.1 : 1;
+  cam.zoom = game.mode === '2p' ? 1 : 2.1;
   cam.x = WORLD_W / 2; cam.y = WORLD_H / 2; cam.scale = 0;
   layoutTouch();
 }
@@ -538,17 +540,21 @@ const TOUCH_MAPS = [
   { dig: 'b2-dig', throw: 'b2-fire', use: 'b2-buy', switch: 'b2-switch' },
 ];
 
+// 'dig' = Schaufel ansetzen (nur Grabtaste/⛏️-Button, NICHT der Joystick).
+// 'down' = Runter-Bewegung (abtauchen, abseilen, Lift bohren): zusätzlich
+// auch über den Joystick nach unten.
 function down(p, action) {
-  if (p.ai) return !!p.virt[action];
-  if (p.keys[action].some((k) => pressed.has(k))) return true;
-  const b = buttons[TOUCH_MAPS[p.id][action]];
+  const key = action === 'down' ? 'dig' : action;
+  if (p.ai) return !!p.virt[key];
+  if (p.keys[key].some((k) => pressed.has(k))) return true;
+  const b = buttons[TOUCH_MAPS[p.id][key]];
   if (b && b.held) return true;
   const js = joys[p.id];
   if (js) {
     if (action === 'left') return js.dx < -JOY_X;
     if (action === 'right') return js.dx > JOY_X;
     if (action === 'jump') return js.dy < -JOY_Y;
-    if (action === 'dig') return js.dy > JOY_Y;
+    if (action === 'down') return js.dy > JOY_Y;
   }
   return false;
 }
@@ -712,8 +718,12 @@ function updateClonk(c, dt) {
   if (inLiquid && c.state !== 'swim') { c.state = 'swim'; c.vy *= 0.3; c.vx *= 0.5; }
   if (!inLiquid && c.state === 'swim') { c.state = grounded(c.x, c.y) ? 'walk' : 'air'; }
 
-  const L = cIn(c, 'left'), R = cIn(c, 'right'), J = cIn(c, 'jump'), D = cIn(c, 'dig');
+  const L = cIn(c, 'left'), R = cIn(c, 'right'), J = cIn(c, 'jump');
+  const D = cIn(c, 'dig'), DN = cIn(c, 'down');
   const dirIn = (R ? 1 : 0) - (L ? 1 : 0);
+  // Koop-Erkennung im Buddel-Modus: sobald Blau Eingaben macht, hält die
+  // Kamera beide Teams im Bild
+  if (cap.id === 1 && !cap.ai && (L || R || J || D || DN)) cap.activeT = 10;
   if (dirIn && c.state !== 'scale') c.dir = dirIn;
 
   // Werfen, Benutzen, Wechseln (Flanken)
@@ -733,7 +743,7 @@ function updateClonk(c, dt) {
     case 'walk': {
       // auf dem Aufzugskorb: Grabtaste ohne Richtung bohrt (der Lift übernimmt),
       // MIT Richtung/Sprungtaste gräbt man sich normal seitlich/schräg heraus
-      if (D && !(onElevatorCase(c) && dirIn === 0 && !J)) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
+      if (D && !(onElevatorCase(c) && dirIn === 0 && !J)) { c.state = 'dig'; c.rem = 0; c.digUpDir = 0; digStep(c, dt); break; }
       // auf dem Aufzugskorb: ⤒ ohne Richtung fährt hoch statt zu springen
       if (J && !U && !(dirIn === 0 && onElevatorCase(c))) { c.vy = JUMP_VY; c.vx = dirIn * WALK; c.state = 'air'; break; }
       if (dirIn) {
@@ -768,7 +778,7 @@ function updateClonk(c, dt) {
     }
     case 'hangle': {
       if (!rowSolid(c.x, (c.y | 0) - PH)) { c.state = 'air'; c.vy = 0; break; }
-      if (D) { c.state = 'air'; c.vy = 20; break; }     // loslassen
+      if (DN) { c.state = 'air'; c.vy = 20; break; }    // loslassen
       if (dirIn) {
         c.walkPhase += dt * 8;
         c.rem += HANGLE_SPEED * dt;
@@ -793,7 +803,7 @@ function updateClonk(c, dt) {
       break;
     }
     case 'swim': {
-      const dy = (J ? -1 : 0) + (D ? 1 : 0);
+      const dy = (J ? -1 : 0) + (DN ? 1 : 0);
       const spd = midMat === MAT.LAVA ? 26 : SWIM_SPEED;
       c.vx += (dirIn * spd - c.vx) * Math.min(1, dt * 6);
       const targetVy = dy !== 0 ? dy * spd : -10;        // leichter Auftrieb
@@ -824,7 +834,7 @@ function updateClonk(c, dt) {
           c.y -= 1;
           if (!wallAt(c, c.dir)) break;
         }
-      } else if (D) {
+      } else if (DN) {
         c.y += SCALE_SPEED * dt;
         if (grounded(c.x, c.y)) { c.y = Math.round(c.y); c.state = 'walk'; }
       }
@@ -921,9 +931,15 @@ function digStep(c, dt) {
   const dirIn = (R ? 1 : 0) - (L ? 1 : 0);
   if (dirIn) c.dir = dirIn;
   let dx, dy;
-  if (J) { dx = dirIn || c.dir; dy = -0.62; }
-  else if (dirIn) { dx = dirIn; dy = 0.28; }
-  else { dx = 0; dy = 1; }
+  if (J) {
+    const d = dirIn || c.dir;
+    // Schräg nach oben nur in EINE Richtung pro Grabvorgang – wer mitten im
+    // Aufstieg wendet, gräbt waagerecht weiter (kein Zickzack-Leitern)
+    if (c.digUpDir && d !== c.digUpDir) { dx = d; dy = 0.28; }
+    else { c.digUpDir = d; dx = d; dy = -0.62; }
+  }
+  else if (dirIn) { dx = dirIn; dy = 0.28; c.digUpDir = 0; }
+  else { dx = 0; dy = 1; c.digUpDir = 0; }
   const len = Math.hypot(dx, dy); dx /= len; dy /= len;
 
   c.walkPhase += dt * 14;
@@ -1331,8 +1347,10 @@ function updateElevators(dt) {
     let move = 0, rockBelow = false;
     for (const c of allClonks()) {
       if (c.state === 'dead' || !onElevatorCase(c) || Math.abs(c.x - el.x) > CASE_HW + 2) continue;
-      // nur Grabtaste OHNE Richtung bohrt (mit Richtung gräbt der Clonk selbst)
-      if (cIn(c, 'dig') && !cIn(c, 'left') && !cIn(c, 'right') && !cIn(c, 'jump')) move = 1;
+      // Runter (Joystick/Grabtaste) OHNE Richtung bohrt; mit Richtung
+      // gräbt sich der Clonk selbst aus dem Korb
+      if (cIn(c, 'down') && !cIn(c, 'dig') && !cIn(c, 'left') && !cIn(c, 'right') && !cIn(c, 'jump')) move = 1;
+      else if (cIn(c, 'dig') && !cIn(c, 'left') && !cIn(c, 'right') && !cIn(c, 'jump')) move = 1;
       else if (cIn(c, 'jump') && !cIn(c, 'left') && !cIn(c, 'right')) move = -1;
     }
     if (move === 1) {
@@ -1664,7 +1682,7 @@ function serialize() {
 }
 function applyLoad(s) {
   if (!s || s.v !== 1 || typeof s.mask !== 'string' || !Array.isArray(s.teams)) return false;
-  game.mode = s.mode === 'solo' ? 'solo' : '2p';
+  game.mode = MODES.includes(s.mode) ? s.mode : 'sandbox';
   startGame(0);                        // Grundgerüst (Teams, Loren, Lifte) aufbauen
   mask = unpackMask(s.mask);
   groundY = Int16Array.from(s.groundY || groundY);
@@ -1696,8 +1714,9 @@ function applyLoad(s) {
   activeFlag = new Uint8Array(WORLD_W * WORLD_H);
   active = []; dirty = null;
   for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) wake(x, y);
-  cam.zoom = game.mode === 'solo' ? 2.1 : 1; cam.scale = 0;
+  cam.zoom = game.mode === '2p' ? 1 : 2.1; cam.scale = 0;
   layoutTouch();
+  if (typeof refreshMenu === 'function') refreshMenu();
   return true;
 }
 function toast(text, color) { addFloat(cam.x, cam.y - 30, text, color || '#eaf3fa'); }
@@ -1738,6 +1757,7 @@ async function loadGame() {
 
 // ---- Sieg & Rundenende ------------------------------------------------------
 function checkWin() {
+  if (game.mode === 'sandbox') return;   // offenes Buddeln: kein Rundenende
   for (const p of players) {
     if (p.score >= game.goal) { endRound(p); return; }
   }
@@ -1780,7 +1800,8 @@ function updateFx(dt) {
 
 // ---- Update-Hauptschritt ----------------------------------------------------
 function update(dt) {
-  if (game.state === 'play') {
+  // im Buddel-Modus gibt es weder Zeitlimit noch Rundenende
+  if (game.state === 'play' && game.mode !== 'sandbox') {
     game.t -= dt;
     if (game.t <= 0) {
       game.t = 0;
@@ -1788,6 +1809,7 @@ function update(dt) {
       endRound(a.score === b.score ? null : (a.score > b.score ? a : b));
     }
   }
+  for (const p of players) p.activeT = Math.max(0, (p.activeT || 0) - dt);
   for (const c of allClonks()) updateClonk(c, dt);
   updateProjectiles(dt);
   updateElevators(dt);
@@ -1808,7 +1830,9 @@ function posOf(c) { return c.state === 'dead' ? { x: teamOf(c).base.x, y: teamOf
 function computeCam(dt) {
   const fit = Math.min(CW / WORLD_W, (CH - TOP_UI - 8) / WORLD_H);
   let tx, ty, targetScale;
-  if (game.mode === 'solo') {
+  // Buddel-Modus: solange Blau nicht mitspielt, folgt die Kamera Rot
+  const soloView = game.mode === 'solo' || (game.mode === 'sandbox' && !(players[1] && players[1].activeT > 0));
+  if (soloView) {
     const p = posOf(players[0].controlled);
     tx = p.x; ty = p.y - 26;
     targetScale = fit * cam.zoom;
@@ -2195,11 +2219,12 @@ function drawHUD() {
   const y0 = 8;
   ctx.fillStyle = 'rgba(8,25,42,0.72)';
   roundRect(CW / 2 - 42, y0, 84, 28, 10); ctx.fill();
+  const sandbox = game.mode === 'sandbox';
   const mm = Math.floor(game.t / 60), ss = Math.floor(game.t % 60);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = game.t < 30 && game.state === 'play' ? '#ff6a5a' : '#eaf3fa';
+  ctx.fillStyle = !sandbox && game.t < 30 && game.state === 'play' ? '#ff6a5a' : '#eaf3fa';
   ctx.font = 'bold 14px system-ui';
-  ctx.fillText(`⏱ ${mm}:${ss.toString().padStart(2, '0')}`, CW / 2, y0 + 15);
+  ctx.fillText(sandbox ? '⛏️ ∞' : `⏱ ${mm}:${ss.toString().padStart(2, '0')}`, CW / 2, y0 + 15);
 
   const wide = CW >= 720;
   if (wide) {
@@ -2214,7 +2239,7 @@ function drawHUD() {
       ctx.fillStyle = p.color; ctx.font = 'bold 14px system-ui';
       ctx.fillText((p.ai ? '🤖 ' : left ? '🔴 ' : '🔵 ') + p.name + (c === p ? ' ①' : ' ②'), x0 + 10, y0 + 14);
       ctx.fillStyle = '#eaf3fa'; ctx.font = '12px system-ui';
-      ctx.fillText(`⭐ ${p.score}/${game.goal}`, x0 + 118, y0 + 14);
+      ctx.fillText(sandbox ? `⭐ ${p.score}` : `⭐ ${p.score}/${game.goal}`, x0 + 118, y0 + 14);
       ctx.fillText(`💰${c.carry} 💣${c.flints} ⚫${c.coal} 🪵${c.wood} 🧱${c.loam}`, x0 + 10, y0 + 35);
       ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0 + 160, y0 + 31, 48, 7);
       ctx.fillStyle = c.hp > 35 ? '#5ad06e' : '#ff6a5a';
@@ -2223,10 +2248,11 @@ function drawHUD() {
   } else {
     ctx.font = 'bold 12px system-ui';
     const [a, b] = players;
+    const gl = sandbox ? '' : `/${game.goal}`;
     ctx.textAlign = 'left'; ctx.fillStyle = a.color;
-    ctx.fillText(`🔴⭐${a.score}/${game.goal} 💰${a.controlled.carry} 💣${a.controlled.flints}`, 10, 50);
+    ctx.fillText(`🔴⭐${a.score}${gl} 💰${a.controlled.carry} 💣${a.controlled.flints}`, 10, 50);
     ctx.textAlign = 'right'; ctx.fillStyle = b.color;
-    ctx.fillText(`⭐${b.score}/${game.goal} 💰${b.controlled.carry} 💣${b.controlled.flints} ${b.ai ? '🤖' : '🔵'}`, CW - 10, 50);
+    ctx.fillText(`⭐${b.score}${gl} 💰${b.controlled.carry} 💣${b.controlled.flints} ${b.ai ? '🤖' : '🔵'}`, CW - 10, 50);
   }
   ctx.textBaseline = 'alphabetic';
 }
@@ -2262,23 +2288,37 @@ document.getElementById('btn-rotate').addEventListener('click', () => { stage.cl
 document.getElementById('b-zoomin').addEventListener('click', () => setZoom(cam.zoom * 1.3));
 document.getElementById('b-zoomout').addEventListener('click', () => setZoom(cam.zoom / 1.3));
 
-const selGoal = document.getElementById('sel-goal');
-selGoal.addEventListener('change', () => { game.goal = parseInt(selGoal.value, 10) || 8; checkWin(); });
-const selMode = document.getElementById('sel-mode');
-selMode.value = game.mode;
-selMode.addEventListener('change', () => {
-  game.mode = selMode.value === 'solo' ? 'solo' : '2p';
-  try { localStorage.setItem('clonk_mode', game.mode); } catch { /* egal */ }
-  menuEl.classList.add('hidden');
-  restart();
-});
-const selDis = document.getElementById('sel-disasters');
-selDis.value = game.disasters;
-selDis.addEventListener('change', () => {
-  game.disasters = selDis.value;
-  try { localStorage.setItem('clonk_disasters', game.disasters); } catch { /* egal */ }
-  game.disasterT = (game.disasters === 'wild' ? 25 : 55) + rng() * 30;
-});
+// Options-Reihen (statt nativer Selects – die sehen in der gedrehten Bühne
+// unglücklich aus): angewählter Knopf wird hervorgehoben
+function bindOpts(id, get, set) {
+  const row = document.getElementById(id);
+  const refresh = () => {
+    for (const b of row.children) b.classList.toggle('sel', b.dataset.v === String(get()));
+  };
+  row.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    set(b.dataset.v);
+    refresh();
+  });
+  refresh();
+  return refresh;
+}
+const menuRefreshers = [
+  bindOpts('opt-mode', () => game.mode, (v) => {
+    game.mode = MODES.includes(v) ? v : 'sandbox';
+    try { localStorage.setItem('clonk_mode', game.mode); } catch { /* egal */ }
+    menuEl.classList.add('hidden');
+    restart();
+  }),
+  bindOpts('opt-goal', () => game.goal, (v) => { game.goal = parseInt(v, 10) || 8; checkWin(); }),
+  bindOpts('opt-disasters', () => game.disasters, (v) => {
+    game.disasters = v;
+    try { localStorage.setItem('clonk_disasters', game.disasters); } catch { /* egal */ }
+    game.disasterT = (game.disasters === 'wild' ? 25 : 55) + rng() * 30;
+  }),
+];
+function refreshMenu() { for (const r of menuRefreshers) r(); }
 
 // Touch-Steuerung: Joysticks + Aktions-Buttons; ohne Touch-Gerät ausgeblendet
 setBtn('b-dig'); setBtn('b-fire'); setBtn('b-buy'); setBtn('b-switch');

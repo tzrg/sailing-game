@@ -599,6 +599,29 @@ html, body {
   max-width: 84vh;
 }
 
+/* Klonk: Options-Reihen im Menü (statt nativer Selects, die in der
+   gedrehten Bühne unglücklich aussehen) */
+.opt-row {
+  display: flex;
+  gap: 6px;
+}
+
+.opt-row button {
+  flex: 1;
+  padding: 10px 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.opt-row button.sel {
+  background: #2f6fae;
+  border-color: #2f6fae;
+}
+
 /* Klonk: Touch-Steuerung mit virtuellem Joystick + Aktions-Reihen je Team */
 .tcol {
   flex-direction: column;

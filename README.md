@@ -112,10 +112,14 @@ Docker-Container deployt.
 
 - **`clonk.html` – ⛏️ Klonk · Goldrausch**: Hommage an Clonk 4 / Clonk
   Planet (eigenständig umgesetzt) mit dem vollen Standard-Baukasten.
-  **Solo gegen die 🤖-KI** oder zwei Teams an **einer Tastatur**
-  (WASD+Q/E/F gegen Pfeiltasten+M/Komma/Punkt/N), jedes Team hat
-  **zwei Clonks** (Wechsel-Taste), eine Hütte, eine 🛒 Lore und eine
-  🏭 Chemiefabrik. Frisch generierte Pixel-Landschaft mit **Erde, Fels,
+  Drei Modi: **⛏️ Buddeln** (Standard – offenes Spiel ohne Gegner und
+  Zeitlimit, Blau steigt jederzeit per Tastatur mit ein: Koop, die
+  Kamera merkt das), **🤖 Solo gegen die KI** oder **👥 2 Spieler** als
+  Wettkampf an **einer Tastatur** (WASD+Q/E/F gegen
+  Pfeiltasten+M/Komma/Punkt/N). Jedes Team hat **zwei Clonks**
+  (Wechsel-Taste), eine Hütte, eine 🛒 Lore und eine 🏭 Chemiefabrik.
+  Schräg hochgraben geht pro Grabvorgang nur in eine Richtung (kein
+  Zickzack-Leitern durchs Erdreich). Frisch generierte Pixel-Landschaft mit **Erde, Fels,
   Granit (unzerstörbar), Goldadern, ⚫ Kohleflözen, Sandtaschen, See und
   Lavagrotten**; Wasser & Lava **fließen** (Zellautomat), Sand rieselt
   nach, und **Lava + Wasser = Stein**. Bewegen wie im Original:
@@ -134,10 +138,13 @@ Docker-Container deployt.
   🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane, die sich mit Lava zur
   Oberfläche fressen. Die **Kamera** folgt dem Geschehen (solo
   reingezoomt, zu zweit bleiben beide im Bild, ＋/－ zoomt), 📱 Mobile
-  mit **virtuellem Joystick** (seitlich laufen, oben springen/klettern,
-  unten graben – schräg gräbt schräg) plus Aktionstasten (🔄 🏭 ⛏️ 💣)
-  und automatischer ⟳ Querformat-Drehung; im 2-Spieler-Modus bekommt
-  Blau einen **eigenen Joystick samt Tasten** (Tablet quer aufstellen).
+  mit **virtuellem Joystick** (bewegen: seitlich laufen, oben
+  springen/klettern, unten abtauchen/abseilen/Lift bohren – **gegraben
+  wird mit der ⛏️-Taste**, Richtung vom Joystick, schräg hoch inklusive)
+  plus Aktionstasten (🔄 🏭 ⛏️ 💣) und automatischer ⟳
+  Querformat-Drehung; im 2-Spieler-Modus bekommt Blau einen **eigenen
+  Joystick samt Tasten** (Tablet quer aufstellen). Menü-Optionen als
+  Button-Reihen (in der gedrehten Bühne lesbarer als native Selects).
   **💾 Spielstände** über das Menü: kompletter Weltzustand (RLE-gepackte
   Maske), eingeloggt im Server-Slot `/api/save/clonk`
   (geräteübergreifend), sonst lokal im Browser. Das Spieltempo läuft
@@ -350,7 +357,9 @@ railway.json
   Lore, Grubenlift (begehbarer Korb, bohren/hochfahren, explosionsfest),
   Chemiefabrik-Rezepte (Kohle/Holz/Gold), Baum→Holz, Wipfe,
   Katastrophen (Meteor/Vulkan/Erdbeben/Regen), Clonk-Wechsel, Solo-KI,
-  Touch-Joysticks (beide Teams, 2P-Layout), Graben aus dem Grubenlift,
+  Touch-Joysticks (beide Teams, 2P-Layout, ⛏️-Taste statt Stick-runter
+  zum Graben), Graben aus dem Grubenlift, Zickzack-Hochgrab-Sperre,
+  Buddel-Modus (Standard, offen, Koop-Kamera), Menü-Button-Reihen,
   Spielstand-Roundtrip (RLE-Maske, localStorage), Kamera/Zoom und die
   Querformat-Drehung.
 

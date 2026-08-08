@@ -71,28 +71,31 @@
 
       <div class="menu-group">
         <div class="group-title">Modus</div>
-        <select id="sel-mode" class="menu-select">
-          <option value="solo">1 Spieler – gegen 🤖 Blau</option>
-          <option value="2p">2 Spieler – eine Tastatur</option>
-        </select>
+        <div class="opt-row" id="opt-mode">
+          <button data-v="sandbox">⛏️ Buddeln</button>
+          <button data-v="solo">🤖 Solo</button>
+          <button data-v="2p">👥 2 Spieler</button>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Buddeln: offenes Spiel ohne Gegner und
+          Zeitlimit – Blau kann jederzeit per Tastatur mitmachen (Koop).</p>
       </div>
 
       <div class="menu-group">
-        <div class="group-title">Spielziel</div>
-        <select id="sel-goal" class="menu-select">
-          <option value="5">5 Gold – schnelle Runde</option>
-          <option value="8" selected>8 Gold – Standard</option>
-          <option value="12">12 Gold – lange Schlacht</option>
-        </select>
+        <div class="group-title">Spielziel (Solo &amp; 2 Spieler)</div>
+        <div class="opt-row" id="opt-goal">
+          <button data-v="5">5 💰</button>
+          <button data-v="8">8 💰</button>
+          <button data-v="12">12 💰</button>
+        </div>
       </div>
 
       <div class="menu-group">
         <div class="group-title">Katastrophen</div>
-        <select id="sel-disasters" class="menu-select">
-          <option value="aus">Aus – nur ihr zwei</option>
-          <option value="normal" selected>Normal – ab und zu kracht's</option>
-          <option value="wild">Wild – Clonk-Planet-Feeling</option>
-        </select>
+        <div class="opt-row" id="opt-disasters">
+          <button data-v="aus">Aus</button>
+          <button data-v="normal">Normal</button>
+          <button data-v="wild">Wild</button>
+        </div>
       </div>
 
       <button class="menu-btn" id="btn-save">💾 Spielstand speichern</button>
@@ -105,26 +108,30 @@
   <div id="help">
     <div class="panel">
       <h1>⛏️ Klonk · Goldrausch</h1>
-      <p>Hommage an <b>Clonk Planet</b>: Jedes Team hat eine Hütte, eine Lore, eine Chemiefabrik
-        und <b>zwei Clonks</b>. Grabt Gold aus Erde und Fels, liefert es ab – wer zuerst das
-        Spielziel erreicht (oder nach 5 Minuten vorne liegt), gewinnt. Solo gegen 🤖 Blau oder
-        zu zweit an einer Tastatur.</p>
+      <p>Hommage an <b>Clonk Planet</b>: Jedes Team hat eine Hütte, eine Lore, eine Chemiefabrik,
+        einen Grubenlift und <b>zwei Clonks</b>. Drei Modi im ☰-Menü:
+        <b>⛏️ Buddeln</b> (Standard) – offenes Spiel ohne Gegner und Zeitlimit, Blau kann
+        jederzeit per Tastatur mit einsteigen (Koop) · <b>🤖 Solo</b> gegen die KI ·
+        <b>👥 2 Spieler</b> als Wettkampf ums Spielziel (wer zuerst liefert oder nach
+        5 Minuten vorne liegt, gewinnt).</p>
       <ul>
         <li><b>🔴 Spieler 1:</b> <b>A/D</b> laufen · <b>W</b> springen, klettern &amp; hangeln ·
           <b>S</b> graben · <b>Q</b> werfen · <b>E</b> benutzen (kaufen / 🧱 Lehmbrücke) ·
           <b>F</b> Clonk wechseln</li>
         <li><b>🔵 Spieler 2:</b> <b>←→↑↓</b> · <b>M</b>/<b>Komma</b> werfen · <b>Punkt</b> benutzen ·
           <b>N</b> Clonk wechseln</li>
-        <li>📱 <b>Touch:</b> <b>Joystick</b> links – seitlich laufen, oben springen/klettern/
-          hochschwimmen, unten graben/abtauchen (schräg = schräg graben!). Rechts 🔄 wechseln,
-          🏭 benutzen, ⛏️ graben (mit Joystick-Richtung), 💣 werfen. Im <b>2-Spieler-Modus</b>
-          bekommt Blau rechts einen eigenen Joystick samt Tasten – Tablet quer aufstellen!
-          ⟳ dreht ins Querformat, ＋/－ zoomt.</li>
+        <li>📱 <b>Touch:</b> <b>Joystick</b> links bewegt – seitlich laufen, oben
+          springen/klettern/hochschwimmen, unten abtauchen, abseilen oder den Lift bohren.
+          <b>Gegraben wird mit ⛏️ (halten)</b> – die Richtung kommt vom Joystick, schräg nach
+          oben inklusive. Rechts außerdem 🔄 wechseln, 🏭 benutzen, 💣 werfen. Im
+          <b>2-Spieler-Modus</b> bekommt Blau rechts einen eigenen Joystick samt Tasten –
+          Tablet quer aufstellen! ⟳ dreht ins Querformat, ＋/－ zoomt.</li>
         <li><b>Bewegen wie in Clonk:</b> Wände hochklettern (dagegen drücken), an Decken
           <b>hangeln</b> (in der Luft ⤒ halten), <b>schwimmen &amp; tauchen</b> (⤒ hoch, ⛏️ runter –
           auf die <b>Luftblasen-Anzeige</b> achten!). In 🌋 <b>Lava</b> verbrennt man sich böse –
           Wasser löscht.</li>
-        <li><b>Graben:</b> ⛏️ halten – allein senkrecht, mit ←/→ waagerecht, mit ⤒ schräg hoch.
+        <li><b>Graben:</b> ⛏️ halten – allein senkrecht, mit ←/→ waagerecht, mit ⤒ schräg hoch
+          (pro Grabvorgang nur in <b>eine</b> Richtung nach oben – kein Zickzack-Leitern).
           Erde, Sand, <b>⚫ Kohle</b> und Gold sind grabbar; <b>Fels</b> sprengt nur der Feuerstein,
           <b>Granit</b> hält sogar dem stand. Sand rieselt nach, Wasser flutet Stollen –
           und Lava + Wasser = Stein!</li>

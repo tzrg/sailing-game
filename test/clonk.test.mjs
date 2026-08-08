@@ -19,6 +19,10 @@ try {
   await page.waitForFunction(() => window.__clonk);
   await page.click('#btn-start');   // Hilfe schließen
 
+  // Frischer Browser (kein localStorage): Standard ist der offene Buddel-Modus
+  const defMode = await page.evaluate(() => window.__clonk.game.mode);
+  check('Frischer Start landet im ⛏️ Buddel-Modus', defMode === 'sandbox', defMode);
+
   // Feste Saat + Pause: alle Ticks kommen ab jetzt aus update(dt)
   await page.evaluate(() => {
     const C = window.__clonk;
@@ -686,9 +690,22 @@ try {
     const C = window.__clonk;
     C.joys[0].dy = 0;
     const a = C.players()[0];
-    return { state: a.state, dy: a.y - y0 };
+    const noDig = { state: a.state, dy: a.y - y0 };
+    // ⛏️-Taste + Joystick seitlich = graben mit Richtung
+    C.buttons['b-dig'].held = true;
+    C.joys[0].dx = 1;
+    return { noDig, x0: a.x };
   }, r.y0);
-  check('Joystick nach unten gräbt', r.state === 'dig' && r.dy > 10, JSON.stringify(r));
+  check('Joystick nach unten gräbt NICHT (nur Bewegung)', r.noDig.state !== 'dig' && r.noDig.dy < 4, JSON.stringify(r.noDig));
+  await tick(0.8);
+  r = await page.evaluate((x0) => {
+    const C = window.__clonk;
+    C.buttons['b-dig'].held = false;
+    C.joys[0].dx = 0;
+    const a = C.players()[0];
+    return { state: a.state, moved: a.x - x0 };
+  }, r.x0);
+  check('⛏️-Taste + Joystick-Richtung gräbt', r.state === 'dig' && r.moved > 8, JSON.stringify(r));
   r = await page.evaluate(() => {
     const C = window.__clonk;
     C.game.mode = 'solo';
@@ -723,6 +740,105 @@ try {
   }, r);
   check('Grabtaste + Richtung gräbt seitlich aus dem Fahrstuhl (Korb bohrt nicht)',
     r.state === 'dig' && r.moved > 8 && r.drilled === 0, JSON.stringify(r));
+
+  // ---- Grubenlift: Joystick nach unten bohrt (ohne ⛏️-Taste)
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    p.x = el.x; p.y = el.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.joys[0].dy = 1;
+    return { y0: el.y };
+  });
+  await tick(1);
+  r = await page.evaluate((y0) => {
+    const C = window.__clonk;
+    C.joys[0].dy = 0;
+    return { drilled: C.elevators()[0].y - y0 };
+  }, r.y0);
+  check('Joystick nach unten bohrt auf dem Aufzugskorb', r.drilled > 15, JSON.stringify(r));
+
+  // ---- Kein Zickzack-Leitern: Richtungswechsel beim Hochgraben geht nur waagerecht weiter
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    const g = C.groundY()[x];
+    C.carveCircle(x, g + 50, 13, true);   // Höhle, von der aus hochgegraben wird
+    let floor = g + 50;
+    while (!C.solid(x, floor + 1)) floor++;
+    p.x = x; p.y = floor; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.pressed.add('s'); C.pressed.add('w'); C.pressed.add('d');
+    return { y0: p.y };
+  }, dryB);
+  await tick(0.7);
+  r = await page.evaluate((y0) => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    const rose1 = y0 - p.y;
+    C.pressed.delete('d'); C.pressed.add('a');   // Richtungswechsel mitten im Aufstieg
+    return { rose1, y1: p.y };
+  }, r.y0);
+  await tick(0.7);
+  r = await page.evaluate(({ rose1, y1 }) => {
+    const C = window.__clonk;
+    C.pressed.delete('s'); C.pressed.delete('w'); C.pressed.delete('a');
+    const p = C.players()[0];
+    return { rose1, rose2: y1 - p.y };
+  }, r);
+  check('Schräg hochgraben klappt in eine Richtung', r.rose1 > 8, JSON.stringify(r));
+  check('Nach Richtungswechsel geht es nicht weiter nach oben (kein Zickzack)', r.rose2 < 4, JSON.stringify(r));
+
+  // ---- Buddel-Modus (Sandbox): offen, ohne Gegner, koop-fähig
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.game.mode = 'sandbox';
+    C.startGame(42);
+    C.game.paused = true;
+    const t0 = C.game.t;
+    for (let i = 0; i < 60; i++) C.update(0.016);
+    const p = C.players()[0];
+    p.score = 99;
+    C.update(0.016);
+    return {
+      aiOff: C.players()[1].ai === false,
+      timerFrozen: C.game.t === t0,
+      neverOver: C.game.state === 'play',
+    };
+  });
+  check('Buddel-Modus: keine KI, kein Zeitlimit, kein Rundenende', r.aiOff && r.timerFrozen && r.neverOver, JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const [a, b] = C.players();
+    a.x = 200; b.x = 800;
+    b.activeT = 0;
+    for (let i = 0; i < 80; i++) C.computeCam(0.05);
+    const soloCamX = C.cam.x;
+    b.activeT = 10;                     // Blau steigt ein (Koop)
+    for (let i = 0; i < 80; i++) C.computeCam(0.05);
+    return { soloCamX, koopCamX: C.cam.x };
+  });
+  check('Buddel-Kamera folgt Rot, bis Blau mitspielt (dann beide im Bild)',
+    r.soloCamX < 420 && r.koopCamX > r.soloCamX + 60, JSON.stringify(r));
+
+  // ---- Menü: Options-Reihen statt Selects
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const row = document.getElementById('opt-goal');
+    row.querySelector('button[data-v="12"]').click();
+    const modeRow = document.getElementById('opt-mode');
+    return {
+      goal: C.game.goal,
+      goalSel: row.querySelector('button[data-v="12"]').classList.contains('sel'),
+      modeButtons: modeRow.children.length,
+      modeSel: modeRow.querySelector('button.sel')?.dataset.v,
+    };
+  });
+  check('Menü-Buttons: Spielziel-Klick übernimmt & markiert', r.goal === 12 && r.goalSel, JSON.stringify(r));
+  check('Modus-Reihe zeigt 3 Optionen, aktuelle markiert', r.modeButtons === 3 && r.modeSel === 'sandbox', JSON.stringify(r));
 
   // ---- Spielstände: kompletter Roundtrip über die RLE-Maske
   r = await page.evaluate((x) => {
