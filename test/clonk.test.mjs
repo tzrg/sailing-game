@@ -831,6 +831,101 @@ try {
   check('Menü-Buttons: Spielziel-Klick übernimmt & markiert', r.goal === 12 && r.goalSel, JSON.stringify(r));
   check('Modus-Reihe zeigt 3 Optionen, aktuelle markiert', r.modeButtons === 3 && r.modeSel === 'sandbox', JSON.stringify(r));
 
+  // ---- Werfen aus dem Inventar: Wurfgut wechseln + Auto-Auswahl
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.game.mode = '2p';
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk';
+    p.flints = 2; p.carry = 2; p.throwSel = 0;
+    C.pressed.add('r');   // Wurfgut wechseln: 💣 -> 💰
+    C.update(0.016);
+    C.pressed.delete('r');
+    const sel = p.throwSel;
+    C.pressed.add('q');
+    C.update(0.016);
+    C.pressed.delete('q');
+    return {
+      sel, carry: p.carry, flints: p.flints,
+      thrown: C.items().some((i) => i.type === 'nugget' && i.own),
+    };
+  }, dryA);
+  check('R wechselt das Wurfgut auf 💰 Gold', r.sel === 1, JSON.stringify(r));
+  check('Geworfenes Gold fliegt als Gegenstand (Feuersteine bleiben in der Tasche)',
+    r.carry === 1 && r.flints === 2 && r.thrown, JSON.stringify(r));
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    p.flints = 0; p.carry = 0; p.coal = 1; p.throwSel = 0;   // Gewähltes leer
+    p.throwCd = 0;
+    C.throwItem(p);
+    return { coal: p.coal, sel: p.throwSel, thrown: C.items().some((i) => i.type === 'coal' && i.own) };
+  });
+  check('Leeres Wurfgut: automatisch nächstes (⚫ Kohle)', r.coal === 0 && r.sel === 2 && r.thrown, JSON.stringify(r));
+  await tick(1);
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    const it = C.items().find((i) => i.type === 'coal');
+    if (it) { p.x = it.x; p.y = it.y + 6; }   // hinterherlaufen
+    return null;
+  });
+  await tick(0.2);
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    return { coal: C.players()[0].coal, left: C.items().some((i) => i.type === 'coal') };
+  });
+  check('Geworfenes lässt sich wieder aufsammeln (nach kurzer Schonfrist)', r.coal === 1 && !r.left, JSON.stringify(r));
+
+  // ---- Sprengung im See hinterlässt keine dunklen Flecken über der Oberfläche
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42);
+    C.game.paused = true;
+    let wx = -1, wy = -1, best = 0;
+    for (let x = 40; x < C.WORLD_W - 40; x += 4) {
+      let depth = 0, top = -1;
+      for (let y = 100; y < C.WORLD_H; y++) if (C.matAt(x, y) === M.WATER) { if (top < 0) top = y; depth++; }
+      if (depth > best) { best = depth; wx = x; wy = top; }
+    }
+    C.explode(wx, wy + 6, null);
+    let darkAboveSurface = 0;
+    for (let y = wy - 30; y < wy + 30; y++) for (let x = wx - 30; x <= wx + 30; x++) {
+      if (C.matAt(x, y) === M.TUNNEL && y < C.groundY()[x]) darkAboveSurface++;
+    }
+    return { darkAboveSurface };
+  });
+  check('Sprengung im See: kein dunkler Stollen-Fleck über der Oberfläche', r.darkAboveSurface === 0, JSON.stringify(r));
+
+  // ---- Waagerecht graben trägt zuverlässig (auch über Unebenheiten)
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    const g = C.groundY()[x];
+    p.x = x; p.y = g - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.pressed.add('s');
+    return { y0: p.y };
+  }, dryA);
+  await tick(0.8);   // erst ein Stück senkrecht runter
+  r = await page.evaluate((y0) => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    C.pressed.add('d');   // dann waagerecht weiter
+    return { y0, x0: p.x, y1: p.y };
+  }, r.y0);
+  await tick(1.5);
+  r = await page.evaluate(({ x0, y1 }) => {
+    const C = window.__clonk;
+    C.pressed.delete('s'); C.pressed.delete('d');
+    const p = C.players()[0];
+    return { moved: p.x - x0, sank: p.y - y1, state: p.state };
+  }, r);
+  check('Waagerecht graben aus dem Schacht heraus trägt weit', r.moved > 25 && r.state === 'dig', JSON.stringify(r));
+
   // ---- Spielstände: kompletter Roundtrip über die RLE-Maske
   r = await page.evaluate((x) => {
     const C = window.__clonk;

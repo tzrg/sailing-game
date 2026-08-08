@@ -119,7 +119,14 @@ Docker-Container deployt.
   Pfeiltasten+M/Komma/Punkt/N). Jedes Team hat **zwei Clonks**
   (Wechsel-Taste), eine Hütte, eine 🛒 Lore und eine 🏭 Chemiefabrik.
   **Nach oben gräbt kein Clonk** – wie im Original führen Lehmbrücken,
-  Klettern oder der Grubenlift zurück ans Licht. Frisch generierte Pixel-Landschaft mit **Erde, Fels,
+  Klettern oder der Grubenlift zurück ans Licht; beim Graben "schwimmt"
+  der Clonk durchs Material, solange vorn etwas Grabbares ist
+  (waagerechte Stollen tragen zuverlässig). **🎯 Werfen kann man alles**:
+  💣 explodiert, 💰 ⚫ 🪵 🧱 fliegen im Bogen und bleiben liegen (Gold
+  direkt in die Lore werfen!); Wurfgut wechseln mit R/M bzw. der
+  🎯-Taste, die Wurf-Taste zeigt die Auswahl. Freigelegte Zellen werden
+  über der ursprünglichen Oberfläche Himmel, darunter Stollen – keine
+  dunklen Flecken mehr im See nach Sprengungen. Frisch generierte Pixel-Landschaft mit **Erde, Fels,
   Granit (unzerstörbar), Goldadern, ⚫ Kohleflözen, Sandtaschen, See und
   Lavagrotten**; Wasser & Lava **fließen** (Zellautomat), Sand rieselt
   nach, und **Lava + Wasser = Stein**. Bewegen wie im Original:
@@ -361,8 +368,9 @@ railway.json
   Katastrophen (Meteor/Vulkan/Erdbeben/Regen), Clonk-Wechsel, Solo-KI,
   Touch-Joysticks (beide Teams, 2P-Layout, ⛏️-Taste statt Stick-runter
   zum Graben), Graben aus dem Grubenlift, Hochgrab-Verbot (wie im
-  Original), Buddel-Modus (Standard, offen, Koop-Kamera),
-  Menü-Button-Reihen,
+  Original), tragfähige Waagerecht-Stollen, Wurf-Inventar (Wechsel,
+  Auto-Auswahl, Wieder-Aufsammeln), Hintergrund-Regel im See,
+  Buddel-Modus (Standard, offen, Koop-Kamera), Menü-Button-Reihen,
   Spielstand-Roundtrip (RLE-Maske, localStorage), Kamera/Zoom und die
   Querformat-Drehung.
 

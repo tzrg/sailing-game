@@ -36,6 +36,13 @@ function matAt(x, y) {
   return mask[idx(x, y)];
 }
 const solid = (x, y) => SOLID[matAt(x, y)];
+// Hintergrund für freigelegte Zellen: über der ursprünglichen Oberfläche
+// Himmel, darunter dunkler Stollen (sonst schwimmen dunkle Flecken im See,
+// wenn Sprengungen Wasser verdrängen)
+function bgMat(x, y) {
+  x |= 0; y |= 0;
+  return groundY && y < groundY[clamp(x, 0, WORLD_W - 1)] ? MAT.SKY : MAT.TUNNEL;
+}
 
 // ---- Zufall (seedbar, damit Tests reproduzierbar generieren können) --------
 function mulberry32(seed) {
@@ -289,13 +296,13 @@ function carveCircle(cx, cy, r, breakRock) {
       if (isFree(m) || m === MAT.GRANIT || m === MAT.PLATFORM) continue;
       if (!breakRock && !DIGGABLE[m]) continue;         // Fels/Wasser/Lava: Schaufel scheitert
       if (breakRock && (m === MAT.WATER || m === MAT.LAVA)) {
-        mask[i] = MAT.TUNNEL;                            // Sprengung verdrängt Flüssigkeit
+        mask[i] = bgMat(x, y);                           // Sprengung verdrängt Flüssigkeit
         continue;
       }
       if (m === MAT.GOLD) gold++;
       if (m === MAT.COAL) coal++;
       // oben offen? Dann wird's Himmel, sonst dunkler Stollen
-      mask[i] = (y === 0 || mask[idx(x, y - 1)] === MAT.SKY) ? MAT.SKY : MAT.TUNNEL;
+      mask[i] = bgMat(x, y);
     }
   }
   applyRegion(cx - r, cy - r, 2 * r + 1, 2 * r + 1);
@@ -347,10 +354,10 @@ function tryFlow(i, x, y, m) {
     const jy = (j / WORLD_W) | 0, jx = j - jy * WORLD_W;
     if (Math.abs(jx - x) > 1) continue;                 // Zeilenumbruch abfangen
     const mj = mask[j];
-    if (opposing !== -1 && mj === opposing) { quench(jx, jy); mask[i] = isFree(matAt(x, y - 1)) && matAt(x, y - 1) === MAT.SKY ? MAT.SKY : MAT.TUNNEL; markDirty(x, y); return true; }
+    if (opposing !== -1 && mj === opposing) { quench(jx, jy); mask[i] = bgMat(x, y); markDirty(x, y); return true; }
     if (!isFree(mj)) continue;
     mask[j] = m;
-    mask[i] = (y === 0 || mask[idx(x, y - 1)] === MAT.SKY) ? MAT.SKY : MAT.TUNNEL;
+    mask[i] = bgMat(x, y);
     activeFlag[j] = 1; active.push(j);
     markDirty(x, y); markDirty(jx, jy);
     wake(x - 1, y); wake(x + 1, y); wake(x, y - 1);
@@ -430,8 +437,8 @@ function makeClonk(id, name, color, keys, baseX) {
     state: 'air', hp: 100, carry: 0, flints: 3, coal: 0, wood: 0, loam: 1,
     score: 0, ko: 0,
     breath: 1, burnT: 0, goldPix: 0, coalPix: 0, rem: 0, bridgeT: 0,
-    respawnT: 0, tumbleT: 0, throwCd: 0, hurtT: 0,
-    walkPhase: 0, prevThrow: false, prevUse: false, prevSwitch: false,
+    respawnT: 0, tumbleT: 0, throwCd: 0, hurtT: 0, throwSel: 0,
+    walkPhase: 0, prevThrow: false, prevUse: false, prevSwitch: false, prevCycle: false,
     ai: false, buddy: null, lead: null, controlled: null,
     virt: { left: false, right: false, jump: false, dig: false, throw: false, use: false, switch: false },
     aiS: { thinkT: 0, target: null, lastX: 0, lastY: 0, stuckT: 0, phase: 'seek', backoffT: 0, backDir: 0, throwAfter: false, waitT: 0, throwNow: false },
@@ -463,9 +470,9 @@ function startGame(seed) {
 
   players = [
     makeClonk(0, 'Rot', '#e74c3c',
-      { left: ['a'], right: ['d'], jump: ['w'], dig: ['s'], throw: ['q'], use: ['e'], switch: ['f'] }, BASE_X[0]),
+      { left: ['a'], right: ['d'], jump: ['w'], dig: ['s'], throw: ['q'], use: ['e'], switch: ['f'], cycle: ['r'] }, BASE_X[0]),
     makeClonk(1, 'Blau', '#3f7fd6',
-      { left: ['arrowleft'], right: ['arrowright'], jump: ['arrowup'], dig: ['arrowdown'], throw: [',', 'm'], use: ['.', '-'], switch: ['n'] }, BASE_X[1]),
+      { left: ['arrowleft'], right: ['arrowright'], jump: ['arrowup'], dig: ['arrowdown'], throw: [','], use: ['.', '-'], switch: ['n'], cycle: ['m'] }, BASE_X[1]),
   ];
   players[1].ai = game.mode === 'solo';
   for (const p of players) {
@@ -497,7 +504,7 @@ function startGame(seed) {
       for (let x = el.x - CASE_HW - 1; x <= el.x + CASE_HW + 1; x++) {
         const m = matAt(x, y);
         if (m !== MAT.GRANIT && SOLID[m]) {
-          mask[idx(x, y)] = (y === 0 || mask[idx(x, y - 1)] === MAT.SKY) ? MAT.SKY : MAT.TUNNEL;
+          mask[idx(x, y)] = bgMat(x, y);
         }
       }
     }
@@ -727,10 +734,13 @@ function updateClonk(c, dt) {
   if (cap.id === 1 && !cap.ai && (L || R || J || D || DN)) cap.activeT = 10;
   if (dirIn && c.state !== 'scale') c.dir = dirIn;
 
-  // Werfen, Benutzen, Wechseln (Flanken)
+  // Werfen, Wurfgut wechseln, Benutzen, Wechseln (Flanken)
   const T = cIn(c, 'throw');
-  if (T && !c.prevThrow && c.state !== 'tumble') throwFlint(c);
+  if (T && !c.prevThrow && c.state !== 'tumble') throwItem(c);
   c.prevThrow = T;
+  const CY = cIn(c, 'cycle');
+  if (CY && !c.prevCycle) cycleThrow(c);
+  c.prevCycle = CY;
   const U = cIn(c, 'use');
   const nearBase = Math.abs(c.x - cap.base.x) < 46 && Math.abs(c.y - cap.base.y) < 54;
   if (U && !c.prevUse && nearBase) buyFlint(c);
@@ -862,6 +872,7 @@ function updateClonk(c, dt) {
   // Einsammeln (Klumpen, Feuersteine, Lehm, Kohle, Holz)
   for (const it of items) {
     if (it.buried || it.dead) continue;
+    if (it.own === c && it.ownT > 0) continue;   // frisch Geworfenes nicht sofort wieder einstecken
     const dx = it.x - c.x, dy = it.y - (c.y - PH / 2);
     if (dx * dx + dy * dy > 15 * 15) continue;
     if (it.type === 'nugget') { it.dead = true; c.carry++; addFloat(c.x, c.y - PH - 6, '💰', '#ffd166'); }
@@ -942,6 +953,16 @@ function digStep(c, dt) {
   let n = c.rem | 0; c.rem -= n;
   while (n-- > 0) {
     const cx = c.x + dx * 3, cy = c.y - PH / 2 + dy * 3;
+    // Ist in Grabrichtung überhaupt noch Material? Beim Graben "schwimmt" der
+    // Clonk durchs Erdreich (wie im Original) – erst wenn der Weg offen ist,
+    // gilt wieder normale Physik.
+    if (!areaDiggable(cx + dx * 5, cy + dy * 5, DIG_R)) {
+      if (!grounded(c.x, c.y)) { c.state = 'air'; c.vy = 30; break; }
+      const r = stepWalk(c, dirIn || c.dir);       // offener Stollen: weiterlaufen
+      if (r === 'fall') { c.state = 'air'; c.vy = 30; break; }
+      if (r === 'wall') break;
+      continue;
+    }
     const gold = carveCircle(cx, cy, DIG_R, false);
     collectGoldPix(c, gold, carveCircle.lastCoal, cx, cy);
     const nx = clamp(c.x + dx, HW + 1, WORLD_W - HW - 2);
@@ -955,13 +976,16 @@ function digStep(c, dt) {
       }
     }
     c.x = nx; c.y = ny;
-    if (dy < 0.8) {
-      let d = 0;
-      while (d <= 4 && !grounded(c.x, c.y)) { c.y += 1; d++; }
-      if (d > 4) { c.y -= d; c.state = 'air'; c.vy = 30; break; }
-    }
     if ((n & 3) === 0) puff(c.x - dx * 5, c.y - PH / 2, 1, '#8a6a48');
   }
+}
+// grobe Abtastung: liegt im Umkreis noch grabbares Material?
+function areaDiggable(cx, cy, r) {
+  cx |= 0; cy |= 0;
+  for (let y = cy - r; y <= cy + r; y += 3) for (let x = cx - r; x <= cx + r; x += 3) {
+    if (DIGGABLE[matAt(x, y)]) return true;
+  }
+  return false;
 }
 function collectGoldPix(c, gold, coal, x, y) {
   if (gold) {
@@ -1001,15 +1025,47 @@ function buildBridge(c, dt, up) {
   if (c.loamPix >= 9) { c.loamPix = 0; c.loam--; if (c.loam <= 0) addFloat(c.x, c.y - PH - 8, '🧱 leer', '#ffb0a0'); }
 }
 
-// ---- Feuersteine & Meteore --------------------------------------------------
-function throwFlint(c) {
-  if (c.flints <= 0 || c.throwCd > 0 || game.state !== 'play') return;
-  c.flints--; c.throwCd = 0.45;
-  projectiles.push({
-    x: c.x + c.dir * 6, y: c.y - PH + 2,
-    vx: c.dir * 175 + c.vx * 0.5, vy: -165, owner: c, t: 0, spin: rng() * 6,
-  });
+// ---- Werfen (alles aus den Taschen, wie im Original) ------------------------
+const THROWABLES = [
+  { key: 'flint', emoji: '💣', has: (c) => c.flints > 0, take: (c) => c.flints-- },
+  { key: 'nugget', emoji: '💰', has: (c) => c.carry > 0, take: (c) => c.carry-- },
+  { key: 'coal', emoji: '⚫', has: (c) => c.coal > 0, take: (c) => c.coal-- },
+  { key: 'wood', emoji: '🪵', has: (c) => c.wood > 0, take: (c) => c.wood-- },
+  { key: 'loam', emoji: '🧱', has: (c) => c.loam > 0, take: (c) => c.loam-- },
+];
+function throwItem(c) {
+  if (c.throwCd > 0 || game.state !== 'play') return;
+  let i = c.throwSel || 0;
+  if (!THROWABLES[i].has(c)) {                 // Gewähltes leer: nimm das nächste
+    i = THROWABLES.findIndex((t) => t.has(c));
+    if (i < 0) { addFloat(c.x, c.y - PH - 8, 'Taschen leer!', '#ffb0a0'); c.throwCd = 0.3; return; }
+    c.throwSel = i;
+  }
+  const t = THROWABLES[i];
+  t.take(c);
+  c.throwCd = 0.45;
+  if (t.key === 'flint') {
+    projectiles.push({
+      x: c.x + c.dir * 6, y: c.y - PH + 2,
+      vx: c.dir * 175 + c.vx * 0.5, vy: -165, owner: c, t: 0, spin: rng() * 6,
+    });
+  } else {
+    // Gegenstände fliegen im Bogen und bleiben liegen (Gold gern in die Lore!)
+    items.push({ type: t.key, x: c.x + c.dir * 6, y: c.y - PH + 2, vx: c.dir * 150 + c.vx * 0.5, vy: -140, own: c, ownT: 0.7 });
+  }
 }
+function cycleThrow(c) {
+  for (let k = 1; k <= THROWABLES.length; k++) {
+    const i = ((c.throwSel || 0) + k) % THROWABLES.length;
+    if (THROWABLES[i].has(c)) {
+      c.throwSel = i;
+      addFloat(c.x, c.y - PH - 8, THROWABLES[i].emoji + ' gewählt', '#fff');
+      return;
+    }
+  }
+  addFloat(c.x, c.y - PH - 8, 'Taschen leer!', '#ffb0a0');
+}
+const throwFlint = throwItem;   // alter Name, weiter im Test-Hook verfügbar
 
 // Chemiefabrik an der eigenen Hütte: Kohle > Holz > Gold als Rezept
 function buyFlint(c) {
@@ -1268,7 +1324,7 @@ function onElevatorCase(c) {
 function eraseCase(el) {
   for (let y = el.y; y < el.y + 3; y++) for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
     if (matAt(x, y) === MAT.PLATFORM) {
-      mask[idx(x, y)] = (y === 0 || mask[idx(x, y - 1)] === MAT.SKY) ? MAT.SKY : MAT.TUNNEL;
+      mask[idx(x, y)] = bgMat(x, y);
     }
   }
 }
@@ -1288,7 +1344,7 @@ function moveCase(el, dir) {
       if (m === MAT.GRANIT) return false;
       if (m === MAT.GOLD) gold++;
       if (m === MAT.COAL) coal++;
-      if (!isFree(m) && m !== MAT.PLATFORM) mask[idx(xx, el.y + 3)] = MAT.TUNNEL;
+      if (!isFree(m) && m !== MAT.PLATFORM) mask[idx(xx, el.y + 3)] = bgMat(xx, el.y + 3);
     }
     el.goldPix += gold; el.coalPix += coal;
     while (el.goldPix >= GOLD_PER_NUGGET) {
@@ -1307,7 +1363,7 @@ function moveCase(el, dir) {
     for (let y = el.y - 19; y <= el.y + 1; y++) {
       for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
         if (isGrain(matAt(x, y))) {
-          mask[idx(x, y)] = (y === 0 || mask[idx(x, y - 1)] === MAT.SKY) ? MAT.SKY : MAT.TUNNEL;
+          mask[idx(x, y)] = bgMat(x, y);
           markDirty(x, y);
         }
       }
@@ -1524,6 +1580,7 @@ function updateItems(dt) {
       if (!solid(it.x, it.y)) { it.buried = false; it.vy = -20; }
       continue;
     }
+    if (it.ownT > 0) it.ownT -= dt;
     if (it.rest) {
       if (solid(it.x, it.y + 2)) continue;
       it.rest = false;
@@ -1934,6 +1991,7 @@ function draw(time) {
   ctx.globalAlpha = 1;
   ctx.restore();
 
+  updateThrowBtns();
   drawHUD();
   if (game.paused && game.state === 'play') banner('⏸ Pause', 'Leertaste zum Weiterspielen');
   if (game.state === 'over') {
@@ -2210,6 +2268,20 @@ function drawClonk(c, time) {
   }
 }
 
+// Wurf-Taste zeigt das gewählte Wurfgut des gesteuerten Clonks
+const lastThrowBtn = ['', ''];
+function updateThrowBtns() {
+  for (let i = 0; i < 2; i++) {
+    const p = players[i];
+    if (!p) continue;
+    const em = THROWABLES[p.controlled.throwSel || 0].emoji;
+    if (lastThrowBtn[i] === em) continue;
+    lastThrowBtn[i] = em;
+    const el = document.getElementById(i === 0 ? 'b-fire' : 'b2-fire');
+    if (el) el.textContent = em;
+  }
+}
+
 function drawHUD() {
   const y0 = 8;
   ctx.fillStyle = 'rgba(8,25,42,0.72)';
@@ -2318,6 +2390,8 @@ function refreshMenu() { for (const r of menuRefreshers) r(); }
 // Touch-Steuerung: Joysticks + Aktions-Buttons; ohne Touch-Gerät ausgeblendet
 setBtn('b-dig'); setBtn('b-fire'); setBtn('b-buy'); setBtn('b-switch');
 setBtn('b2-dig'); setBtn('b2-fire'); setBtn('b2-buy'); setBtn('b2-switch');
+setBtn('b-cycle', () => { if (players[0]) cycleThrow(players[0].controlled); });
+setBtn('b2-cycle', () => { if (players[1] && !players[1].ai) cycleThrow(players[1].controlled); });
 setupJoy('joy-a', 0); setupJoy('joy-b', 1);
 layoutTouch();
 if (!IS_TOUCH) {
@@ -2346,6 +2420,7 @@ window.__clonk = {
   computeCam, buyFlint, fillMat, simStep, wakeArea, switchClonk, fellTree,
   doRain, doQuake, doMeteor, doVolcano,
   serialize, applyLoad, saveGame, loadGame, joys, layoutTouch, GAME_SPEED,
+  THROWABLES, throwItem, cycleThrow, bgMat, areaDiggable,
   players: () => players, allClonks, items: () => items, projectiles: () => projectiles,
   lores: () => lores, elevators: () => elevators, onElevatorCase,
   goldSpots: () => goldSpots, trees: () => trees, wipfe: () => wipfe,
