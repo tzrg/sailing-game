@@ -143,10 +143,17 @@ Docker-Container deployt.
   unterwegs, mit Sprungtaste als Rampe, trägt auch übers Wasser).
   **Bäume** lassen sich sprengen oder fackeln ab (Feuer springt über)
   und geben 🪵 Holz; **Wipfe** buddeln durchs Erdreich, **Vögel** ziehen
-  ihre Kreise und stieben bei Explosionen auseinander. Produktionskette
-  wie im Objektpaket: der **🔥 Hochofen** verhüttet **🪨 Erz + ⚫ Kohle
-  → 🔩 Metall**, die **Chemiefabrik** macht daraus 1 🔩 → 3 💣 (sonst
-  1 ⚫ → 2 💣, 2 🪵 → 1 💣, 1 ⭐ → 2 💣). Die **Lore** rollt Hänge hinab,
+  ihre Kreise und **🐟 Fische** schwimmen im See (und weichen Clonks
+  aus). Komplette Wirtschaft im **🛒 Basis-Menü** an der eigenen Hütte
+  (Taste B/K bzw. 🛒): **Produktion** aus eigenen Rohstoffen
+  (🔥 Hochofen 🪨+⚫ → 🔩 · 🪚 Sägewerk 🪵 → 2 🪜 · Schienenschmiede
+  🪜+🔩 → 4 🛤 · 🏭 Chemiefabrik 🔩 → 3 💣 / ⚫ → 2 💣 / 2 🪵 → 1 💣),
+  **Kaufen** gegen abgeliefertes Gold (Feuerstein, Lehm, Holz, Kohle,
+  Metall, Schienen, zusätzliche Lore, Windrad) und **Verkaufen** von
+  Rohstoffen – Gold ist Währung *und* Spielziel zugleich. Das
+  **🌬️ Windrad** liefert Strom: Hochofen doppelte Ausbeute, Grubenlift
+  bohrt schneller. **🛤 Schienen** legt man unterwegs mit der
+  Benutzen-Taste; darauf rollt die Lore schnell und bleibt im Gleis. Die **Lore** rollt Hänge hinab,
   sammelt Klumpen und kippt an der eigenen Hütte ab. Dazu zuschaltbare
   **Katastrophen** (normal/wild/aus): 🌧 Regen füllt Senken mit Wasser,
   🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane, die sich mit Lava zur
@@ -364,10 +371,12 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
-- **`test/clonk.test.mjs`** – Klonk (95+ Checks) über den Test-Hook
+- **`test/clonk.test.mjs`** – Klonk (110 Checks) über den Test-Hook
   `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/
   Granit/Erz/Grundgestein), Welttiefe, Granit-Sprengfestigkeit,
-  Hochofen und Metall-Rezept, Graben inkl. Fels-Stopp, Sprengungen legen
+  alle Produktionsrezepte (Hochofen, Sägewerk, Schienenschmiede,
+  Chemiefabrik), Kaufen/Verkaufen und Windrad-Strom, Schienenbau +
+  Lorenfahrt, Fische, Graben inkl. Fels-Stopp, Sprengungen legen
   Gold frei, Einsammeln/Abliefern/Sieg, K. o./Respawn samt
   Mannschafts-Übergabe, Klettern, Hangeln, Schwimmen/Atem,
   Lava-Verbrennung, Lava+Wasser=Stein, rieselnder Sand, Lehmbrücken,

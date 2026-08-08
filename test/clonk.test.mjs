@@ -585,35 +585,60 @@ try {
     C.game.paused = true;
     const p = C.players()[0];
     p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk';
-    p.score = 5; p.flints = 0; p.coal = 1; p.wood = 0;
-    C.buyFlint(p);
-    const coalBuy = { flints: p.flints, coal: p.coal, score: p.score };
-    p.flints = 0; p.coal = 0; p.wood = 2;
-    C.buyFlint(p);
-    const woodBuy = { flints: p.flints, wood: p.wood, score: p.score };
-    p.flints = 0; p.wood = 0;
-    C.buyFlint(p);
-    const goldBuy = { flints: p.flints, score: p.score };
-    return { coalBuy, woodBuy, goldBuy };
+    const clear = () => { p.flints = 0; p.coal = 0; p.wood = 0; p.ore = 0; p.metal = 0; p.plank = 0; p.rail = 0; };
+    // Produktionsrezepte einzeln über das Basis-Menü auslösen
+    clear(); p.coal = 1; C.craft(p, 'flintC');
+    const coalBuy = { flints: p.flints, coal: p.coal };
+    clear(); p.wood = 2; C.craft(p, 'flintW');
+    const woodBuy = { flints: p.flints, wood: p.wood };
+    clear(); p.wood = 1; C.craft(p, 'saw');
+    const saw = { wood: p.wood, plank: p.plank };
+    clear(); p.ore = 1; p.coal = 1; C.craft(p, 'smelt');
+    const smelt = { ore: p.ore, coal: p.coal, metal: p.metal };
+    clear(); p.metal = 1; C.craft(p, 'flintM');
+    const metalBuy = { metal: p.metal, flints: p.flints };
+    clear(); p.plank = 1; p.metal = 1; C.craft(p, 'rails');
+    const rails = { plank: p.plank, metal: p.metal, rail: p.rail };
+    return { coalBuy, woodBuy, saw, smelt, metalBuy, rails };
   });
-  check('Fabrik: 1 ⚫ Kohle → 2 💣', r.coalBuy.flints === 2 && r.coalBuy.coal === 0 && r.coalBuy.score === 5, JSON.stringify(r.coalBuy));
-  check('Fabrik: 2 🪵 Holz → 1 💣', r.woodBuy.flints === 1 && r.woodBuy.wood === 0 && r.woodBuy.score === 5, JSON.stringify(r.woodBuy));
-  check('Fabrik: −1 ⭐ → +2 💣', r.goldBuy.flints === 2 && r.goldBuy.score === 4, JSON.stringify(r.goldBuy));
+  check('Fabrik: 1 ⚫ Kohle → 2 💣', r.coalBuy.flints === 2 && r.coalBuy.coal === 0, JSON.stringify(r.coalBuy));
+  check('Fabrik: 2 🪵 Holz → 1 💣', r.woodBuy.flints === 1 && r.woodBuy.wood === 0, JSON.stringify(r.woodBuy));
+  check('Sägewerk: 🪵 Holz → 2 🪜 Bretter', r.saw.wood === 0 && r.saw.plank === 2, JSON.stringify(r.saw));
+  check('Hochofen: 🪨 Erz + ⚫ Kohle → 🔩 Metall',
+    r.smelt.ore === 0 && r.smelt.coal === 0 && r.smelt.metal === 1, JSON.stringify(r.smelt));
+  check('Fabrik: 1 🔩 Metall → 3 💣', r.metalBuy.metal === 0 && r.metalBuy.flints === 3, JSON.stringify(r.metalBuy));
+  check('Schienenschmiede: 🪜+🔩 → 4 🛤', r.rails.plank === 0 && r.rails.metal === 0 && r.rails.rail === 4, JSON.stringify(r.rails));
 
-  // Hochofen + Metall-Rezept
+  // Gold-Handel: kaufen und verkaufen an der Basis
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const p = C.players()[0], cap = C.players()[0];
+    p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk';
+    cap.score = 10; p.flints = 0; p.ore = 2; p.metal = 0; p.rail = 0;
+    const bought = C.shopBuy(p, 'flint');
+    const afterBuy = { score: cap.score, flints: p.flints, bought };
+    const sold = C.shopSell(p, 'ore');
+    const afterSell = { score: cap.score, ore: p.ore, sold };
+    cap.score = 1;
+    const tooPoor = C.shopBuy(p, 'mill');
+    cap.score = 12;
+    const mill = C.shopBuy(p, 'mill');
+    return { afterBuy, afterSell, tooPoor, mill, windmill: !!cap.windmill, score: cap.score };
+  });
+  check('Kaufen: 💣 Feuerstein kostet 2 💰', r.afterBuy.bought && r.afterBuy.score === 8 && r.afterBuy.flints === 1, JSON.stringify(r.afterBuy));
+  check('Verkaufen: 🪨 Erz bringt 2 💰', r.afterSell.sold && r.afterSell.score === 10 && r.afterSell.ore === 1, JSON.stringify(r.afterSell));
+  check('Zu wenig Gold: Kauf wird abgelehnt', r.tooPoor === false);
+  check('🌬️ Windrad kaufen schaltet den Strom frei', r.mill && r.windmill && r.score === 2, JSON.stringify(r));
+
+  // Windrad-Strom verdoppelt den Hochofen
   r = await page.evaluate(() => {
     const C = window.__clonk;
     const p = C.players()[0];
-    p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk';
-    p.ore = 1; p.coal = 1; p.metal = 0; p.flints = 0; p.wood = 0; p.score = 0;
-    C.buyFlint(p);                       // Hochofen: Erz + Kohle -> Metall
-    const smelt = { ore: p.ore, coal: p.coal, metal: p.metal, flints: p.flints };
-    C.buyFlint(p);                       // Fabrik: Metall -> 3 Feuersteine
-    return { smelt, metal: p.metal, flints: p.flints };
+    p.ore = 1; p.coal = 1; p.metal = 0;
+    C.craft(p, 'smelt');
+    return { metal: p.metal };
   });
-  check('Hochofen: 🪨 Erz + ⚫ Kohle → 🔩 Metall',
-    r.smelt.ore === 0 && r.smelt.coal === 0 && r.smelt.metal === 1 && r.smelt.flints === 0, JSON.stringify(r.smelt));
-  check('Fabrik: 1 🔩 Metall → 3 💣', r.metal === 0 && r.flints === 3, JSON.stringify(r));
+  check('⚡ Mit Windrad liefert der Hochofen 2 🔩', r.metal === 2, JSON.stringify(r));
 
   // Erz kommt nur durch Sprengung zutage
   r = await page.evaluate(() => {
@@ -900,11 +925,12 @@ try {
     C.game.paused = true;
     const p = C.players()[0];
     p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk';
-    p.flints = 2; p.carry = 2; p.throwSel = 0;
-    C.pressed.add('r');   // Wurfgut wechseln: 💣 -> 💰
+    p.flints = 2; p.carry = 2; p.loam = 0; p.rail = 0; p.coal = 0; p.ore = 0; p.metal = 0; p.plank = 0; p.wood = 0;
+    p.throwSel = 0;
+    C.pressed.add('r');   // Wurfgut wechseln: 💣 -> nächstes volle Fach (💰)
     C.update(0.016);
     C.pressed.delete('r');
-    const sel = p.throwSel;
+    const sel = C.THROWABLES[p.throwSel].key === 'nugget' ? 1 : -1;
     C.pressed.add('q');
     C.update(0.016);
     C.pressed.delete('q');
@@ -913,18 +939,18 @@ try {
       thrown: C.items().some((i) => i.type === 'nugget' && i.own),
     };
   }, dryA);
-  check('R wechselt das Wurfgut auf 💰 Gold', r.sel === 1, JSON.stringify(r));
+  check('R wechselt das Wurfgut aufs nächste volle Fach (💰 Gold)', r.sel === 1, JSON.stringify(r));
   check('Geworfenes Gold fliegt als Gegenstand (Feuersteine bleiben in der Tasche)',
     r.carry === 1 && r.flints === 2 && r.thrown, JSON.stringify(r));
   r = await page.evaluate(() => {
     const C = window.__clonk;
     const p = C.players()[0];
-    p.flints = 0; p.carry = 0; p.coal = 1; p.throwSel = 0;   // Gewähltes leer
+    p.flints = 0; p.carry = 0; p.loam = 0; p.rail = 0; p.coal = 1; p.throwSel = 0;   // nur Kohle übrig
     p.throwCd = 0;
     C.throwItem(p);
-    return { coal: p.coal, sel: p.throwSel, thrown: C.items().some((i) => i.type === 'coal' && i.own) };
+    return { coal: p.coal, sel: C.THROWABLES[p.throwSel].key, thrown: C.items().some((i) => i.type === 'coal' && i.own) };
   });
-  check('Leeres Wurfgut: automatisch nächstes (⚫ Kohle)', r.coal === 0 && r.sel === 2 && r.thrown, JSON.stringify(r));
+  check('Leeres Wurfgut: automatisch nächstes (⚫ Kohle)', r.coal === 0 && r.sel === 'coal' && r.thrown, JSON.stringify(r));
   await tick(1);
   r = await page.evaluate(() => {
     const C = window.__clonk;
@@ -986,6 +1012,75 @@ try {
     return { moved: p.x - x0, sank: p.y - y1, state: p.state };
   }, r);
   check('Waagerecht graben aus dem Schacht heraus trägt weit', r.moved > 25 && r.state === 'dig', JSON.stringify(r));
+
+  // ---- Schienen: legen, Lore rollt darauf, Fische im See
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.game.mode = '2p';
+    C.startGame(42);
+    C.game.paused = true;
+    const railsAtBase = C.railAt(C.players()[0].base.x + 30) >= 0;
+    const p = C.players()[0];
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk';
+    p.rail = 6;
+    p.throwSel = C.THROWABLES.findIndex((t) => t.key === 'rail');
+    C.pressed.add('e'); C.pressed.add('d');    // bauen + laufen
+    return { railsAtBase, x0: p.x, before: C.railAt(x + 30) };
+  }, dryA);
+  check('Vor jeder Hütte liegt ein Anschlussgleis', r.railsAtBase);
+  await tick(2);
+  r = await page.evaluate(({ x, before }) => {
+    const C = window.__clonk;
+    C.pressed.delete('e'); C.pressed.delete('d');
+    const p = C.players()[0];
+    let laid = 0;
+    for (let xx = x; xx < x + 60; xx++) if (C.railAt(xx) >= 0) laid++;
+    return { before, laid, railsLeft: p.rail, px: p.x };
+  }, { x: dryA, before: r.before });
+  check('🛤 Schienen legen: Gleis entsteht unter dem Clonk',
+    r.before < 0 && r.laid > 25 && r.railsLeft < 6, JSON.stringify(r));
+
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    // ebenes Gleis von x-20 bis x+140 legen (Lore-Physik isoliert prüfen)
+    const y = C.groundY()[x] - 1;
+    for (let xx = x - 20; xx < x + 140; xx++) C.railY[xx] = y;
+    const lo = C.lores()[0];
+    lo.x = x; lo.y = y; lo.vx = 60; lo.cargo = 0;
+    const p = C.players()[0];
+    p.x = x - 300; p.y = C.groundY()[x - 300] - 1;   // Clonk aus dem Weg
+    return { x0: lo.x };
+  }, dryA);
+  await tick(1.2);
+  r = await page.evaluate((x0) => {
+    const C = window.__clonk;
+    const lo = C.lores()[0];
+    return { rolled: lo.x - x0, onRail: !!lo.onRail };
+  }, r.x0);
+  check('Lore rollt auf Schienen weit und bleibt im Gleis', r.onRail && r.rolled > 40, JSON.stringify(r));
+
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    const f = C.fish();
+    return { n: f.length, inWater: f.every((x) => C.matAt(x.x, x.y) === M.WATER) };
+  });
+  check('🐟 Fische schwimmen im See', r.n >= 3 && r.inWater, JSON.stringify(r));
+
+  // ---- Basis-Menü öffnet nur an der eigenen Hütte
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk';
+    const away = C.openShop(0);
+    p.x = p.base.x; p.y = p.base.y - 1;
+    const home = C.openShop(0);
+    const rows = document.querySelectorAll('#shop-body button[data-act]').length;
+    C.closeShop();
+    return { away, home, rows, hidden: document.getElementById('shop').classList.contains('hidden') };
+  }, dryA);
+  check('🛒 Basis-Menü öffnet nur an der eigenen Hütte', r.away === false && r.home === true, JSON.stringify(r));
+  check('Basis-Menü listet Produktion, Kaufen und Verkaufen', r.rows >= 18, 'rows=' + r.rows);
+  check('Basis-Menü lässt sich schließen', r.hidden === true);
 
   // ---- Spielstände: kompletter Roundtrip über die RLE-Maske
   r = await page.evaluate((x) => {

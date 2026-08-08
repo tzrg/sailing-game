@@ -215,6 +215,19 @@ function genTerrain() {
     const x = 150 + ((rng() * (WORLD_W - 300)) | 0);
     wipfe.push({ x, y: groundY[x] - 1, dir: rng() < 0.5 ? -1 : 1, t: rng() * 3, state: 'walk', fleeT: 0, dead: false, respT: 0 });
   }
+  // Fische im See (Wasserzellen einsammeln und ein paar besetzen)
+  fish = [];
+  const pond = [];
+  for (let x = 20; x < WORLD_W - 20; x += 7) {
+    for (let y = 150; y < WORLD_H - 20; y += 7) {
+      if (mask[idx(x, y)] === MAT.WATER && mask[idx(x, y + 6)] === MAT.WATER) pond.push({ x, y });
+    }
+  }
+  for (let i = 0; i < 6 && pond.length; i++) {
+    const s = pond[(rng() * pond.length) | 0];
+    fish.push({ x: s.x, y: s.y, dir: rng() < 0.5 ? -1 : 1, v: 18 + rng() * 16, ph: rng() * 6.28, size: 0.8 + rng() * 0.5 });
+  }
+
   // Vögel: ziehen ihre Kreise über der Landschaft
   birds = [];
   for (let i = 0; i < 5; i++) {
@@ -483,6 +496,8 @@ let players = [];        // die beiden Team-Anführer (zugleich Clonk Nr. 1)
 let items = [];          // { type, x, y, vx, vy, buried, chute, rest }
 let projectiles = [];    // Feuersteine + Meteore
 let lores = [];          // Minen-Loren { team, x, y, vx, vy, cargo }
+let railY = null;        // Schienen-Höhe je Spalte (-1 = keine Schiene)
+let fish = [];           // Fische im See
 let elevators = [];      // Grubenlifte { team, x, y (Korb-Oberkante), topY, acc }
 let volcanoes = [];      // aktive Vulkanschlote
 let parts = [];          // Partikel
@@ -503,7 +518,7 @@ function makeClonk(id, name, color, keys, baseX) {
     id, name, color, keys, base: { x: baseX, y: 0 },
     x: 0, y: 0, vx: 0, vy: 0, dir: id === 0 ? 1 : -1,
     state: 'air', hp: 100, carry: 0, flints: 3, coal: 0, wood: 0, loam: 1,
-    ore: 0, metal: 0, score: 0, ko: 0,
+    ore: 0, metal: 0, plank: 0, rail: 0, score: 0, ko: 0,
     breath: 1, burnT: 0, goldPix: 0, coalPix: 0, rem: 0, bridgeT: 0,
     respawnT: 0, tumbleT: 0, throwCd: 0, hurtT: 0, throwSel: 0,
     walkPhase: 0, prevThrow: false, prevUse: false, prevSwitch: false, prevCycle: false,
@@ -561,6 +576,12 @@ function startGame(seed) {
     const lx = p.base.x + (p.id === 0 ? 44 : -44);
     return { team: p.id, x: lx, y: groundY[lx] - 1, vx: 0, vy: 0, cargo: 0 };
   });
+  // Schienenstück ab Werk vor jeder Hütte (Anschluss ans Netz)
+  railY = new Int16Array(WORLD_W).fill(-1);
+  for (const p of players) {
+    const from = p.id === 0 ? p.base.x + 20 : p.base.x - 56;
+    for (let x = from; x < from + 36; x++) railY[clamp(x, 0, WORLD_W - 1)] = groundY[clamp(x, 0, WORLD_W - 1)] - 1;
+  }
   // je Team ein Grubenlift mit Förderturm (Richtung Kartenmitte)
   elevators = players.map((p) => {
     const ex = p.base.x + (p.id === 0 ? 66 : -66);
@@ -643,6 +664,9 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(k)) e.preventDefault();
   if (k === ' ') { togglePause(); return; }
+  if (k === 'escape') { closeShop(); return; }
+  if (k === 'b') { if (!shopEl.classList.contains('hidden')) closeShop(); else openShop(0); return; }
+  if (k === 'k') { if (!shopEl.classList.contains('hidden')) closeShop(); else openShop(1); return; }
   if (game.state === 'over' && (k === 'r' || k === 'enter')) { restart(); return; }
   pressed.add(k);
 });
@@ -813,7 +837,7 @@ function updateClonk(c, dt) {
   const nearBase = Math.abs(c.x - cap.base.x) < 46 && Math.abs(c.y - cap.base.y) < 54;
   if (U && !c.prevUse && nearBase) buyFlint(c);
   c.prevUse = U;
-  if (U && !nearBase) buildBridge(c, dt, J);
+  if (U && !nearBase) buildSelected(c, dt, J);
   const SW = down(cap, 'switch');
   if (SW && !cap.prevSwitch) switchClonk(cap);
   cap.prevSwitch = SW;
@@ -950,6 +974,8 @@ function updateClonk(c, dt) {
     else if (it.type === 'wood' && c.wood < 6) { it.dead = true; c.wood++; addFloat(c.x, c.y - PH - 6, '🪵', '#d8b284'); }
     else if (it.type === 'ore' && c.ore < 6) { it.dead = true; c.ore++; addFloat(c.x, c.y - PH - 6, '🪨', '#c08a60'); }
     else if (it.type === 'metal' && c.metal < 6) { it.dead = true; c.metal++; addFloat(c.x, c.y - PH - 6, '🔩', '#cdd4dc'); }
+    else if (it.type === 'plank' && c.plank < 8) { it.dead = true; c.plank++; addFloat(c.x, c.y - PH - 6, '🪜', '#d8b284'); }
+    else if (it.type === 'rail' && c.rail < 12) { it.dead = true; c.rail++; addFloat(c.x, c.y - PH - 6, '🛤', '#9aa4b0'); }
   }
 }
 
@@ -1086,6 +1112,32 @@ function spillChunks(x, y, coal, ore) {
   }
 }
 
+// Bauen unterwegs (Benutzen-Taste): baut das gewählte Baumaterial –
+// 🧱 Lehmbrücke oder 🛤 Schienen unter den Füßen.
+function buildSelected(c, dt, up) {
+  const sel = THROWABLES[c.throwSel || 0];
+  if (sel && sel.build === 'rail' && c.rail > 0) { layRail(c, dt); return; }
+  buildBridge(c, dt, up);
+}
+// Schienen legen: unter dem Clonk entsteht ein Gleis, das der Lore Halt gibt
+function layRail(c, dt) {
+  if (c.state === 'dead' || c.state === 'tumble') return;
+  c.bridgeT += dt;
+  if (c.bridgeT < 0.14) return;
+  c.bridgeT = 0;
+  const x = Math.round(c.x), y = Math.round(c.y);
+  let n = 0;
+  for (let xx = x - 5; xx <= x + 5; xx++) {
+    const cx = clamp(xx, 0, WORLD_W - 1);
+    if (railY[cx] === y - 1) continue;
+    railY[cx] = y - 1; n++;
+  }
+  if (!n) return;
+  c.railPix = (c.railPix || 0) + 1;
+  if (c.railPix >= 3) { c.railPix = 0; c.rail--; }
+  spark(c.x, c.y - 2, 2, '#9aa4b0');
+}
+
 // Lehmbrücke: Benutzen-Taste unterwegs halten, baut in Blickrichtung
 // (mit Sprungtaste als Rampe nach oben)
 function buildBridge(c, dt, up) {
@@ -1109,12 +1161,14 @@ function buildBridge(c, dt, up) {
 // ---- Werfen (alles aus den Taschen, wie im Original) ------------------------
 const THROWABLES = [
   { key: 'flint', emoji: '💣', has: (c) => c.flints > 0, take: (c) => c.flints-- },
+  { key: 'loam', emoji: '🧱', has: (c) => c.loam > 0, take: (c) => c.loam--, build: 'bridge' },
+  { key: 'rail', emoji: '🛤', has: (c) => c.rail > 0, take: (c) => c.rail--, build: 'rail' },
   { key: 'nugget', emoji: '💰', has: (c) => c.carry > 0, take: (c) => c.carry-- },
   { key: 'coal', emoji: '⚫', has: (c) => c.coal > 0, take: (c) => c.coal-- },
   { key: 'ore', emoji: '🪨', has: (c) => c.ore > 0, take: (c) => c.ore-- },
   { key: 'metal', emoji: '🔩', has: (c) => c.metal > 0, take: (c) => c.metal-- },
+  { key: 'plank', emoji: '🪜', has: (c) => c.plank > 0, take: (c) => c.plank-- },
   { key: 'wood', emoji: '🪵', has: (c) => c.wood > 0, take: (c) => c.wood-- },
-  { key: 'loam', emoji: '🧱', has: (c) => c.loam > 0, take: (c) => c.loam-- },
 ];
 function throwItem(c) {
   if (c.throwCd > 0 || game.state !== 'play') return;
@@ -1150,33 +1204,132 @@ function cycleThrow(c) {
 }
 const throwFlint = throwItem;   // alter Name, weiter im Test-Hook verfügbar
 
-// Produktion an der eigenen Hütte (Benutzen-Taste). Wie im Objektpaket:
-// der 🔥 Hochofen verhüttet Erz + Kohle zu 🔩 Metall, die 🏭 Chemiefabrik
-// macht daraus (bzw. aus Kohle/Holz/Gold) Feuersteine.
-function buyFlint(c) {
-  if (game.state !== 'play' || c.state === 'dead') return;
+// ---- Basis: Produktion, Kaufen und Verkaufen -------------------------------
+// Wie im Objektpaket: die Gebäude an der Hütte verarbeiten eigene Rohstoffe
+// (kostenlos), und über die Basis lässt sich alles gegen 💰 Gold handeln.
+const atBase = (c) => {
   const cap = teamOf(c);
-  if (Math.abs(c.x - cap.base.x) >= 46 || Math.abs(c.y - cap.base.y) >= 54) return;
-  // Hochofen zuerst: Erz + Kohle -> Metall (Metall ist das wertvolle Zwischengut)
-  if (c.ore >= 1 && c.coal >= 1 && c.metal < 6) {
-    c.ore--; c.coal--; c.metal++;
-    addFloat(c.x, c.y - PH - 8, '🪨+⚫ → 🔩 Metall', '#ffd0a0');
-    for (let i = 0; i < 8; i++) puff(furnaceX(cap), cap.base.y - 44 - i * 3, 1, '#e0a070');
-    return;
-  }
-  if (c.flints >= FLINT_MAX) { addFloat(c.x, c.y - PH - 8, '💣 voll!', '#ffb0a0'); return; }
-  let label = null;
-  if (c.metal >= 1) { c.metal--; c.flints = Math.min(FLINT_MAX, c.flints + 3); label = '🔩 → +3 💣'; }
-  else if (c.coal >= 1) { c.coal--; c.flints = Math.min(FLINT_MAX, c.flints + 2); label = '⚫ → +2 💣'; }
-  else if (c.wood >= 2) { c.wood -= 2; c.flints = Math.min(FLINT_MAX, c.flints + 1); label = '2 🪵 → +1 💣'; }
-  else if (cap.score >= 1) { cap.score--; c.flints = Math.min(FLINT_MAX, c.flints + 2); label = '−1 ⭐ → +2 💣'; }
-  if (!label) { addFloat(c.x, c.y - PH - 8, 'Nichts zum Verfeuern!', '#ffb0a0'); return; }
-  addFloat(c.x, c.y - PH - 8, label, '#ffe6a0');
-  const fx = factoryX(cap);
-  for (let i = 0; i < 6; i++) puff(fx + 8, cap.base.y - 40 - i * 3, 1, '#aab4bd');
-}
+  return Math.abs(c.x - cap.base.x) < 46 && Math.abs(c.y - cap.base.y) < 54;
+};
 const factoryX = (p) => p.base.x + (p.id === 0 ? -34 : 34);
 const furnaceX = (p) => p.base.x + (p.id === 0 ? -58 : 58);
+const sawmillX = (p) => p.base.x + (p.id === 0 ? -82 : 82);
+const millX = (p) => p.base.x + (p.id === 0 ? 74 : -74);
+
+// Produktionsrezepte (Reihenfolge = Priorität der Schnell-Taste)
+const RECIPES = [
+  {
+    key: 'smelt', label: '🪨+⚫ → 🔩', name: 'Hochofen',
+    can: (c) => c.ore >= 1 && c.coal >= 1 && c.metal < 6,
+    run: (c) => {
+      const cap = teamOf(c);
+      c.ore--; c.coal--;
+      c.metal = Math.min(6, c.metal + (cap.windmill ? 2 : 1));   // Strom verdoppelt
+      smoke(furnaceX(cap), cap.base.y - 44, '#e0a070');
+      return cap.windmill ? '🪨+⚫ → 2 🔩 (⚡)' : '🪨+⚫ → 🔩';
+    },
+  },
+  {
+    key: 'saw', label: '🪵 → 2 🪜', name: 'Sägewerk',
+    can: (c) => c.wood >= 1 && c.plank < 8,
+    run: (c) => {
+      const cap = teamOf(c);
+      c.wood--; c.plank = Math.min(8, c.plank + 2);
+      smoke(sawmillX(cap), cap.base.y - 30, '#d8c090');
+      return '🪵 → 2 🪜 Bretter';
+    },
+  },
+  {
+    key: 'rails', label: '🪜+🔩 → 4 🛤', name: 'Schienenschmiede',
+    can: (c) => c.plank >= 1 && c.metal >= 1 && c.rail < 12,
+    run: (c) => {
+      const cap = teamOf(c);
+      c.plank--; c.metal--; c.rail = Math.min(12, c.rail + 4);
+      smoke(factoryX(cap), cap.base.y - 40, '#aab4bd');
+      return '🪜+🔩 → 4 🛤 Schienen';
+    },
+  },
+  {
+    key: 'flintM', label: '🔩 → 3 💣', name: 'Chemiefabrik',
+    can: (c) => c.metal >= 1 && c.flints < FLINT_MAX,
+    run: (c) => { c.metal--; c.flints = Math.min(FLINT_MAX, c.flints + 3); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '🔩 → 3 💣'; },
+  },
+  {
+    key: 'flintC', label: '⚫ → 2 💣', name: 'Chemiefabrik',
+    can: (c) => c.coal >= 1 && c.flints < FLINT_MAX,
+    run: (c) => { c.coal--; c.flints = Math.min(FLINT_MAX, c.flints + 2); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '⚫ → 2 💣'; },
+  },
+  {
+    key: 'flintW', label: '2 🪵 → 1 💣', name: 'Chemiefabrik',
+    can: (c) => c.wood >= 2 && c.flints < FLINT_MAX,
+    run: (c) => { c.wood -= 2; c.flints = Math.min(FLINT_MAX, c.flints + 1); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '2 🪵 → 1 💣'; },
+  },
+];
+
+// Handel: Preise in 💰 Gold (die abgelieferten Klumpen sind die Währung)
+const SHOP = [
+  { key: 'flint', label: '💣 Feuerstein', price: 2, give: (c) => { if (c.flints >= FLINT_MAX) return false; c.flints++; return true; } },
+  { key: 'loam', label: '🧱 Lehm', price: 1, give: (c) => { if (c.loam >= LOAM_MAX) return false; c.loam++; return true; } },
+  { key: 'wood', label: '🪵 Holz', price: 1, give: (c) => { if (c.wood >= 6) return false; c.wood++; return true; } },
+  { key: 'coal', label: '⚫ Kohle', price: 2, give: (c) => { if (c.coal >= 6) return false; c.coal++; return true; } },
+  { key: 'metal', label: '🔩 Metall', price: 4, give: (c) => { if (c.metal >= 6) return false; c.metal++; return true; } },
+  { key: 'rail', label: '🛤 Schienen ×4', price: 2, give: (c) => { if (c.rail > 8) return false; c.rail = Math.min(12, c.rail + 4); return true; } },
+  { key: 'lore', label: '🛒 Lore', price: 6, give: (c) => { addLore(teamOf(c)); return true; } },
+  { key: 'mill', label: '🌬️ Windrad', price: 10, give: (c) => { const cap = teamOf(c); if (cap.windmill) return false; cap.windmill = true; return true; } },
+];
+const SELL = [
+  { key: 'ore', label: '🪨 Erz', price: 2, has: (c) => c.ore > 0, take: (c) => c.ore-- },
+  { key: 'metal', label: '🔩 Metall', price: 5, has: (c) => c.metal > 0, take: (c) => c.metal-- },
+  { key: 'coal', label: '⚫ Kohle', price: 2, has: (c) => c.coal > 0, take: (c) => c.coal-- },
+  { key: 'plank', label: '🪜 Bretter', price: 2, has: (c) => c.plank > 0, take: (c) => c.plank-- },
+  { key: 'wood', label: '🪵 Holz', price: 1, has: (c) => c.wood > 0, take: (c) => c.wood-- },
+];
+
+function smoke(x, y, color) { for (let i = 0; i < 7; i++) puff(x, y - i * 3, 1, color); }
+
+// Schnell-Produktion an der Hütte (Benutzen-Taste): erstes passendes Rezept
+function buyFlint(c) {
+  if (game.state !== 'play' || c.state === 'dead' || !atBase(c)) return;
+  for (const r of RECIPES) {
+    if (!r.can(c)) continue;
+    addFloat(c.x, c.y - PH - 8, r.run(c), '#ffe6a0');
+    return;
+  }
+  // nichts zu produzieren: notfalls Gold in Feuersteine tauschen
+  const cap = teamOf(c);
+  if (cap.score >= 2 && c.flints < FLINT_MAX) {
+    cap.score -= 2; c.flints++;
+    addFloat(c.x, c.y - PH - 8, '−2 💰 → 💣', '#ffe6a0');
+    return;
+  }
+  addFloat(c.x, c.y - PH - 8, 'Nichts zu tun – 🛒 Basis-Menü?', '#ffb0a0');
+}
+function shopBuy(c, key) {
+  const cap = teamOf(c);
+  const it = SHOP.find((s) => s.key === key);
+  if (!it || !atBase(c)) return false;
+  if (cap.score < it.price) { addFloat(c.x, c.y - PH - 8, 'Zu wenig 💰', '#ffb0a0'); return false; }
+  if (!it.give(c)) { addFloat(c.x, c.y - PH - 8, 'Kein Platz!', '#ffb0a0'); return false; }
+  cap.score -= it.price;
+  addFloat(c.x, c.y - PH - 8, `−${it.price} 💰 ${it.label}`, '#ffe6a0');
+  return true;
+}
+function shopSell(c, key) {
+  const cap = teamOf(c);
+  const it = SELL.find((s) => s.key === key);
+  if (!it || !atBase(c) || !it.has(c)) return false;
+  it.take(c);
+  cap.score += it.price;
+  addFloat(c.x, c.y - PH - 8, `${it.label} → +${it.price} 💰`, '#ffd166');
+  checkWin();
+  return true;
+}
+function craft(c, key) {
+  const r = RECIPES.find((x) => x.key === key);
+  if (!r || !atBase(c) || !r.can(c)) return false;
+  addFloat(c.x, c.y - PH - 8, r.run(c), '#ffe6a0');
+  return true;
+}
 
 function updateProjectiles(dt) {
   for (const f of projectiles) {
@@ -1503,7 +1656,8 @@ function updateElevators(dt) {
       if (el.y + 6 >= WORLD_H - 8) move = 0;                 // Grundgestein erreicht
     }
     if (!move) { el.acc = 0; continue; }
-    el.acc += (move === 1 ? (rockBelow ? 9 : 34) : 48) * dt;
+    const power = players[el.team] && players[el.team].windmill ? 1.8 : 1;   // Strom vom Windrad
+    el.acc += (move === 1 ? (rockBelow ? 9 : 34) : 48) * power * dt;
     let n = el.acc | 0; el.acc -= n;
     while (n-- > 0) {
       if (!moveCase(el, move)) { spark(el.x, el.y + 3, 2, '#c9c9d4'); break; }
@@ -1516,8 +1670,36 @@ function probeDown(x, yStart) {
   for (let d = 0; d <= 14; d++) if (solid(x, yStart + d)) return yStart + d;
   return null;
 }
+const railAt = (x) => (railY && x >= 0 && x < WORLD_W ? railY[x | 0] : -1);
+function addLore(cap) {
+  const lx = cap.base.x + (cap.id === 0 ? 44 : -44);
+  lores.push({ team: cap.id, x: lx, y: groundY[clamp(lx, 0, WORLD_W - 1)] - 1, vx: 0, vy: 0, cargo: 0 });
+}
+
 function updateLores(dt) {
   for (const lo of lores) {
+    // ---- Schienenfahrt: die Lore rastet aufs Gleis und rollt fast reibungsfrei
+    const rail = railAt(lo.x);
+    lo.onRail = rail >= 0 && Math.abs(lo.y - rail) < 7;
+    if (lo.onRail) {
+      lo.y = rail; lo.vy = 0;
+      pushLore(lo, dt);
+      const rl = railAt(lo.x - 6), rr = railAt(lo.x + 6);
+      if (rl >= 0 && rr >= 0) lo.vx += (rr - rl) * 26 * dt;     // Gefälle zieht an
+      lo.vx *= Math.exp(-0.35 * dt);                            // kaum Rollwiderstand
+      if (Math.abs(lo.vx) < 0.6) lo.vx = 0;
+      // dem Gleis folgen; endet es, rollt die Lore normal weiter
+      let m = Math.abs(lo.vx * dt), dir = Math.sign(lo.vx);
+      while (m > 0) {
+        const step = Math.min(1, m); m -= step;
+        const nx = clamp(lo.x + dir * step, 10, WORLD_W - 10);
+        const ny = railAt(nx);
+        if (ny < 0 || Math.abs(ny - lo.y) > 6) { lo.onRail = false; break; }
+        lo.x = nx; lo.y = ny;
+      }
+      loreWork(lo, dt);
+      continue;
+    }
     const supported = solid(lo.x - 5, lo.y + 1) || solid(lo.x + 5, lo.y + 1);
     if (!supported) {
       lo.vy = Math.min(420, lo.vy + 420 * dt);
@@ -1538,25 +1720,14 @@ function updateLores(dt) {
       if (Math.abs(lo.vx) < 1) lo.vx = 0;
     }
 
-    for (const c of allClonks()) {
-      if (c.state === 'dead') continue;
-      const dx = lo.x - c.x;
-      if (Math.abs(dx) < 17 && Math.abs(lo.y - c.y) < 16) {
-        const dirIn = (cIn(c, 'right') ? 1 : 0) - (cIn(c, 'left') ? 1 : 0);
-        if (dirIn && Math.sign(dx) === dirIn) lo.vx = dirIn * 62;
-        if (c.carry > 0 && lo.cargo < LORE_MAX) {
-          const n = Math.min(c.carry, LORE_MAX - lo.cargo);
-          lo.cargo += n; c.carry -= n;
-          addFloat(lo.x, lo.y - 16, `+${n} 🛒`, '#ffd166');
-        }
-      }
-    }
+    pushLore(lo, dt);
 
     if (lo.vx) {
       let m = Math.abs(lo.vx * dt), dir = Math.sign(lo.vx);
       while (m > 0) {
         const step = Math.min(1, m); m -= step;
         const nx = clamp(lo.x + dir * step, 10, WORLD_W - 10);
+        if (railAt(nx) >= 0 && Math.abs(lo.y - railAt(nx)) < 7) { lo.x = nx; lo.y = railAt(nx); break; }
         let wall = 0;
         for (let yy = -2; yy >= -9; yy--) if (solid(nx + dir * 8, lo.y + yy)) wall++;
         if (wall >= 4) { lo.vx = -lo.vx * 0.3; break; }
@@ -1570,23 +1741,42 @@ function updateLores(dt) {
       }
     }
 
-    if (lo.cargo < LORE_MAX) {
-      for (const it of items) {
-        if (it.dead || it.buried || it.type !== 'nugget') continue;
-        if (Math.hypot(it.x - lo.x, it.y - (lo.y - 5)) < 13) {
-          it.dead = true; lo.cargo++;
-          if (lo.cargo >= LORE_MAX) break;
-        }
+    loreWork(lo, dt);
+  }
+}
+// Anschieben durch Clonks + getragenes Gold einladen
+function pushLore(lo, dt) {
+  for (const c of allClonks()) {
+    if (c.state === 'dead') continue;
+    const dx = lo.x - c.x;
+    if (Math.abs(dx) < 17 && Math.abs(lo.y - c.y) < 16) {
+      const dirIn = (cIn(c, 'right') ? 1 : 0) - (cIn(c, 'left') ? 1 : 0);
+      if (dirIn && Math.sign(dx) === dirIn) lo.vx = dirIn * (lo.onRail ? 96 : 62);
+      if (c.carry > 0 && lo.cargo < LORE_MAX) {
+        const n = Math.min(c.carry, LORE_MAX - lo.cargo);
+        lo.cargo += n; c.carry -= n;
+        addFloat(lo.x, lo.y - 16, `+${n} 🛒`, '#ffd166');
       }
     }
-
-    const home = players[lo.team];
-    if (lo.cargo > 0 && Math.abs(lo.x - home.base.x) < 42 && Math.abs(lo.y - home.base.y) < 50) {
-      home.score += lo.cargo;
-      addFloat(lo.x, lo.y - 18, `+${lo.cargo} 💰`, '#ffd166');
-      lo.cargo = 0;
-      checkWin();
+  }
+}
+// Klumpen aufsammeln + an der eigenen Hütte abkippen
+function loreWork(lo, dt) {
+  if (lo.cargo < LORE_MAX) {
+    for (const it of items) {
+      if (it.dead || it.buried || it.type !== 'nugget') continue;
+      if (Math.hypot(it.x - lo.x, it.y - (lo.y - 5)) < 13) {
+        it.dead = true; lo.cargo++;
+        if (lo.cargo >= LORE_MAX) break;
+      }
     }
+  }
+  const home = players[lo.team];
+  if (lo.cargo > 0 && Math.abs(lo.x - home.base.x) < 42 && Math.abs(lo.y - home.base.y) < 50) {
+    home.score += lo.cargo;
+    addFloat(lo.x, lo.y - 18, `+${lo.cargo} 💰`, '#ffd166');
+    lo.cargo = 0;
+    checkWin();
   }
 }
 
@@ -1621,6 +1811,30 @@ function updateTrees(dt) {
       puff(t.x, t.y - t.h / 2, 8, '#555');
     }
   }
+}
+// Fische: leben im Wasser, weichen Clonks aus, sterben in Lava
+function updateFish(dt) {
+  for (const f of fish) {
+    f.ph += dt * 3;
+    if (matAt(f.x, f.y) !== MAT.WATER) {
+      // an Land gelandet: zurück ins Wasser zappeln
+      f.vy = Math.min(200, (f.vy || 0) + 300 * dt);
+      f.y += f.vy * dt;
+      if (matAt(f.x, f.y) === MAT.LAVA || f.y > WORLD_H) { f.dead = true; }
+      if (matAt(f.x, f.y) === MAT.WATER) f.vy = 0;
+      continue;
+    }
+    f.vy = 0;
+    let vx = f.dir * f.v, vy = Math.sin(f.ph) * 12;
+    for (const c of allClonks()) {                 // vor Clonks fliehen
+      if (c.state === 'dead') continue;
+      if (Math.hypot(c.x - f.x, c.y - f.y) < 46) { f.dir = f.x < c.x ? -1 : 1; vx = f.dir * f.v * 2; }
+    }
+    const nx = f.x + vx * dt, ny = f.y + vy * dt;
+    if (matAt(nx, f.y) === MAT.WATER) f.x = nx; else f.dir = -f.dir;
+    if (matAt(f.x, ny) === MAT.WATER) f.y = ny;
+  }
+  fish = fish.filter((f) => !f.dead);
 }
 function updateBirds(dt) {
   for (const b of birds) {
@@ -1820,27 +2034,29 @@ function serialize() {
   const clk = (c) => ({
     x: Math.round(c.x), y: Math.round(c.y), hp: Math.round(c.hp), carry: c.carry,
     flints: c.flints, coal: c.coal, wood: c.wood, loam: c.loam, dir: c.dir,
-    ore: c.ore, metal: c.metal,
+    ore: c.ore, metal: c.metal, plank: c.plank, rail: c.rail,
     dead: c.state === 'dead' ? 1 : 0,
   });
   return {
-    v: 2, ts: Date.now(),
+    v: 3, ts: Date.now(),
     mode: game.mode, goal: game.goal, disasters: game.disasters, t: Math.round(game.t),
     mask: packMask(), groundY: Array.from(groundY),
     teams: players.map((p) => ({
       score: p.score, ko: p.ko, onBuddy: p.controlled === p.buddy ? 1 : 0,
+      windmill: p.windmill ? 1 : 0,
       a: clk(p), b: clk(p.buddy),
     })),
+    rails: Array.from(railY),
     items: items.filter((i) => !i.dead).map((i) => ({ t: i.type, x: Math.round(i.x), y: Math.round(i.y), bu: i.buried ? 1 : 0 })),
-    lores: lores.map((l) => ({ x: Math.round(l.x), y: Math.round(l.y), cargo: l.cargo })),
+    lores: lores.map((l) => ({ team: l.team, x: Math.round(l.x), y: Math.round(l.y), cargo: l.cargo })),
     elevators: elevators.map((e) => ({ x: e.x, y: e.y, topY: e.topY })),
     trees: trees.map((t) => ({ x: t.x, y: Math.round(t.y), h: Math.round(t.h), dead: t.dead ? 1 : 0 })),
     goldSpots,
   };
 }
 function applyLoad(s) {
-  // v1-Stände stammen aus der flachen Welt (640 px) und passen nicht mehr
-  if (!s || s.v !== 2 || typeof s.mask !== 'string' || !Array.isArray(s.teams)) return false;
+  // ältere Stände stammen aus früheren Weltversionen und passen nicht mehr
+  if (!s || s.v !== 3 || typeof s.mask !== 'string' || !Array.isArray(s.teams)) return false;
   game.mode = MODES.includes(s.mode) ? s.mode : 'sandbox';
   startGame(0);                        // Grundgerüst (Teams, Loren, Lifte) aufbauen
   mask = unpackMask(s.mask);
@@ -1850,7 +2066,7 @@ function applyLoad(s) {
   game.t = typeof s.t === 'number' ? s.t : ROUND_TIME;
   game.state = 'play'; game.winner = null;
   const setClk = (c, d) => {
-    Object.assign(c, { x: d.x, y: d.y, hp: d.hp, carry: d.carry, flints: d.flints, coal: d.coal, wood: d.wood, loam: d.loam, dir: d.dir, ore: d.ore || 0, metal: d.metal || 0 });
+    Object.assign(c, { x: d.x, y: d.y, hp: d.hp, carry: d.carry, flints: d.flints, coal: d.coal, wood: d.wood, loam: d.loam, dir: d.dir, ore: d.ore || 0, metal: d.metal || 0, plank: d.plank || 0, rail: d.rail || 0 });
     c.vx = 0; c.vy = 0; c.tumbleT = 0; c.burnT = 0; c.breath = 1;
     c.state = d.dead ? 'dead' : 'air';
     if (d.dead) c.respawnT = 3;
@@ -1858,12 +2074,14 @@ function applyLoad(s) {
   s.teams.forEach((t, i) => {
     const p = players[i];
     if (!p) return;
-    p.score = t.score || 0; p.ko = t.ko || 0;
+    p.score = t.score || 0; p.ko = t.ko || 0; p.windmill = !!t.windmill;
     setClk(p, t.a); setClk(p.buddy, t.b);
     p.controlled = t.onBuddy ? p.buddy : p;
   });
   items = (s.items || []).map((i) => ({ type: i.t, x: i.x, y: i.y, vx: 0, vy: 0, buried: !!i.bu }));
-  (s.lores || []).forEach((l, i) => { if (lores[i]) Object.assign(lores[i], { x: l.x, y: l.y, vx: 0, vy: 0, cargo: l.cargo || 0 }); });
+  if (Array.isArray(s.rails) && s.rails.length === WORLD_W) railY = Int16Array.from(s.rails);
+  lores = (s.lores || []).map((l, i) => ({ team: l.team ?? (i < 2 ? i : 0), x: l.x, y: l.y, vx: 0, vy: 0, cargo: l.cargo || 0 }));
+  if (!lores.length) players.forEach((p) => addLore(p));
   (s.elevators || []).forEach((e, i) => { if (elevators[i]) Object.assign(elevators[i], { x: e.x, y: e.y, topY: e.topY, acc: 0 }); });
   trees = (s.trees || []).map((t) => ({ x: t.x, y: t.y, h: t.h, sway: rng() * 6.28, burn: 0, dead: !!t.dead }));
   granitHp = new Uint8Array(WORLD_W * WORLD_H);   // Anschläge im Granit heilen beim Laden
@@ -1969,7 +2187,10 @@ function update(dt) {
       endRound(a.score === b.score ? null : (a.score > b.score ? a : b));
     }
   }
-  for (const p of players) p.activeT = Math.max(0, (p.activeT || 0) - dt);
+  for (const p of players) {
+    p.activeT = Math.max(0, (p.activeT || 0) - dt);
+    if (p.windmill) p.millPh = (p.millPh || 0) + dt * 2.2;
+  }
   for (const c of allClonks()) updateClonk(c, dt);
   updateProjectiles(dt);
   updateElevators(dt);
@@ -1979,6 +2200,7 @@ function update(dt) {
   updateTrees(dt);
   updateWipfe(dt);
   updateBirds(dt);
+  updateFish(dt);
   updateDisasters(dt);
   simStep();
   updateFx(dt);
@@ -2080,9 +2302,11 @@ function draw(time) {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(terrainCanvas, 0, 0);
 
+  drawRails();
   for (const p of players) drawHut(p);
   for (const el of elevators) drawElevator(el);
   for (const lo of lores) drawLore(lo);
+  for (const f of fish) drawFish(f);
   for (const w of wipfe) drawWipf(w, time);
   for (const it of items) drawItem(it, time);
   for (const f of projectiles) { if (f.meteor) drawMeteor(f); else drawFlint(f.x, f.y, f.spin); }
@@ -2212,6 +2436,14 @@ function drawHut(p) {
   ctx.fillStyle = '#3a322c'; ctx.fillRect(hx - 5, -38, 10, 13);       // Schlot
   ctx.fillStyle = '#ff8a3c'; ctx.fillRect(hx - 4, -12, 8, 8);          // Glut
   ctx.fillStyle = '#ffd07a'; ctx.fillRect(hx - 2, -10, 4, 4);
+  // Sägewerk (Holz -> Bretter)
+  const sx = p.id === 0 ? -82 : 82;
+  ctx.fillStyle = '#7a5a34'; ctx.fillRect(sx - 11, -20, 22, 20);
+  ctx.fillStyle = '#5c4326'; ctx.beginPath();
+  ctx.moveTo(sx - 13, -20); ctx.lineTo(sx, -30); ctx.lineTo(sx + 13, -20); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#c3ccd6'; ctx.lineWidth = 1.4;                    // Sägeblatt
+  ctx.beginPath(); ctx.arc(sx, -10, 5.4, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#d8b284'; ctx.fillRect(sx - 9, -5, 18, 2);          // Bretterstapel
   ctx.fillStyle = '#8a6238'; ctx.fillRect(-20, -26, 40, 26);
   ctx.fillStyle = '#6d4c2a';
   for (let i = 0; i < 3; i++) ctx.fillRect(-20, -19 + i * 8, 40, 2);
@@ -2222,6 +2454,23 @@ function drawHut(p) {
   ctx.beginPath(); ctx.moveTo(-14, -44); ctx.lineTo(-14, -66); ctx.stroke();
   ctx.fillStyle = p.color;
   ctx.beginPath(); ctx.moveTo(-14, -66); ctx.lineTo(2, -61); ctx.lineTo(-14, -56); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  if (p.windmill) drawWindmill(p);
+}
+// Windrad: liefert Strom (Hochofen doppelt, Aufzug schneller)
+function drawWindmill(p) {
+  const x = millX(p), y = p.base.y;
+  ctx.save(); ctx.translate(x, y);
+  ctx.fillStyle = '#8a8f96'; ctx.fillRect(-3, -46, 6, 46);
+  ctx.fillStyle = '#6d737a'; ctx.fillRect(-6, -4, 12, 4);
+  ctx.save(); ctx.translate(0, -48); ctx.rotate(p.millPh || 0);
+  ctx.fillStyle = '#e8eef4';
+  for (let i = 0; i < 3; i++) {
+    ctx.rotate(Math.PI * 2 / 3);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(3, -18); ctx.lineTo(-2, -19); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  ctx.fillStyle = '#39424b'; ctx.beginPath(); ctx.arc(0, -48, 2.6, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
@@ -2252,6 +2501,39 @@ function drawElevator(el) {
   ctx.moveTo(el.x - CASE_HW, el.y + 1); ctx.lineTo(el.x - CASE_HW, el.y - 9);
   ctx.moveTo(el.x + CASE_HW, el.y + 1); ctx.lineTo(el.x + CASE_HW, el.y - 9);
   ctx.stroke();
+}
+
+// Schienennetz: zwei Gleise mit Schwellen, in zusammenhängenden Segmenten
+function drawRails() {
+  if (!railY) return;
+  for (let x = 0; x < WORLD_W; x++) {
+    if (railY[x] < 0) continue;
+    const start = x;
+    // Segment läuft, solange die Schienenhöhe stetig bleibt
+    while (x + 1 < WORLD_W && railY[x + 1] >= 0 && Math.abs(railY[x + 1] - railY[x]) < 8) x++;
+    const end = x;
+    ctx.strokeStyle = '#6a563c'; ctx.lineWidth = 1.2;          // Schwellen
+    for (let sx = start; sx <= end; sx += 6) {
+      ctx.beginPath(); ctx.moveTo(sx, railY[sx] + 1); ctx.lineTo(sx + 3, railY[sx] + 1); ctx.stroke();
+    }
+    ctx.strokeStyle = '#9aa4b0'; ctx.lineWidth = 1;            // Gleise
+    for (const off of [-0.5, 1.5]) {
+      ctx.beginPath();
+      ctx.moveTo(start, railY[start] + off);
+      for (let sx = start + 1; sx <= end; sx++) ctx.lineTo(sx, railY[sx] + off);
+      ctx.stroke();
+    }
+  }
+}
+function drawFish(f) {
+  ctx.save(); ctx.translate(f.x, f.y); ctx.scale(f.dir * f.size, f.size);
+  ctx.fillStyle = '#e8a13c';
+  ctx.beginPath(); ctx.ellipse(0, 0, 4.2, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();                                              // Schwanzflosse
+  ctx.moveTo(-3.6, 0); ctx.lineTo(-6.4, -2.4 + Math.sin(f.ph) * 1.2); ctx.lineTo(-6.4, 2.4 + Math.sin(f.ph) * 1.2);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#241a10'; ctx.fillRect(2, -0.9, 1, 1);
+  ctx.restore();
 }
 
 function drawLore(lo) {
@@ -2307,6 +2589,12 @@ function drawItem(it, time) {
     ctx.fillStyle = '#9a6f42'; ctx.fillRect(-5, -2, 10, 4);
     ctx.fillStyle = '#c9a06a'; ctx.beginPath(); ctx.ellipse(5, 0, 1.6, 2, 0, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+  } else if (it.type === 'plank') {
+    ctx.fillStyle = '#d8b284'; ctx.fillRect(it.x - 6, it.y - 2.6, 12, 2.2);
+    ctx.fillStyle = '#bb9264'; ctx.fillRect(it.x - 6, it.y - 0.2, 12, 2.2);
+  } else if (it.type === 'rail') {
+    ctx.fillStyle = '#9aa4b0'; ctx.fillRect(it.x - 6, it.y - 3, 12, 1.4); ctx.fillRect(it.x - 6, it.y, 12, 1.4);
+    ctx.fillStyle = '#6a563c'; ctx.fillRect(it.x - 3, it.y - 3.4, 1.6, 5);
   } else {
     if (it.chute) {
       ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1;
@@ -2444,10 +2732,10 @@ function drawHUD() {
       roundRect(x0, y0, w, h, 10); ctx.fill();
       ctx.textAlign = 'left';
       ctx.fillStyle = p.color; ctx.font = 'bold 14px system-ui';
-      ctx.fillText((p.ai ? '🤖 ' : left ? '🔴 ' : '🔵 ') + p.name + (c === p ? ' ①' : ' ②'), x0 + 10, y0 + 14);
+      ctx.fillText((p.ai ? '🤖 ' : left ? '🔴 ' : '🔵 ') + p.name + (c === p ? ' ①' : ' ②') + (p.windmill ? ' ⚡' : ''), x0 + 10, y0 + 14);
       ctx.fillStyle = '#eaf3fa'; ctx.font = '12px system-ui';
-      ctx.fillText(sandbox ? `⭐ ${p.score}` : `⭐ ${p.score}/${game.goal}`, x0 + 118, y0 + 14);
-      ctx.fillText(`💰${c.carry} 💣${c.flints} ⚫${c.coal} 🪨${c.ore} 🔩${c.metal} 🪵${c.wood} 🧱${c.loam}`, x0 + 10, y0 + 35);
+      ctx.fillText(sandbox ? `💰 ${p.score}` : `💰 ${p.score}/${game.goal}`, x0 + 118, y0 + 14);
+      ctx.fillText(`💰${c.carry} 💣${c.flints} 🧱${c.loam} 🛤${c.rail} ⚫${c.coal} 🪨${c.ore} 🔩${c.metal} 🪜${c.plank} 🪵${c.wood}`, x0 + 10, y0 + 35);
       ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0 + 178, y0 + 8, 70, 7);
       ctx.fillStyle = c.hp > 35 ? '#5ad06e' : '#ff6a5a';
       ctx.fillRect(x0 + 178, y0 + 8, 70 * clamp(c.hp / 100, 0, 1), 7);
@@ -2478,6 +2766,58 @@ function roundRect(x, y, w, h, r) {
   ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
+
+// ---- Basis-Menü (Produktion / Kaufen / Verkaufen) --------------------------
+const shopEl = document.getElementById('shop');
+let shopTeam = 0;
+function shopClonk() {
+  const cap = players[shopTeam];
+  return cap ? cap.controlled : null;
+}
+function openShop(team) {
+  const cap = players[team];
+  if (!cap) return false;
+  const c = cap.controlled;
+  if (!c || c.state === 'dead' || !atBase(c)) {
+    if (c) addFloat(c.x, c.y - PH - 8, '🛒 nur an der eigenen Hütte', '#ffb0a0');
+    return false;
+  }
+  shopTeam = team;
+  shopEl.classList.remove('hidden');
+  renderShop();
+  return true;
+}
+function closeShop() { shopEl.classList.add('hidden'); }
+function renderShop() {
+  const cap = players[shopTeam], c = shopClonk();
+  if (!c) return;
+  document.getElementById('shop-title').textContent = `🏠 Basis ${cap.name} · 💰 ${cap.score}`;
+  const body = document.getElementById('shop-body');
+  const bag = `💣${c.flints} 🧱${c.loam} 🛤${c.rail} ⚫${c.coal} 🪨${c.ore} 🔩${c.metal} 🪜${c.plank} 🪵${c.wood} 💰${c.carry}`;
+  const sec = (title, rows) => `<div class="shop-sec"><div class="group-title">${title}</div><div class="shop-grid">${rows}</div></div>`;
+  const prod = RECIPES.map((r) => `<button data-act="craft" data-key="${r.key}" ${r.can(c) ? '' : 'disabled'}>`
+    + `<span>${r.label}</span><span class="cost">${r.name}</span></button>`).join('');
+  const buy = SHOP.map((s) => `<button data-act="buy" data-key="${s.key}" ${cap.score >= s.price ? '' : 'disabled'}>`
+    + `<span>${s.label}</span><span class="cost">${s.price} 💰</span></button>`).join('');
+  const sell = SELL.map((s) => `<button data-act="sell" data-key="${s.key}" ${s.has(c) ? '' : 'disabled'}>`
+    + `<span>${s.label}</span><span class="cost">+${s.price} 💰</span></button>`).join('');
+  body.innerHTML = `<p class="shop-bag">Taschen: ${bag}${cap.windmill ? ' · ⚡ Windrad' : ''}</p>`
+    + sec('🏭 Produktion (eigene Rohstoffe)', prod)
+    + sec('🛒 Kaufen', buy)
+    + sec('💱 Verkaufen', sell);
+}
+shopEl.addEventListener('click', (e) => {
+  if (e.target === shopEl) { closeShop(); return; }
+  const b = e.target.closest('button[data-act]');
+  if (!b) return;
+  const c = shopClonk();
+  if (!c) return;
+  if (b.dataset.act === 'craft') craft(c, b.dataset.key);
+  else if (b.dataset.act === 'buy') shopBuy(c, b.dataset.key);
+  else shopSell(c, b.dataset.key);
+  renderShop();
+});
+document.getElementById('shop-close').addEventListener('click', closeShop);
 
 // ---- Menü / Buttons ---------------------------------------------------------
 const menuEl = document.getElementById('menu');
@@ -2532,6 +2872,8 @@ setBtn('b-dig'); setBtn('b-fire'); setBtn('b-buy'); setBtn('b-switch');
 setBtn('b2-dig'); setBtn('b2-fire'); setBtn('b2-buy'); setBtn('b2-switch');
 setBtn('b-cycle', () => { if (players[0]) cycleThrow(players[0].controlled); });
 setBtn('b2-cycle', () => { if (players[1] && !players[1].ai) cycleThrow(players[1].controlled); });
+setBtn('b-shop', () => openShop(0));
+setBtn('b2-shop', () => openShop(1));
 setupJoy('joy-a', 0); setupJoy('joy-b', 1);
 layoutTouch();
 if (!IS_TOUCH) {
@@ -2561,6 +2903,8 @@ window.__clonk = {
   doRain, doQuake, doMeteor, doVolcano,
   serialize, applyLoad, saveGame, loadGame, joys, layoutTouch, GAME_SPEED,
   THROWABLES, throwItem, cycleThrow, bgMat, areaDiggable,
+  RECIPES, SHOP, SELL, craft, shopBuy, shopSell, openShop, closeShop, atBase,
+  railAt, addLore, fish: () => fish, get railY() { return railY; },
   players: () => players, allClonks, items: () => items, projectiles: () => projectiles,
   lores: () => lores, elevators: () => elevators, onElevatorCase,
   goldSpots: () => goldSpots, trees: () => trees, wipfe: () => wipfe,

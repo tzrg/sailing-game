@@ -616,6 +616,75 @@ html, body {
   max-width: 84vh;
 }
 
+/* Klonk: Basis-Menü (Produktion / Kaufen / Verkaufen) */
+#shop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 16, 28, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 26;
+}
+
+#shop.hidden { display: none; }
+
+#shop .shop-panel {
+  background: rgba(10, 30, 50, 0.97);
+  color: #eaf3fa;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 14px;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0));
+  width: min(420px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+#stage.rot #shop .shop-panel {
+  max-height: 86vw;
+  width: min(420px, 92vh);
+}
+
+.shop-sec {
+  margin-top: 10px;
+}
+
+.shop-sec .group-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.shop-grid button {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.shop-grid button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.shop-grid .cost { opacity: 0.85; white-space: nowrap; }
+.shop-bag { font-size: 13px; line-height: 1.6; }
+
 /* Klonk: Options-Reihen im Menü (statt nativer Selects, die in der
    gedrehten Bühne unglücklich aussehen) */
 .opt-row {

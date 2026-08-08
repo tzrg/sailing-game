@@ -30,20 +30,33 @@
   </div>
   <div id="wctrl-right" class="tcol">
     <div id="tc-a-actions" class="trow">
+      <button id="b-shop" title="Basis-Menü (an der Hütte)">🛒</button>
       <button id="b-switch" title="Clonk wechseln">🔄</button>
-      <button id="b-buy" title="Benutzen: kaufen / Lehmbrücke">🏭</button>
+      <button id="b-buy" title="Benutzen: produzieren / bauen">🏭</button>
       <button id="b-dig">⛏️</button>
       <button id="b-cycle" title="Wurfgut wechseln">🎯</button>
       <button id="b-fire" title="Werfen">💣</button>
     </div>
     <div id="tc-b-actions" class="trow hidden">
+      <button id="b2-shop" title="Basis-Menü (an der Hütte)">🛒</button>
       <button id="b2-switch" title="Clonk wechseln">🔄</button>
-      <button id="b2-buy" title="Benutzen: kaufen / Lehmbrücke">🏭</button>
+      <button id="b2-buy" title="Benutzen: produzieren / bauen">🏭</button>
       <button id="b2-dig">⛏️</button>
       <button id="b2-cycle" title="Wurfgut wechseln">🎯</button>
       <button id="b2-fire" title="Werfen">💣</button>
     </div>
     <div id="joy-b" class="joy hidden"><div class="knob"></div></div>
+  </div>
+
+  <!-- Basis-Menü: Produktion, Kaufen, Verkaufen (an der eigenen Hütte) -->
+  <div id="shop" class="hidden">
+    <div class="panel shop-panel">
+      <div class="menu-head">
+        <h2 id="shop-title">🏠 Basis</h2>
+        <button id="shop-close">✕</button>
+      </div>
+      <div id="shop-body"></div>
+    </div>
   </div>
 
   <div id="menu" class="hidden">
@@ -150,9 +163,23 @@
           Feuerstein-Quelle im Spiel.</li>
         <li><b>🧱 Lehmbrücken:</b> Lehmklumpen stecken in der Erde. Unterwegs <b>Benutzen halten</b>
           baut eine Brücke in Blickrichtung (mit ⤒ als Rampe) – auch übers Wasser.</li>
-        <li><b>🏭 Chemiefabrik</b> an der Hütte (Benutzen-Taste): <b>1 🔩 Metall → 3 💣</b>,
-          sonst <b>1 ⚫ Kohle → 2 💣</b>, sonst <b>2 🪵 Holz → 1 💣</b>, sonst <b>1 ⭐ → 2 💣</b>.
-          Holz gibt's aus gefällten (oder abgefackelten) Bäumen.</li>
+        <li><b>🛒 Basis-Menü</b> an der eigenen Hütte (<b>B</b> / <b>K</b> bzw. 🛒-Taste) –
+          hier läuft die ganze Wirtschaft:
+          <ul>
+            <li><b>🏭 Produktion</b> aus eigenen Rohstoffen: Hochofen 🪨+⚫ → 🔩 ·
+              Sägewerk 🪵 → 2 🪜 · Schienenschmiede 🪜+🔩 → 4 🛤 ·
+              Chemiefabrik 🔩 → 3 💣 / ⚫ → 2 💣 / 2 🪵 → 1 💣.
+              Die Benutzen-Taste an der Hütte startet das jeweils erste passende Rezept.</li>
+            <li><b>Kaufen</b> für abgeliefertes 💰 Gold: Feuerstein, Lehm, Holz, Kohle, Metall,
+              Schienen, eine zusätzliche 🛒 Lore und das <b>🌬️ Windrad</b>.</li>
+            <li><b>Verkaufen</b> bringt Gold: Erz, Metall, Kohle, Bretter, Holz – Gold ist
+              zugleich Währung und Spielziel, also gut überlegen!</li>
+          </ul></li>
+        <li><b>🌬️ Windrad = Strom:</b> der Hochofen liefert doppelt (🪨+⚫ → 2 🔩) und
+          der Grubenlift bohrt spürbar schneller.</li>
+        <li><b>🛤 Schienen:</b> aus Brettern + Metall (oder gekauft). Wurfgut auf 🛤 stellen und
+          die <b>Benutzen-Taste</b> halten – unter euren Füßen entsteht ein Gleis. Auf Schienen
+          rollt die Lore weit, schnell und ohne im Gelände hängenzubleiben.</li>
         <li><b>🛒 Lore:</b> anschieben, rollt Hänge hinab, sammelt Klumpen, nimmt dein Gold und
           kippt es an der eigenen Hütte ab. Explosionen verstreuen die Ladung.</li>
         <li><b>🏗 Grubenlift:</b> der Förderturm neben der Hütte. Auf den Korb stellen und
@@ -163,7 +190,8 @@
           wartet. Wer k. o. geht, verliert sein Gold und startet nach kurzer Zeit neu an der Hütte.</li>
         <li><b>Katastrophen</b> (im Menü einstellbar): 🌧 Regen füllt Senken mit Wasser,
           🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane mischen die Karte auf. Dazu buddeln
-          <b>Wipfe</b> durchs Erdreich.</li>
+          <b>Wipfe</b> durchs Erdreich, ziehen <b>Vögel</b> ihre Kreise und schwimmen
+          <b>🐟 Fische</b> im See.</li>
         <li><b>💾 Spielstand:</b> über das ☰-Menü speichern und laden – eingeloggt liegt der
           Stand auf dem Server (geräteübergreifend), sonst lokal im Browser.</li>
         <li><b>Leertaste</b> Pause · nach Rundenende <b>R</b> für die Revanche.</li>
