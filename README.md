@@ -126,10 +126,15 @@ Docker-Container deployt.
   direkt in die Lore werfen!); Wurfgut wechseln mit R/M bzw. der
   🎯-Taste, die Wurf-Taste zeigt die Auswahl. Freigelegte Zellen werden
   über der ursprünglichen Oberfläche Himmel, darunter Stollen – keine
-  dunklen Flecken mehr im See nach Sprengungen. Frisch generierte Pixel-Landschaft mit **Erde, Fels,
-  Granit (unzerstörbar), Goldadern, ⚫ Kohleflözen, Sandtaschen, See und
-  Lavagrotten**; Wasser & Lava **fließen** (Zellautomat), Sand rieselt
-  nach, und **Lava + Wasser = Stein**. Bewegen wie im Original:
+  dunklen Flecken mehr im See nach Sprengungen. Frisch generierte,
+  **tiefe** Pixel-Landschaft (960×1024) mit Schichtaufbau: **Erde**
+  (grabbar), **Fels** (nur Feuerstein), **Granitbänder** in der Tiefe
+  (halten drei Sprengungen aus und bröckeln dann weg) und ganz unten
+  **Grundgestein**, das allem standhält. Dazu **Goldadern** (die fetten
+  sitzen im Granit), **⚫ Kohleflöze**, **🪨 Eisenerz** (nur sprengbar),
+  Sandtaschen, ein See, große Kavernen und **Lavaseen**; Wasser & Lava
+  **fließen** (Zellautomat), Sand rieselt nach, und
+  **Lava + Wasser = Stein**. Bewegen wie im Original:
   laufen, springen, **klettern**, an Decken **hangeln**,
   **schwimmen & tauchen** mit Atem-Anzeige (Ertrinken inklusive),
   in Lava verbrennt man (Wasser löscht). **Graben** in alle Richtungen
@@ -137,9 +142,11 @@ Docker-Container deployt.
   **🧱 Lehmbrücken** aus vergrabenen Lehmklumpen (Benutzen-Taste
   unterwegs, mit Sprungtaste als Rampe, trägt auch übers Wasser).
   **Bäume** lassen sich sprengen oder fackeln ab (Feuer springt über)
-  und geben 🪵 Holz; **Wipfe** buddeln durchs Erdreich und fliehen vor
-  Explosionen. Die **Chemiefabrik** produziert nach Rezept: 1 ⚫ → 2 💣,
-  sonst 2 🪵 → 1 💣, sonst 1 ⭐ → 2 💣. Die **Lore** rollt Hänge hinab,
+  und geben 🪵 Holz; **Wipfe** buddeln durchs Erdreich, **Vögel** ziehen
+  ihre Kreise und stieben bei Explosionen auseinander. Produktionskette
+  wie im Objektpaket: der **🔥 Hochofen** verhüttet **🪨 Erz + ⚫ Kohle
+  → 🔩 Metall**, die **Chemiefabrik** macht daraus 1 🔩 → 3 💣 (sonst
+  1 ⚫ → 2 💣, 2 🪵 → 1 💣, 1 ⭐ → 2 💣). Die **Lore** rollt Hänge hinab,
   sammelt Klumpen und kippt an der eigenen Hütte ab. Dazu zuschaltbare
   **Katastrophen** (normal/wild/aus): 🌧 Regen füllt Senken mit Wasser,
   🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane, die sich mit Lava zur
@@ -357,9 +364,10 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
-- **`test/clonk.test.mjs`** – Klonk (60+ Checks) über den Test-Hook
+- **`test/clonk.test.mjs`** – Klonk (95+ Checks) über den Test-Hook
   `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/
-  Granit), Graben inkl. Fels-Stopp und Granit-Härte, Sprengungen legen
+  Granit/Erz/Grundgestein), Welttiefe, Granit-Sprengfestigkeit,
+  Hochofen und Metall-Rezept, Graben inkl. Fels-Stopp, Sprengungen legen
   Gold frei, Einsammeln/Abliefern/Sieg, K. o./Respawn samt
   Mannschafts-Übergabe, Klettern, Hangeln, Schwimmen/Atem,
   Lava-Verbrennung, Lava+Wasser=Stein, rieselnder Sand, Lehmbrücken,

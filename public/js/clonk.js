@@ -8,17 +8,21 @@
 // zu zweit an einer Tastatur; Touch-Steuerkreuz + Zoom-Kamera für Handys.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-const WORLD_W = 960, WORLD_H = 640;
+const WORLD_W = 960, WORLD_H = 1024;   // tiefe Karte: Erde, Fels, Tiefengestein
 
 // ---- Materialien (Pixel-Maske) ---------------------------------------------
 const MAT = {
   SKY: 0, EARTH: 1, ROCK: 2, GOLD: 3, TUNNEL: 4,
   WATER: 5, LAVA: 6, SAND: 7, COAL: 8, GRANIT: 9, LOAM: 10,
   PLATFORM: 11,   // Aufzugskorb des Grubenlifts (beweglich, unzerstörbar)
+  ORE: 12,        // Eisenerz: nur sprengbar, wird im Hochofen zu Metall
+  BEDROCK: 13,    // Kartenrand/Grundgestein: hält wirklich allem stand
 };
-//                  SKY    EARTH ROCK  GOLD  TUNNEL WATER  LAVA   SAND  COAL  GRANIT LOAM  PLATTF.
-const SOLID =      [false, true, true, true, false, false, false, true, true, true,  true, true];
-const DIGGABLE =   [false, true, false, true, false, false, false, true, true, false, true, false];
+//                  SKY    EARTH ROCK  GOLD  TUNNEL WATER  LAVA   SAND  COAL  GRANIT LOAM  PLATTF. ORE   BEDROCK
+const SOLID =      [false, true, true, true, false, false, false, true, true, true,  true, true,   true, true];
+const DIGGABLE =   [false, true, false, true, false, false, false, true, true, false, true, false,  false, false];
+// Sprengfestigkeit: wie viele Treffer eine Zelle aushält (0 = fliegt sofort)
+const TOUGH =      [0,     0,    0,    0,    0,     0,     0,     0,    0,    3,     0,    99,     0,    99];
 const isFree = (m) => m === MAT.SKY || m === MAT.TUNNEL;
 const isGrain = (m) => m === MAT.WATER || m === MAT.LAVA || m === MAT.SAND;
 
@@ -30,9 +34,9 @@ const idx = (x, y) => y * WORLD_W + x;
 
 function matAt(x, y) {
   x |= 0; y |= 0;
-  if (x < 0 || x >= WORLD_W) return MAT.GRANIT;   // Kartenränder: unzerstörbar
+  if (x < 0 || x >= WORLD_W) return MAT.BEDROCK;   // Kartenränder: unzerstörbar
   if (y < 0) return MAT.SKY;
-  if (y >= WORLD_H) return MAT.GRANIT;
+  if (y >= WORLD_H) return MAT.BEDROCK;
   return mask[idx(x, y)];
 }
 const solid = (x, y) => SOLID[matAt(x, y)];
@@ -60,9 +64,11 @@ let rng = mulberry32((Math.random() * 1e9) | 0);
 const BASE_X = [92, WORLD_W - 92];   // Hütten-Positionen (links / rechts)
 let trees = [];
 let wipfe = [];
+let birds = [];
 
 function genTerrain() {
   mask = new Uint8Array(WORLD_W * WORLD_H);
+  granitHp = new Uint8Array(WORLD_W * WORLD_H);
   groundY = new Int16Array(WORLD_W);
   goldSpots = [];
   const p1 = rng() * 6.28, p2 = rng() * 6.28, p3 = rng() * 6.28, p4 = rng() * 6.28;
@@ -80,15 +86,22 @@ function genTerrain() {
         h = h * (1 - ww) + 296 * ww;
       }
     }
-    groundY[x] = Math.round(clamp(h, 120, WORLD_H - 160));
+    groundY[x] = Math.round(clamp(h, 120, 460));   // Oberfläche im oberen Drittel
   }
 
-  // Schichten: Erde oben, darunter Fels; ganz unten und an den Rändern Granit
+  // Schichten: Erde, Fels, Tiefengestein mit Granitbändern; unten Grundgestein
+  const GRANIT_TOP = WORLD_H - 300;
   for (let x = 0; x < WORLD_W; x++) {
     const rockTop = groundY[x] + 130 + Math.sin(x * 0.016 + p4) * 38;
+    const granitTop = GRANIT_TOP + Math.sin(x * 0.011 + p2) * 34 + Math.sin(x * 0.03 + p3) * 12;
     for (let y = groundY[x]; y < WORLD_H; y++) {
       let m = y >= rockTop ? MAT.ROCK : MAT.EARTH;
-      if (y >= WORLD_H - 8 || x < 5 || x >= WORLD_W - 5) m = MAT.GRANIT;
+      // Tiefe: Granitbänder mit Fels-Zwischenlagen (sprengbar, aber zäh)
+      if (y >= granitTop) {
+        const band = Math.sin(y * 0.06 + Math.sin(x * 0.02) * 1.6);
+        m = band > -0.35 ? MAT.GRANIT : MAT.ROCK;
+      }
+      if (y >= WORLD_H - 6 || x < 4 || x >= WORLD_W - 4) m = MAT.BEDROCK;
       mask[idx(x, y)] = m;
     }
   }
@@ -111,39 +124,61 @@ function genTerrain() {
     blob(x, y, 7 + rng() * 6, MAT.GOLD, [MAT.EARTH]);
     goldSpots.push({ x, y, rock: false });
   }
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {                       // Gold im mittleren Fels
     const x = 60 + ((rng() * (WORLD_W - 120)) | 0);
-    const y = (WORLD_H - 60 - rng() * 110) | 0;
+    const y = (GRANIT_TOP - 40 - rng() * 200) | 0;
     blob(x, y, 10 + rng() * 8, MAT.GOLD, [MAT.ROCK, MAT.EARTH]);
     goldSpots.push({ x, y, rock: true });
   }
-  // Kohleflöze in der Erde, Sandtaschen, Granit-Sperradern im Fels
+  for (let i = 0; i < 4; i++) {                       // fette Adern im Granit
+    const x = 80 + ((rng() * (WORLD_W - 160)) | 0);
+    const y = (GRANIT_TOP + 40 + rng() * 190) | 0;
+    blob(x, y, 12 + rng() * 9, MAT.GOLD, [MAT.ROCK, MAT.GRANIT]);
+    goldSpots.push({ x, y, rock: true, deep: true });
+  }
+  // Kohleflöze (oben in der Erde, tiefer im Fels), Sandtaschen
   for (let i = 0; i < 6; i++) {
     const x = 50 + ((rng() * (WORLD_W - 100)) | 0);
     const y = (groundY[clamp(x, 0, WORLD_W - 1)] + 35 + rng() * 80) | 0;
     blob(x, y, 6 + rng() * 5, MAT.COAL, [MAT.EARTH]);
+  }
+  for (let i = 0; i < 5; i++) {
+    const x = 50 + ((rng() * (WORLD_W - 100)) | 0);
+    const y = (GRANIT_TOP - 60 - rng() * 220) | 0;
+    blob(x, y, 8 + rng() * 6, MAT.COAL, [MAT.ROCK]);
+  }
+  // Eisenerz: nur sprengbar, sitzt im Fels und tief im Granit (Hochofen!)
+  for (let i = 0; i < 6; i++) {
+    const x = 50 + ((rng() * (WORLD_W - 100)) | 0);
+    const y = (GRANIT_TOP - 30 - rng() * 240) | 0;
+    blob(x, y, 8 + rng() * 6, MAT.ORE, [MAT.ROCK]);
+  }
+  for (let i = 0; i < 3; i++) {
+    const x = 80 + ((rng() * (WORLD_W - 160)) | 0);
+    const y = (GRANIT_TOP + 60 + rng() * 180) | 0;
+    blob(x, y, 10 + rng() * 7, MAT.ORE, [MAT.ROCK, MAT.GRANIT]);
   }
   for (let i = 0; i < 4; i++) {
     const x = 70 + ((rng() * (WORLD_W - 140)) | 0);
     const y = (groundY[clamp(x, 0, WORLD_W - 1)] + 30 + rng() * 60) | 0;
     blob(x, y, 6 + rng() * 6, MAT.SAND, [MAT.EARTH]);
   }
-  for (let i = 0; i < 3; i++) {
-    const x = 80 + ((rng() * (WORLD_W - 160)) | 0);
-    const y = (WORLD_H - 40 - rng() * 120) | 0;
-    blob(x, y, 8 + rng() * 8, MAT.GRANIT, [MAT.ROCK]);
-  }
-  // Höhlen in der Erdschicht + eine Lavagrotte in der Tiefe
+  // Höhlen in der Erdschicht, große Kavernen im Fels + Lavaseen ganz unten
   for (let i = 0; i < 4; i++) {
     const x = 80 + ((rng() * (WORLD_W - 160)) | 0);
     const y = groundY[clamp(x, 0, WORLD_W - 1)] + 60 + rng() * 60;
     blob(x, y | 0, 9 + rng() * 9, MAT.TUNNEL, [MAT.EARTH]);
   }
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 5; i++) {
+    const x = 90 + ((rng() * (WORLD_W - 180)) | 0);
+    const y = (GRANIT_TOP - 40 - rng() * 220) | 0;
+    blob(x, y, 14 + rng() * 12, MAT.TUNNEL, [MAT.ROCK, MAT.COAL, MAT.ORE]);
+  }
+  for (let i = 0; i < 3; i++) {
     const x = 140 + ((rng() * (WORLD_W - 280)) | 0);
-    const y = (WORLD_H - 90 - rng() * 60) | 0;
-    blob(x, y, 13 + rng() * 7, MAT.TUNNEL, [MAT.ROCK, MAT.EARTH, MAT.GOLD]);
-    blob(x, y + 8, 12 + rng() * 5, MAT.LAVA, [MAT.TUNNEL]);
+    const y = (WORLD_H - 60 - rng() * 120) | 0;
+    blob(x, y, 15 + rng() * 9, MAT.TUNNEL, [MAT.ROCK, MAT.GRANIT, MAT.GOLD, MAT.ORE]);
+    blob(x, y + 10, 14 + rng() * 6, MAT.LAVA, [MAT.TUNNEL]);
   }
 
   // See in der tiefsten Senke (weit weg von den Hütten)
@@ -179,6 +214,14 @@ function genTerrain() {
   for (let i = 0; i < 3; i++) {
     const x = 150 + ((rng() * (WORLD_W - 300)) | 0);
     wipfe.push({ x, y: groundY[x] - 1, dir: rng() < 0.5 ? -1 : 1, t: rng() * 3, state: 'walk', fleeT: 0, dead: false, respT: 0 });
+  }
+  // Vögel: ziehen ihre Kreise über der Landschaft
+  birds = [];
+  for (let i = 0; i < 5; i++) {
+    birds.push({
+      x: rng() * WORLD_W, y: 60 + rng() * 140, dir: rng() < 0.5 ? -1 : 1,
+      v: 26 + rng() * 22, ph: rng() * 6.28, amp: 6 + rng() * 10, scale: 0.8 + rng() * 0.5,
+    });
   }
 }
 
@@ -227,9 +270,21 @@ function recolor(x0, y0, x1, y1) {
       const shine = n > 0.94 ? 62 : 0;
       d[p] = 38 + n * 10 + shine; d[p + 1] = 38 + n * 10 + shine; d[p + 2] = 44 + shine; continue;
     }
-    if (m === MAT.GRANIT) {                   // dunkles, grob geflecktes Gestein
-      const g = 56 + n * 10 + (n2 > 0.75 ? 22 : 0);
-      d[p] = g; d[p + 1] = g; d[p + 2] = g + 9; continue;
+    if (m === MAT.GRANIT) {                   // dunkles Gestein, angeschlagen heller gesprenkelt
+      const hp = granitHp && granitHp[i] ? granitHp[i] : TOUGH[MAT.GRANIT];
+      const crack = hp < TOUGH[MAT.GRANIT] && n > 0.45 ? (TOUGH[MAT.GRANIT] - hp) * 12 : 0;
+      const g = 56 + n * 10 + (n2 > 0.75 ? 22 : 0) + crack;
+      d[p] = g + crack * 0.4; d[p + 1] = g; d[p + 2] = g + 9; continue;
+    }
+    if (m === MAT.BEDROCK) {                  // Grundgestein: fast schwarz, sehr grob
+      const g = 34 + n * 8 + (n2 > 0.8 ? 14 : 0);
+      d[p] = g; d[p + 1] = g; d[p + 2] = g + 6; continue;
+    }
+    if (m === MAT.ORE) {                      // Eisenerz: rostrote Adern im Grau
+      const vein = texNoise(x >> 1, y >> 1) > 0.62;
+      if (vein) { d[p] = 166 + n * 22; d[p + 1] = 88 + n * 16; d[p + 2] = 52; }
+      else { d[p] = 96 + n * 14; d[p + 1] = 86 + n * 12; d[p + 2] = 84; }
+      continue;
     }
     if (m === MAT.LOAM) {
       d[p] = 164 + n * 18; d[p + 1] = 132 + n * 14; d[p + 2] = 80 + n2 * 10; continue;
@@ -282,25 +337,35 @@ function fillMat(x0, y0, w, h, mat) {
   wakeArea(x0 - 3, y0 - 3, x0 + w + 3, y0 + h + 3);
 }
 
+// Granit-Schadenskarte: Granit hält im Original mehrere Sprengungen aus,
+// bröckelt aber Stück für Stück weg (nur der Kartenrand ist wirklich fest).
+let granitHp = null;
+
 // Kreis ausheben. breakRock=false: Fels bleibt stehen (Graben);
-// true: alles außer Granit fliegt (Sprengung). Liefert Gold-/Kohle-Pixel.
+// true: Sprengung – alles außer Grundgestein fliegt, Granit erst nach
+// mehreren Treffern. Liefert Gold-Pixel, Kohle/Erz in lastCoal/lastOre.
 function carveCircle(cx, cy, r, breakRock) {
   cx |= 0; cy |= 0;
-  let gold = 0, coal = 0;
+  let gold = 0, coal = 0, ore = 0;
   const r2 = r * r;
   for (let y = cy - r; y <= cy + r; y++) {
     for (let x = cx - r; x <= cx + r; x++) {
       if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) continue;
       if ((x - cx) ** 2 + (y - cy) ** 2 > r2) continue;
       const i = idx(x, y), m = mask[i];
-      if (isFree(m) || m === MAT.GRANIT || m === MAT.PLATFORM) continue;
+      if (isFree(m) || m === MAT.PLATFORM || m === MAT.BEDROCK) continue;
       if (!breakRock && !DIGGABLE[m]) continue;         // Fels/Wasser/Lava: Schaufel scheitert
+      if (breakRock && TOUGH[m] > 0) {                  // zäh: erst anschlagen
+        granitHp[i] = (granitHp[i] || TOUGH[m]) - 1;
+        if (granitHp[i] > 0) continue;
+      }
       if (breakRock && (m === MAT.WATER || m === MAT.LAVA)) {
         mask[i] = bgMat(x, y);                           // Sprengung verdrängt Flüssigkeit
         continue;
       }
       if (m === MAT.GOLD) gold++;
       if (m === MAT.COAL) coal++;
+      if (m === MAT.ORE) ore++;
       // oben offen? Dann wird's Himmel, sonst dunkler Stollen
       mask[i] = bgMat(x, y);
     }
@@ -308,9 +373,11 @@ function carveCircle(cx, cy, r, breakRock) {
   applyRegion(cx - r, cy - r, 2 * r + 1, 2 * r + 1);
   wakeArea(cx - r - 3, cy - r - 3, cx + r + 3, cy + r + 3);
   carveCircle.lastCoal = coal;
+  carveCircle.lastOre = ore;
   return gold;
 }
 carveCircle.lastCoal = 0;
+carveCircle.lastOre = 0;
 
 // ---- Flüssigkeits-/Sand-Simulation ------------------------------------------
 // Zellautomat mit Aktiv-Liste: Wasser & Lava fallen und fließen seitlich,
@@ -390,6 +457,7 @@ function simStep(budget = 6000) {
 // ---- Spielzustand -----------------------------------------------------------
 const GOLD_PER_NUGGET = 42;   // so viele Gold-Pixel ergeben einen Klumpen
 const COAL_PER_CHUNK = 40;
+const ORE_PER_CHUNK = 60;
 const FLINT_MAX = 4;
 const LORE_MAX = 8;
 const LOAM_MAX = 3;
@@ -435,7 +503,7 @@ function makeClonk(id, name, color, keys, baseX) {
     id, name, color, keys, base: { x: baseX, y: 0 },
     x: 0, y: 0, vx: 0, vy: 0, dir: id === 0 ? 1 : -1,
     state: 'air', hp: 100, carry: 0, flints: 3, coal: 0, wood: 0, loam: 1,
-    score: 0, ko: 0,
+    ore: 0, metal: 0, score: 0, ko: 0,
     breath: 1, burnT: 0, goldPix: 0, coalPix: 0, rem: 0, bridgeT: 0,
     respawnT: 0, tumbleT: 0, throwCd: 0, hurtT: 0, throwSel: 0,
     walkPhase: 0, prevThrow: false, prevUse: false, prevSwitch: false, prevCycle: false,
@@ -880,6 +948,8 @@ function updateClonk(c, dt) {
     else if (it.type === 'loam' && c.loam < LOAM_MAX) { it.dead = true; c.loam++; addFloat(c.x, c.y - PH - 6, '🧱', '#e8c37a'); }
     else if (it.type === 'coal' && c.coal < 6) { it.dead = true; c.coal++; addFloat(c.x, c.y - PH - 6, '⚫', '#c3c9ce'); }
     else if (it.type === 'wood' && c.wood < 6) { it.dead = true; c.wood++; addFloat(c.x, c.y - PH - 6, '🪵', '#d8b284'); }
+    else if (it.type === 'ore' && c.ore < 6) { it.dead = true; c.ore++; addFloat(c.x, c.y - PH - 6, '🪨', '#c08a60'); }
+    else if (it.type === 'metal' && c.metal < 6) { it.dead = true; c.metal++; addFloat(c.x, c.y - PH - 6, '🔩', '#cdd4dc'); }
   }
 }
 
@@ -1004,6 +1074,17 @@ function collectGoldPix(c, gold, coal, x, y) {
     }
   }
 }
+// Sprengungen fördern Erz und Kohle als Brocken zutage
+function spillChunks(x, y, coal, ore) {
+  if (coal >= COAL_PER_CHUNK / 2) {
+    items.push({ type: 'coal', x: x + rng() * 16 - 8, y: y - 4, vx: rng() * 80 - 40, vy: -80 - rng() * 50 });
+  }
+  let n = Math.floor(ore / ORE_PER_CHUNK);
+  if (!n && ore >= ORE_PER_CHUNK / 2) n = 1;
+  while (n-- > 0) {
+    items.push({ type: 'ore', x: x + rng() * 18 - 9, y: y - 4, vx: rng() * 80 - 40, vy: -80 - rng() * 50 });
+  }
+}
 
 // Lehmbrücke: Benutzen-Taste unterwegs halten, baut in Blickrichtung
 // (mit Sprungtaste als Rampe nach oben)
@@ -1030,6 +1111,8 @@ const THROWABLES = [
   { key: 'flint', emoji: '💣', has: (c) => c.flints > 0, take: (c) => c.flints-- },
   { key: 'nugget', emoji: '💰', has: (c) => c.carry > 0, take: (c) => c.carry-- },
   { key: 'coal', emoji: '⚫', has: (c) => c.coal > 0, take: (c) => c.coal-- },
+  { key: 'ore', emoji: '🪨', has: (c) => c.ore > 0, take: (c) => c.ore-- },
+  { key: 'metal', emoji: '🔩', has: (c) => c.metal > 0, take: (c) => c.metal-- },
   { key: 'wood', emoji: '🪵', has: (c) => c.wood > 0, take: (c) => c.wood-- },
   { key: 'loam', emoji: '🧱', has: (c) => c.loam > 0, take: (c) => c.loam-- },
 ];
@@ -1067,14 +1150,24 @@ function cycleThrow(c) {
 }
 const throwFlint = throwItem;   // alter Name, weiter im Test-Hook verfügbar
 
-// Chemiefabrik an der eigenen Hütte: Kohle > Holz > Gold als Rezept
+// Produktion an der eigenen Hütte (Benutzen-Taste). Wie im Objektpaket:
+// der 🔥 Hochofen verhüttet Erz + Kohle zu 🔩 Metall, die 🏭 Chemiefabrik
+// macht daraus (bzw. aus Kohle/Holz/Gold) Feuersteine.
 function buyFlint(c) {
   if (game.state !== 'play' || c.state === 'dead') return;
   const cap = teamOf(c);
   if (Math.abs(c.x - cap.base.x) >= 46 || Math.abs(c.y - cap.base.y) >= 54) return;
+  // Hochofen zuerst: Erz + Kohle -> Metall (Metall ist das wertvolle Zwischengut)
+  if (c.ore >= 1 && c.coal >= 1 && c.metal < 6) {
+    c.ore--; c.coal--; c.metal++;
+    addFloat(c.x, c.y - PH - 8, '🪨+⚫ → 🔩 Metall', '#ffd0a0');
+    for (let i = 0; i < 8; i++) puff(furnaceX(cap), cap.base.y - 44 - i * 3, 1, '#e0a070');
+    return;
+  }
   if (c.flints >= FLINT_MAX) { addFloat(c.x, c.y - PH - 8, '💣 voll!', '#ffb0a0'); return; }
   let label = null;
-  if (c.coal >= 1) { c.coal--; c.flints = Math.min(FLINT_MAX, c.flints + 2); label = '⚫ → +2 💣'; }
+  if (c.metal >= 1) { c.metal--; c.flints = Math.min(FLINT_MAX, c.flints + 3); label = '🔩 → +3 💣'; }
+  else if (c.coal >= 1) { c.coal--; c.flints = Math.min(FLINT_MAX, c.flints + 2); label = '⚫ → +2 💣'; }
   else if (c.wood >= 2) { c.wood -= 2; c.flints = Math.min(FLINT_MAX, c.flints + 1); label = '2 🪵 → +1 💣'; }
   else if (cap.score >= 1) { cap.score--; c.flints = Math.min(FLINT_MAX, c.flints + 2); label = '−1 ⭐ → +2 💣'; }
   if (!label) { addFloat(c.x, c.y - PH - 8, 'Nichts zum Verfeuern!', '#ffb0a0'); return; }
@@ -1083,6 +1176,7 @@ function buyFlint(c) {
   for (let i = 0; i < 6; i++) puff(fx + 8, cap.base.y - 40 - i * 3, 1, '#aab4bd');
 }
 const factoryX = (p) => p.base.x + (p.id === 0 ? -34 : 34);
+const furnaceX = (p) => p.base.x + (p.id === 0 ? -58 : 58);
 
 function updateProjectiles(dt) {
   for (const f of projectiles) {
@@ -1116,14 +1210,11 @@ function boom(f) {
 function explode(x, y, src) {
   const R = 26;
   const gold = carveCircle(x, y, R, true);
-  const coal = carveCircle.lastCoal;
   if (gold) {
     let n = Math.max(1, Math.round(gold / GOLD_PER_NUGGET));
     while (n-- > 0) items.push({ type: 'nugget', x: x + rng() * 20 - 10, y: y + rng() * 10 - 5, vx: rng() * 90 - 45, vy: -90 - rng() * 60 });
   }
-  if (coal >= COAL_PER_CHUNK / 2) {
-    items.push({ type: 'coal', x: x + rng() * 16 - 8, y: y - 4, vx: rng() * 80 - 40, vy: -80 - rng() * 50 });
-  }
+  spillChunks(x, y, carveCircle.lastCoal, carveCircle.lastOre);
   // Schaden + Wumms für alle in Reichweite
   for (const c of allClonks()) {
     if (c.state === 'dead') continue;
@@ -1339,9 +1430,10 @@ function moveCase(el, dir) {
   if (dir > 0) {
     // Zeile unter dem Korb wegbohren (Granit blockiert)
     let gold = 0, coal = 0;
+    let ore = 0;
     for (let xx = el.x - CASE_HW - 1; xx <= el.x + CASE_HW + 1; xx++) {
       const m = matAt(xx, el.y + 3);
-      if (m === MAT.GRANIT) return false;
+      if (m === MAT.GRANIT || m === MAT.BEDROCK || m === MAT.ORE) return false;   // zu hart für den Bohrer
       if (m === MAT.GOLD) gold++;
       if (m === MAT.COAL) coal++;
       if (!isFree(m) && m !== MAT.PLATFORM) mask[idx(xx, el.y + 3)] = bgMat(xx, el.y + 3);
@@ -1408,7 +1500,7 @@ function updateElevators(dt) {
       for (let xx = el.x - CASE_HW; xx <= el.x + CASE_HW; xx++) {
         if (matAt(xx, el.y + 3) === MAT.ROCK) { rockBelow = true; break; }
       }
-      if (el.y + 6 >= WORLD_H - 8) move = 0;                 // Granitsohle erreicht
+      if (el.y + 6 >= WORLD_H - 8) move = 0;                 // Grundgestein erreicht
     }
     if (!move) { el.acc = 0; continue; }
     el.acc += (move === 1 ? (rockBelow ? 9 : 34) : 48) * dt;
@@ -1528,6 +1620,19 @@ function updateTrees(dt) {
       for (let i = 0; i < n; i++) items.push({ type: 'wood', x: t.x + rng() * 10 - 5, y: t.y - 8, vx: rng() * 40 - 20, vy: -30 });
       puff(t.x, t.y - t.h / 2, 8, '#555');
     }
+  }
+}
+function updateBirds(dt) {
+  for (const b of birds) {
+    b.x += b.dir * b.v * dt;
+    b.ph += dt * 6;
+    if (b.x < -40) { b.x = WORLD_W + 40; b.y = 60 + rng() * 140; }
+    if (b.x > WORLD_W + 40) { b.x = -40; b.y = 60 + rng() * 140; }
+    // Explosionen und Feuer scheuchen sie auf
+    for (const f of projectiles) {
+      if (Math.hypot(f.x - b.x, f.y - b.y) < 90) { b.dir = b.x < f.x ? -1 : 1; b.v = Math.min(90, b.v * 1.5); }
+    }
+    b.v += (34 - b.v) * dt * 0.25;
   }
 }
 function updateWipfe(dt) {
@@ -1715,10 +1820,11 @@ function serialize() {
   const clk = (c) => ({
     x: Math.round(c.x), y: Math.round(c.y), hp: Math.round(c.hp), carry: c.carry,
     flints: c.flints, coal: c.coal, wood: c.wood, loam: c.loam, dir: c.dir,
+    ore: c.ore, metal: c.metal,
     dead: c.state === 'dead' ? 1 : 0,
   });
   return {
-    v: 1, ts: Date.now(),
+    v: 2, ts: Date.now(),
     mode: game.mode, goal: game.goal, disasters: game.disasters, t: Math.round(game.t),
     mask: packMask(), groundY: Array.from(groundY),
     teams: players.map((p) => ({
@@ -1733,7 +1839,8 @@ function serialize() {
   };
 }
 function applyLoad(s) {
-  if (!s || s.v !== 1 || typeof s.mask !== 'string' || !Array.isArray(s.teams)) return false;
+  // v1-Stände stammen aus der flachen Welt (640 px) und passen nicht mehr
+  if (!s || s.v !== 2 || typeof s.mask !== 'string' || !Array.isArray(s.teams)) return false;
   game.mode = MODES.includes(s.mode) ? s.mode : 'sandbox';
   startGame(0);                        // Grundgerüst (Teams, Loren, Lifte) aufbauen
   mask = unpackMask(s.mask);
@@ -1743,7 +1850,7 @@ function applyLoad(s) {
   game.t = typeof s.t === 'number' ? s.t : ROUND_TIME;
   game.state = 'play'; game.winner = null;
   const setClk = (c, d) => {
-    Object.assign(c, { x: d.x, y: d.y, hp: d.hp, carry: d.carry, flints: d.flints, coal: d.coal, wood: d.wood, loam: d.loam, dir: d.dir });
+    Object.assign(c, { x: d.x, y: d.y, hp: d.hp, carry: d.carry, flints: d.flints, coal: d.coal, wood: d.wood, loam: d.loam, dir: d.dir, ore: d.ore || 0, metal: d.metal || 0 });
     c.vx = 0; c.vy = 0; c.tumbleT = 0; c.burnT = 0; c.breath = 1;
     c.state = d.dead ? 'dead' : 'air';
     if (d.dead) c.respawnT = 3;
@@ -1759,6 +1866,7 @@ function applyLoad(s) {
   (s.lores || []).forEach((l, i) => { if (lores[i]) Object.assign(lores[i], { x: l.x, y: l.y, vx: 0, vy: 0, cargo: l.cargo || 0 }); });
   (s.elevators || []).forEach((e, i) => { if (elevators[i]) Object.assign(elevators[i], { x: e.x, y: e.y, topY: e.topY, acc: 0 }); });
   trees = (s.trees || []).map((t) => ({ x: t.x, y: t.y, h: t.h, sway: rng() * 6.28, burn: 0, dead: !!t.dead }));
+  granitHp = new Uint8Array(WORLD_W * WORLD_H);   // Anschläge im Granit heilen beim Laden
   // Wipfe auf die geladene Oberfläche setzen
   for (const w of wipfe) { const x = 150 + ((rng() * (WORLD_W - 300)) | 0); w.x = x; w.y = groundY[x] - 1; w.dead = false; w.fleeT = 0; }
   projectiles = []; volcanoes = []; parts = []; floats = []; pendingBooms.length = 0;
@@ -1870,6 +1978,7 @@ function update(dt) {
   updateFlintDrops(dt);
   updateTrees(dt);
   updateWipfe(dt);
+  updateBirds(dt);
   updateDisasters(dt);
   simStep();
   updateFx(dt);
@@ -1961,10 +2070,11 @@ function draw(time) {
   }
 
   // ferne Bergketten mit leichter Parallaxe (rein dekorativ)
-  drawHills(0.18, 'rgba(150,180,200,0.75)', 208, 46);
-  drawHills(0.34, 'rgba(120,156,180,0.8)', 252, 58);
+  drawHills(0.18, 'rgba(150,180,200,0.75)', 268, 46);
+  drawHills(0.34, 'rgba(120,156,180,0.8)', 320, 58);
 
-  // Bäume hinter dem Gelände (wurzeln im Boden)
+  // Vögel am Himmel, Bäume hinter dem Gelände (wurzeln im Boden)
+  for (const b of birds) drawBird(b);
   for (const t of trees) drawTree(t, time);
 
   ctx.imageSmoothingEnabled = false;
@@ -2001,17 +2111,32 @@ function draw(time) {
   }
 }
 
+// Ferne Bergketten: enden am Erdboden (nicht am Kartenboden – sonst schauen
+// sie in der tiefen Welt neben dem Gelände hervor)
 function drawHills(par, col, base, amp) {
   const off = (cam.x - WORLD_W / 2) * par;
+  const foot = base + amp * 2 + 60;
   ctx.fillStyle = col;
   ctx.beginPath();
-  ctx.moveTo(-60, WORLD_H);
+  ctx.moveTo(-60, foot);
   for (let x = -60; x <= WORLD_W + 60; x += 16) {
     const wx = x + off;
     ctx.lineTo(x, base + Math.sin(wx * 0.006 + 1.7) * amp + Math.sin(wx * 0.017 + 4.1) * amp * 0.35);
   }
-  ctx.lineTo(WORLD_W + 60, WORLD_H);
+  ctx.lineTo(WORLD_W + 60, foot);
   ctx.closePath(); ctx.fill();
+}
+function drawBird(b) {
+  const flap = Math.sin(b.ph) * b.amp * 0.35;
+  ctx.save();
+  ctx.translate(b.x, b.y + Math.sin(b.ph * 0.3) * b.amp);
+  ctx.scale(b.dir * b.scale, b.scale);
+  ctx.strokeStyle = 'rgba(48,64,80,0.85)'; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-7, flap); ctx.quadraticCurveTo(-3, -2, 0, 0);
+  ctx.quadraticCurveTo(3, -2, 7, flap);
+  ctx.stroke();
+  ctx.restore();
 }
 function drawTree(t, time) {
   if (t.dead) return;
@@ -2080,6 +2205,13 @@ function drawHut(p) {
   ctx.fillStyle = '#4a525a'; ctx.fillRect(fx + 3, -32, 5, 13);
   ctx.fillStyle = '#39424b'; ctx.font = '8px system-ui'; ctx.textAlign = 'center';
   ctx.fillText('🏭', fx, -6);
+  // Hochofen (Erz + Kohle -> Metall) auf der ganz äußeren Seite
+  const hx = p.id === 0 ? -58 : 58;
+  ctx.fillStyle = '#4a4038'; ctx.fillRect(hx - 10, -24, 20, 24);
+  ctx.fillStyle = '#5c5048'; ctx.fillRect(hx - 11, -26, 22, 3);
+  ctx.fillStyle = '#3a322c'; ctx.fillRect(hx - 5, -38, 10, 13);       // Schlot
+  ctx.fillStyle = '#ff8a3c'; ctx.fillRect(hx - 4, -12, 8, 8);          // Glut
+  ctx.fillStyle = '#ffd07a'; ctx.fillRect(hx - 2, -10, 4, 4);
   ctx.fillStyle = '#8a6238'; ctx.fillRect(-20, -26, 40, 26);
   ctx.fillStyle = '#6d4c2a';
   for (let i = 0; i < 3; i++) ctx.fillRect(-20, -19 + i * 8, 40, 2);
@@ -2162,6 +2294,14 @@ function drawItem(it, time) {
     ctx.fillStyle = '#33343c';
     ctx.beginPath(); ctx.moveTo(it.x - 4, it.y); ctx.lineTo(it.x - 1, it.y - 4); ctx.lineTo(it.x + 3, it.y - 3); ctx.lineTo(it.x + 4, it.y + 1); ctx.lineTo(it.x, it.y + 2); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#61636e'; ctx.fillRect(it.x - 1, it.y - 2, 1.6, 1.6);
+  } else if (it.type === 'ore') {
+    ctx.fillStyle = '#6f6560';
+    ctx.beginPath(); ctx.moveTo(it.x - 4, it.y + 1); ctx.lineTo(it.x - 2, it.y - 3); ctx.lineTo(it.x + 3, it.y - 3); ctx.lineTo(it.x + 4, it.y + 1); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#a4603a'; ctx.fillRect(it.x - 2, it.y - 2, 2, 1.6); ctx.fillRect(it.x + 1, it.y - 1, 1.6, 1.6);
+  } else if (it.type === 'metal') {
+    ctx.fillStyle = '#8d97a4'; ctx.fillRect(it.x - 4, it.y - 3, 8, 5);
+    ctx.fillStyle = '#c8d2dc'; ctx.fillRect(it.x - 3, it.y - 2.4, 6, 1.6);
+    ctx.fillStyle = '#6b7480'; ctx.fillRect(it.x - 4, it.y + 0.8, 8, 1.2);
   } else if (it.type === 'wood') {
     ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(0.2);
     ctx.fillStyle = '#9a6f42'; ctx.fillRect(-5, -2, 10, 4);
@@ -2295,7 +2435,7 @@ function drawHUD() {
 
   const wide = CW >= 720;
   if (wide) {
-    const w = 218, h = 48;
+    const w = 260, h = 48;
     for (const p of players) {
       const c = p.controlled;
       const left = p.id === 0;
@@ -2307,10 +2447,10 @@ function drawHUD() {
       ctx.fillText((p.ai ? '🤖 ' : left ? '🔴 ' : '🔵 ') + p.name + (c === p ? ' ①' : ' ②'), x0 + 10, y0 + 14);
       ctx.fillStyle = '#eaf3fa'; ctx.font = '12px system-ui';
       ctx.fillText(sandbox ? `⭐ ${p.score}` : `⭐ ${p.score}/${game.goal}`, x0 + 118, y0 + 14);
-      ctx.fillText(`💰${c.carry} 💣${c.flints} ⚫${c.coal} 🪵${c.wood} 🧱${c.loam}`, x0 + 10, y0 + 35);
-      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0 + 160, y0 + 31, 48, 7);
+      ctx.fillText(`💰${c.carry} 💣${c.flints} ⚫${c.coal} 🪨${c.ore} 🔩${c.metal} 🪵${c.wood} 🧱${c.loam}`, x0 + 10, y0 + 35);
+      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0 + 178, y0 + 8, 70, 7);
       ctx.fillStyle = c.hp > 35 ? '#5ad06e' : '#ff6a5a';
-      ctx.fillRect(x0 + 160, y0 + 31, 48 * clamp(c.hp / 100, 0, 1), 7);
+      ctx.fillRect(x0 + 178, y0 + 8, 70 * clamp(c.hp / 100, 0, 1), 7);
     }
   } else {
     ctx.font = 'bold 12px system-ui';
@@ -2425,7 +2565,8 @@ window.__clonk = {
   lores: () => lores, elevators: () => elevators, onElevatorCase,
   goldSpots: () => goldSpots, trees: () => trees, wipfe: () => wipfe,
   volcanoes: () => volcanoes,
-  groundY: () => groundY, pressed, buttons, throwFlint, hurt,
+  groundY: () => groundY, birds: () => birds, pressed, buttons, throwFlint, hurt,
+  TOUGH, ORE_PER_CHUNK,
 };
 
 resize();

@@ -59,18 +59,29 @@ try {
     const C = window.__clonk, M = C.MAT, counts = {};
     for (const v of C.mask) counts[v] = (counts[v] || 0) + 1;
     const [a, b] = C.players();
+    // wie tief liegt der tiefste Granit/Bedrock? (Weltdicke prüfen)
+    let deepest = 0;
+    for (let y = C.WORLD_H - 1; y > 0; y--) {
+      if (C.matAt(480, y) === M.GRANIT) { deepest = y; break; }
+    }
     return {
       counts, n: C.players().length, crew: C.allClonks().length,
       ax: a.x, bx: b.x, baseA: a.base.x, baseB: b.base.x,
       trees: C.trees().length, wipfe: C.wipfe().filter((w) => !w.dead).length,
+      birds: C.birds().length, worldH: C.WORLD_H, deepest,
       M,
     };
   });
   const cnt = (m) => r.counts[m] || 0;
   check('Gelände: Himmel, Erde, Fels, Gold, Höhlen', cnt(r.M.SKY) > 10000 && cnt(r.M.EARTH) > 10000 && cnt(r.M.ROCK) > 10000 && cnt(r.M.GOLD) > 500 && cnt(r.M.TUNNEL) > 100, JSON.stringify(r.counts));
-  check('Neue Materialien: Wasser, Lava, Sand, Kohle, Granit', cnt(r.M.WATER) > 400 && cnt(r.M.LAVA) > 120 && cnt(r.M.SAND) > 150 && cnt(r.M.COAL) > 150 && cnt(r.M.GRANIT) > 3000, JSON.stringify(r.counts));
+  check('Materialien: Wasser, Lava, Sand, Kohle, Granit, Erz, Grundgestein',
+    cnt(r.M.WATER) > 400 && cnt(r.M.LAVA) > 120 && cnt(r.M.SAND) > 150 && cnt(r.M.COAL) > 150
+    && cnt(r.M.GRANIT) > 20000 && cnt(r.M.ORE) > 500 && cnt(r.M.BEDROCK) > 3000, JSON.stringify(r.counts));
+  check('Die Welt geht tief (Granitzone unter dem Fels)', r.worldH >= 1000 && r.deepest > 700,
+    `H=${r.worldH} tiefste Oberfläche=${r.deepest}`);
   check('Zwei Teams à zwei Clonks an ihren Hütten', r.n === 2 && r.crew === 4 && Math.abs(r.ax - r.baseA) < 40 && Math.abs(r.bx - r.baseB) < 40);
-  check('Bäume wachsen, Wipfe buddeln', r.trees >= 3 && r.wipfe === 3, `trees=${r.trees} wipfe=${r.wipfe}`);
+  check('Bäume wachsen, Wipfe buddeln, Vögel ziehen ihre Kreise',
+    r.trees >= 3 && r.wipfe === 3 && r.birds === 5, `trees=${r.trees} wipfe=${r.wipfe} birds=${r.birds}`);
 
   // ---- Graben: Erde weicht, Fels nicht, Granit hält sogar Sprengungen stand
   r = await page.evaluate((x) => {
@@ -84,14 +95,28 @@ try {
     const rockBefore = C.solid(x, rockTop + 5);
     C.carveCircle(x, rockTop + 5, 9, false);
     const rockAfter = C.solid(x, rockTop + 5);
-    const granitBefore = C.matAt(20, C.WORLD_H - 4) === M.GRANIT;
-    C.carveCircle(20, C.WORLD_H - 4, 9, true);
-    const granitAfter = C.matAt(20, C.WORLD_H - 4) === M.GRANIT;
-    return { earthBefore, earthAfter, rockBefore, rockAfter, granitBefore, granitAfter };
+    // Grundgestein am Rand: hält allem stand
+    const bedBefore = C.matAt(2, C.WORLD_H - 3) === M.BEDROCK;
+    for (let i = 0; i < 6; i++) C.carveCircle(2, C.WORLD_H - 3, 9, true);
+    const bedAfter = C.matAt(2, C.WORLD_H - 3) === M.BEDROCK;
+    // Granit: erst nach mehreren Sprengungen weg (TOUGH-Treffer)
+    let gx = -1, gy = -1;
+    outer: for (let y = C.WORLD_H - 40; y > 400; y--) {
+      for (let xx = 40; xx < C.WORLD_W - 40; xx++) {
+        if (C.matAt(xx, y) === M.GRANIT) { gx = xx; gy = y; break outer; }
+      }
+    }
+    C.carveCircle(gx, gy, 9, true);
+    const afterOne = C.matAt(gx, gy) === M.GRANIT;
+    for (let i = 0; i < C.TOUGH[M.GRANIT]; i++) C.carveCircle(gx, gy, 9, true);
+    const afterMany = C.matAt(gx, gy) === M.GRANIT;
+    return { earthBefore, earthAfter, rockBefore, rockAfter, bedBefore, bedAfter, foundGranit: gx >= 0, afterOne, afterMany };
   }, dryA);
   check('Schaufel gräbt Erde weg', r.earthBefore && !r.earthAfter);
   check('Fels widersteht der Schaufel', r.rockBefore && r.rockAfter);
-  check('Granit widersteht sogar der Sprengung', r.granitBefore && r.granitAfter);
+  check('Grundgestein widersteht sogar Dauerbeschuss', r.bedBefore && r.bedAfter);
+  check('Granit übersteht eine einzelne Sprengung', r.foundGranit && r.afterOne, JSON.stringify(r));
+  check('Granit bröckelt nach mehreren Sprengungen weg', !r.afterMany, JSON.stringify(r));
 
   // ---- Spieler gräbt sich senkrecht nach unten
   r = await page.evaluate((x) => {
@@ -574,6 +599,42 @@ try {
   check('Fabrik: 1 ⚫ Kohle → 2 💣', r.coalBuy.flints === 2 && r.coalBuy.coal === 0 && r.coalBuy.score === 5, JSON.stringify(r.coalBuy));
   check('Fabrik: 2 🪵 Holz → 1 💣', r.woodBuy.flints === 1 && r.woodBuy.wood === 0 && r.woodBuy.score === 5, JSON.stringify(r.woodBuy));
   check('Fabrik: −1 ⭐ → +2 💣', r.goldBuy.flints === 2 && r.goldBuy.score === 4, JSON.stringify(r.goldBuy));
+
+  // Hochofen + Metall-Rezept
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk';
+    p.ore = 1; p.coal = 1; p.metal = 0; p.flints = 0; p.wood = 0; p.score = 0;
+    C.buyFlint(p);                       // Hochofen: Erz + Kohle -> Metall
+    const smelt = { ore: p.ore, coal: p.coal, metal: p.metal, flints: p.flints };
+    C.buyFlint(p);                       // Fabrik: Metall -> 3 Feuersteine
+    return { smelt, metal: p.metal, flints: p.flints };
+  });
+  check('Hochofen: 🪨 Erz + ⚫ Kohle → 🔩 Metall',
+    r.smelt.ore === 0 && r.smelt.coal === 0 && r.smelt.metal === 1 && r.smelt.flints === 0, JSON.stringify(r.smelt));
+  check('Fabrik: 1 🔩 Metall → 3 💣', r.metal === 0 && r.flints === 3, JSON.stringify(r));
+
+  // Erz kommt nur durch Sprengung zutage
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42);
+    C.game.paused = true;
+    let ox = -1, oy = -1;
+    outer: for (let y = 400; y < C.WORLD_H - 20; y++) {
+      for (let x = 40; x < C.WORLD_W - 40; x++) {
+        if (C.matAt(x, y) === M.ORE) { ox = x; oy = y; break outer; }
+      }
+    }
+    const dug = C.carveCircle(ox, oy, 9, false);       // Schaufel: nichts
+    const stillOre = C.matAt(ox, oy) === M.ORE;
+    const before = C.items().filter((i) => i.type === 'ore').length;
+    C.explode(ox, oy, null);
+    const after = C.items().filter((i) => i.type === 'ore').length;
+    return { found: ox >= 0, stillOre, chunks: after - before, dug };
+  });
+  check('🪨 Eisenerz widersteht der Schaufel', r.found && r.stillOre);
+  check('Gesprengtes Erz fällt als Brocken heraus', r.chunks >= 1, 'chunks=' + r.chunks);
 
   // ---- Bäume geben Holz
   r = await page.evaluate(() => {
