@@ -118,8 +118,11 @@ Docker-Container deployt.
   Wettkampf an **einer Tastatur** (WASD+Q/E/F gegen
   Pfeiltasten+M/Komma/Punkt/N). Jedes Team hat **zwei Clonks**
   (Wechsel-Taste), eine Hütte, eine 🛒 Lore und eine 🏭 Chemiefabrik.
-  **Nach oben gräbt kein Clonk** – wie im Original führen Lehmbrücken,
-  Klettern oder der Grubenlift zurück ans Licht; beim Graben "schwimmt"
+  Grabrichtungen wie im Original: **senkrecht runter**, **waagerecht**
+  (wirklich flach – perfekt für Schienenstollen) und mit dem Joystick
+  **schräg abwärts** im freien Winkel; **nach oben gräbt kein Clonk** –
+  zurück ans Licht führen Lehmbrücken, Klettern oder der Grubenlift
+  (der auch alles mitnimmt, was auf seinem Korb liegt); beim Graben "schwimmt"
   der Clonk durchs Material, solange vorn etwas Grabbares ist
   (waagerechte Stollen tragen zuverlässig). **🎯 Werfen kann man alles**:
   💣 explodiert, 💰 ⚫ 🪵 🧱 fliegen im Bogen und bleiben liegen (Gold

@@ -436,6 +436,7 @@ carveCircle.lastOre = 0;
 let active = [];
 let activeFlag;
 let simTick = 0;
+const SPREAD = 8;   // Reichweite des Druckausgleichs für Flüssigkeiten
 let dirty = null;
 function wake(x, y) {
   if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) return;
@@ -478,9 +479,38 @@ function tryFlow(i, x, y, m) {
     mask[i] = bgMat(x, y);
     activeFlag[j] = 1; active.push(j);
     markDirty(x, y); markDirty(jx, jy);
-    wake(x - 1, y); wake(x + 1, y); wake(x, y - 1);
-    wake(jx - 1, jy); wake(jx + 1, jy); wake(jx, jy - 1);
+    // Nachbarn wecken – auch die DARUNTER, sonst hört eine abfließende
+    // Säule nach einer Zelle auf und es bleiben Wasserhügel stehen.
+    wake(x - 1, y); wake(x + 1, y); wake(x, y - 1); wake(x, y + 1);
+    wake(x - 1, y + 1); wake(x + 1, y + 1);
+    wake(jx - 1, jy); wake(jx + 1, jy); wake(jx, jy - 1); wake(jx, jy + 1);
     return true;
+  }
+  // Druckausgleich: Flüssigkeiten suchen in der eigenen Zeile nach einem
+  // freien Platz in Reichweite (nur durch eigenes Material hindurch) und
+  // fließen dorthin – so bleiben keine Wasserhügel stehen.
+  if (liquid) {
+    for (let d = 1; d <= SPREAD; d++) {
+      for (const dir of ((x + simTick) & 1 ? [1, -1] : [-1, 1])) {
+        const tx = x + dir * d;
+        if (tx < 1 || tx >= WORLD_W - 1) continue;
+        let blocked = false;
+        for (let k = 1; k < d; k++) if (mask[idx(x + dir * k, y)] !== m) { blocked = true; break; }
+        if (blocked) continue;
+        const j = idx(tx, y);
+        if (!isFree(mask[j])) continue;
+        if (!isFree(mask[j + WORLD_W]) && y + 1 < WORLD_H) {
+          // nur ausbreiten, wenn dort auch Boden ist (sonst fällt es gleich weiter)
+        }
+        mask[j] = m;
+        mask[i] = bgMat(x, y);
+        activeFlag[j] = 1; active.push(j);
+        markDirty(x, y); markDirty(tx, y);
+        wake(x, y - 1); wake(x - 1, y); wake(x + 1, y);
+        wake(tx, y + 1); wake(tx - 1, y); wake(tx + 1, y);
+        return true;
+      }
+    }
   }
   return false;
 }
@@ -1194,8 +1224,15 @@ function digStep(c, dt) {
   const L = cIn(c, 'left'), R = cIn(c, 'right');
   const dirIn = (R ? 1 : 0) - (L ? 1 : 0);
   if (dirIn) c.dir = dirIn;
+  // Richtung: waagerecht, schräg abwärts oder senkrecht – nie nach oben.
+  // Mit Joystick zählt der volle Winkel, auf der Tastatur Richtung/keine.
   let dx, dy;
-  if (dirIn) { dx = dirIn; dy = 0.28; }
+  const js = joyOf(c);
+  if (js && (Math.abs(js.dx) > 0.35 || js.dy > 0.35)) {
+    dx = js.dx; dy = Math.max(0, js.dy);
+    if (Math.abs(dx) < 0.35) { dx = 0; dy = 1; }          // fast senkrecht -> senkrecht
+    else if (dy < 0.35) dy = 0;                            // fast waagerecht -> waagerecht
+  } else if (dirIn) { dx = dirIn; dy = 0; }                // Tastatur: sauber waagerecht
   else { dx = 0; dy = 1; }
   const len = Math.hypot(dx, dy); dx /= len; dy /= len;
 
@@ -1229,6 +1266,13 @@ function digStep(c, dt) {
     c.x = nx; c.y = ny;
     if ((n & 3) === 0) puff(c.x - dx * 5, c.y - PH / 2, 1, '#8a6a48');
   }
+}
+// Joystick des Spielers, der diesen Clonk gerade steuert (für Grabwinkel)
+function joyOf(c) {
+  const cap = teamOf(c);
+  if (cap.ai || cap.controlled !== c) return null;
+  const js = joys[cap.id];
+  return js && (js.dx || js.dy) ? js : null;
 }
 // grobe Abtastung: liegt im Umkreis noch grabbares Material?
 function areaDiggable(cx, cy, r) {
@@ -1815,8 +1859,22 @@ function moveCase(el, dir) {
   for (const lo of lores) {
     if (Math.abs(lo.x - el.x) <= CASE_HW + 2 && Math.abs((lo.y + 1) - (el.y - dir)) <= 3) lo.y += dir;
   }
+  // Liegendes Fördergut fährt mit (Gold auf den Korb werfen und hochfahren)
+  for (const it of items) {
+    if (it.dead || it.buried) continue;
+    if (Math.abs(it.x - el.x) <= CASE_HW && Math.abs(it.y - (el.y - dir)) <= 4) {
+      it.y += dir; it.rest = true; it.vy = 0;
+    }
+  }
   wakeArea(el.x - CASE_HW - 3, el.y - 3, el.x + CASE_HW + 3, el.y + 6);
   return true;
+}
+// liegt unter dem Korb Material (dann wird gebohrt) oder ist der Schacht frei?
+function bodyBlockedRow(el) {
+  for (let xx = el.x - CASE_HW; xx <= el.x + CASE_HW; xx++) {
+    if (!isFree(matAt(xx, el.y + 3))) return true;
+  }
+  return false;
 }
 function updateElevators(dt) {
   for (const el of elevators) {
@@ -1838,7 +1896,10 @@ function updateElevators(dt) {
     }
     if (!move) { el.acc = 0; continue; }
     const power = players[el.team] && players[el.team].windmill ? 1.8 : 1;   // Strom vom Windrad
-    el.acc += (move === 1 ? (rockBelow ? 9 : 34) : 48) * power * dt;
+    // Leerfahrt (freier Schacht) ist deutlich flotter als das Bohren
+    const freeRun = move === -1 || !bodyBlockedRow(el);
+    const speed = move === -1 ? 95 : (freeRun ? 80 : rockBelow ? 14 : 42);
+    el.acc += speed * power * dt;
     let n = el.acc | 0; el.acc -= n;
     while (n-- > 0) {
       if (!moveCase(el, move)) { spark(el.x, el.y + 3, 2, '#c9c9d4'); break; }

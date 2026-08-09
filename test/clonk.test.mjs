@@ -680,6 +680,68 @@ try {
   });
   check('Der Stahlkorb übersteht Explosionen', r.survives === true);
 
+  // ---- Fahrstuhl: seitlich rausgraben, Fördergut fährt mit
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    p.x = el.x; p.y = el.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.items().push({ type: 'nugget', x: el.x, y: el.y - 3, vx: 0, vy: 0, rest: true });
+    C.pressed.add('s');            // Korb bohrt nach unten
+    return { y0: el.y, itemY0: C.items().find((i) => i.type === 'nugget').y };
+  });
+  await tick(1.4);
+  r = await page.evaluate(({ y0, itemY0 }) => {
+    const C = window.__clonk;
+    C.pressed.delete('s');
+    const el = C.elevators()[0];
+    const it = C.items().find((i) => i.type === 'nugget');
+    return { drilled: el.y - y0, itemRode: it ? it.y - itemY0 : 0, onCase: it ? Math.abs(it.x - el.x) < 9 : false };
+  }, r);
+  check('Fahrstuhl bohrt zügig (>40 px in 1,4 s)', r.drilled > 40, JSON.stringify(r));
+  check('Fördergut auf dem Korb fährt mit', r.itemRode > 30 && r.onCase, JSON.stringify(r));
+
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    p.x = el.x; p.y = el.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.pressed.add('s'); C.pressed.add('d');    // Graben MIT Richtung
+    return { elY0: el.y, x0: p.x };
+  });
+  await tick(1.2);
+  r = await page.evaluate(({ elY0, x0 }) => {
+    const C = window.__clonk;
+    C.pressed.delete('s'); C.pressed.delete('d');
+    const el = C.elevators()[0];
+    const p = C.players()[0];
+    return { moved: p.x - x0, drilled: el.y - elY0, dy: Math.abs(p.y - (el.y - 1)), state: p.state };
+  }, r);
+  check('Aus dem Fahrstuhl seitlich rausgraben (Korb bleibt stehen)',
+    r.moved > 12 && r.drilled === 0, JSON.stringify(r));
+  check('Der Seitenstollen bleibt waagerecht (Schienen-tauglich)', r.dy < 8, JSON.stringify(r));
+
+  // ---- Wasser bildet keine Hügel, sondern einen Spiegel
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42);
+    C.game.paused = true;
+    const x0 = 400, y0 = C.groundY()[x0] + 60;
+    for (let x = x0 - 60; x < x0 + 60; x++) for (let y = y0 - 60; y < y0; y++) C.mask[y * C.WORLD_W + x] = M.SKY;
+    for (let x = x0 - 6; x < x0 + 6; x++) for (let y = y0 - 50; y < y0; y++) C.mask[y * C.WORLD_W + x] = M.WATER;
+    C.wakeArea(x0 - 70, y0 - 70, x0 + 70, y0 + 5);
+    for (let i = 0; i < 60 * 12; i++) C.update(0.016);
+    const surf = [];
+    for (let x = x0 - 45; x <= x0 + 45; x += 5) {
+      for (let y = y0 - 60; y < y0; y++) if (C.matAt(x, y) === M.WATER) { surf.push(y); break; }
+    }
+    return { n: surf.length, spread: Math.max(...surf) - Math.min(...surf) };
+  });
+  check('Wasser läuft zu einem ebenen Spiegel aus (keine Hügel)',
+    r.n >= 15 && r.spread <= 2, JSON.stringify(r));
+
   // ---- Chemiefabrik-Rezepte: Kohle > Holz > Gold
   r = await page.evaluate(() => {
     const C = window.__clonk;
