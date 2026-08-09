@@ -509,9 +509,49 @@ function simStep(budget = 6000) {
 const GOLD_PER_NUGGET = 42;   // so viele Gold-Pixel ergeben einen Klumpen
 const COAL_PER_CHUNK = 40;
 const ORE_PER_CHUNK = 60;
-const FLINT_MAX = 4;
-const LORE_MAX = 8;
-const LOAM_MAX = 3;
+// Ein Clonk trägt wie im Original nur eine Handvoll Zeug – alles andere
+// liegt herum und will mit der Lore transportiert werden.
+const SLOTS = 4;
+const FLINT_MAX = SLOTS;
+const LORE_MAX = 24;
+const LOAM_MAX = SLOTS;
+// Tragbare Güter (Feld am Clonk / Schlüssel im Basis-Lager / Item-Typ)
+const GOODS = [
+  { key: 'flint', field: 'flints', emoji: '💣' },
+  { key: 'loam', field: 'loam', emoji: '🧱' },
+  { key: 'rail', field: 'rail', emoji: '🛤' },
+  { key: 'nugget', field: 'carry', emoji: '💰' },
+  { key: 'coal', field: 'coal', emoji: '⚫' },
+  { key: 'ore', field: 'ore', emoji: '🪨' },
+  { key: 'metal', field: 'metal', emoji: '🔩' },
+  { key: 'plank', field: 'plank', emoji: '🪜' },
+  { key: 'wood', field: 'wood', emoji: '🪵' },
+];
+const goodOf = (key) => GOODS.find((g) => g.key === key);
+// belegte Plätze = Summe aller getragenen Güter
+function invCount(c) {
+  let n = 0;
+  for (const g of GOODS) n += c[g.field] || 0;
+  return n;
+}
+const invFree = (c) => Math.max(0, SLOTS - invCount(c));
+// Basis-Lager eines Teams (die Lore kippt hier ab, die Werke greifen darauf zu)
+function stockOf(c) { return teamOf(c).stock; }
+function have(c, key) { return (c[goodOf(key).field] || 0) + (stockOf(c)[key] || 0); }
+// verbraucht n Stück: erst aus dem Lager, dann aus der Hand
+function takeRes(c, key, n) {
+  const st = stockOf(c), f = goodOf(key).field;
+  const fromStock = Math.min(n, st[key] || 0);
+  st[key] -= fromStock; n -= fromStock;
+  if (n > 0) c[f] = Math.max(0, (c[f] || 0) - n);
+}
+// gibt n Stück aus: erst in die Hand (soweit Platz), Rest ins Lager
+function giveRes(c, key, n) {
+  const st = stockOf(c), f = goodOf(key).field;
+  const toHand = Math.min(n, invFree(c));
+  c[f] = (c[f] || 0) + toHand;
+  st[key] = (st[key] || 0) + (n - toHand);
+}
 const ROUND_TIME = 300;
 const IS_TOUCH = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
   || 'ontouchstart' in window;
@@ -533,7 +573,7 @@ try {
 let players = [];        // die beiden Team-Anführer (zugleich Clonk Nr. 1)
 let items = [];          // { type, x, y, vx, vy, buried, chute, rest }
 let projectiles = [];    // Feuersteine + Meteore
-let lores = [];          // Minen-Loren { team, x, y, vx, vy, cargo }
+let lores = [];          // Minen-Loren { team, x, y, vx, vy, load{} }
 let railY = null;        // Schienen-Höhe je Spalte (-1 = keine Schiene)
 let fish = [];           // Fische im See
 let elevators = [];      // Grubenlifte { team, x, y (Korb-Oberkante), topY, acc }
@@ -555,8 +595,9 @@ function makeClonk(id, name, color, keys, baseX) {
   return {
     id, name, color, keys, base: { x: baseX, y: 0 },
     x: 0, y: 0, vx: 0, vy: 0, dir: id === 0 ? 1 : -1,
-    state: 'air', hp: 100, carry: 0, flints: 3, coal: 0, wood: 0, loam: 1,
+    state: 'air', hp: 100, carry: 0, flints: 1, coal: 0, wood: 0, loam: 1,
     ore: 0, metal: 0, plank: 0, rail: 0, score: 0, ko: 0,
+    stock: { flint: 3, loam: 2, rail: 8, nugget: 0, coal: 2, ore: 0, metal: 0, plank: 0, wood: 0 },
     breath: 1, burnT: 0, goldPix: 0, coalPix: 0, rem: 0, bridgeT: 0,
     respawnT: 0, tumbleT: 0, throwCd: 0, hurtT: 0, throwSel: 0,
     walkPhase: 0, prevThrow: false, prevUse: false, prevSwitch: false, prevCycle: false,
@@ -600,9 +641,9 @@ function startGame(seed) {
     p.base.y = groundY[p.base.x];
     p.x = p.base.x + (p.id === 0 ? 26 : -26);
     p.y = groundY[p.x | 0] - 1;
-    // zweiter Clonk der Mannschaft
+    // zweiter Clonk der Mannschaft (teilt sich Basis und Lager)
     const b = makeClonk(p.id, p.name, p.color, p.keys, p.base.x);
-    b.lead = p; b.base = p.base; b.flints = 1; b.loam = 0;
+    b.lead = p; b.base = p.base; b.flints = 1; b.loam = 1; b.stock = p.stock;
     b.x = p.base.x + (p.id === 0 ? 8 : -8);
     b.y = groundY[b.x | 0] - 1;
     p.buddy = b;
@@ -612,7 +653,7 @@ function startGame(seed) {
   // je Hütte eine Lore (Richtung Kartenmitte geparkt, auf der Oberfläche)
   lores = players.map((p) => {
     const lx = p.base.x + (p.id === 0 ? 44 : -44);
-    return { team: p.id, x: lx, y: groundY[lx] - 1, vx: 0, vy: 0, cargo: 0 };
+    return { team: p.id, x: lx, y: groundY[lx] - 1, vx: 0, vy: 0, load: {} };
   });
   // Schienenstück ab Werk vor jeder Hütte (Anschluss ans Netz)
   railY = new Int16Array(WORLD_W).fill(-1);
@@ -999,22 +1040,23 @@ function updateClonk(c, dt) {
     c.hp = Math.min(100, c.hp + 7 * dt);
   }
 
-  // Einsammeln (Klumpen, Feuersteine, Lehm, Kohle, Holz)
+  // Einsammeln – aber nur, solange Platz in den paar Taschen ist. Der Rest
+  // bleibt liegen und will mit der Lore abgeholt werden (wie im Original).
   for (const it of items) {
     if (it.buried || it.dead) continue;
     if (it.own === c && it.ownT > 0) continue;   // frisch Geworfenes nicht sofort wieder einstecken
     const dx = it.x - c.x, dy = it.y - (c.y - PH / 2);
     if (dx * dx + dy * dy > 15 * 15) continue;
-    if (it.type === 'nugget') { it.dead = true; c.carry++; addFloat(c.x, c.y - PH - 6, '💰', '#ffd166'); }
-    else if (it.type === 'flint' && c.flints < FLINT_MAX) { it.dead = true; c.flints++; addFloat(c.x, c.y - PH - 6, '💣', '#ffb0a0'); }
-    else if (it.type === 'loam' && c.loam < LOAM_MAX) { it.dead = true; c.loam++; addFloat(c.x, c.y - PH - 6, '🧱', '#e8c37a'); }
-    else if (it.type === 'coal' && c.coal < 6) { it.dead = true; c.coal++; addFloat(c.x, c.y - PH - 6, '⚫', '#c3c9ce'); }
-    else if (it.type === 'wood' && c.wood < 6) { it.dead = true; c.wood++; addFloat(c.x, c.y - PH - 6, '🪵', '#d8b284'); }
-    else if (it.type === 'ore' && c.ore < 6) { it.dead = true; c.ore++; addFloat(c.x, c.y - PH - 6, '🪨', '#c08a60'); }
-    else if (it.type === 'metal' && c.metal < 6) { it.dead = true; c.metal++; addFloat(c.x, c.y - PH - 6, '🔩', '#cdd4dc'); }
-    else if (it.type === 'plank' && c.plank < 8) { it.dead = true; c.plank++; addFloat(c.x, c.y - PH - 6, '🪜', '#d8b284'); }
-    else if (it.type === 'rail' && c.rail < 12) { it.dead = true; c.rail++; addFloat(c.x, c.y - PH - 6, '🛤', '#9aa4b0'); }
+    const g = goodOf(it.type);
+    if (!g) continue;
+    if (invFree(c) <= 0) {
+      if (!c.fullHintT) { c.fullHintT = 2; addFloat(c.x, c.y - PH - 10, '🎒 voll – ab in die Lore!', '#ffb0a0'); }
+      continue;
+    }
+    it.dead = true; c[g.field]++;
+    addFloat(c.x, c.y - PH - 6, g.emoji, '#ffd166');
   }
+  c.fullHintT = Math.max(0, (c.fullHintT || 0) - dt);
 }
 
 function switchClonk(cap) {
@@ -1254,73 +1296,75 @@ const furnaceX = (p) => p.base.x + (p.id === 0 ? -58 : 58);
 const sawmillX = (p) => p.base.x + (p.id === 0 ? -82 : 82);
 const millX = (p) => p.base.x + (p.id === 0 ? 74 : -74);
 
-// Produktionsrezepte (Reihenfolge = Priorität der Schnell-Taste)
+// Produktionsrezepte: greifen auf Basis-Lager UND Hand zu (an der Hütte ist
+// beides ein Topf); das Ergebnis geht in die Hand, der Rest ins Lager.
 const RECIPES = [
   {
     key: 'smelt', label: '🪨+⚫ → 🔩', name: 'Hochofen',
-    can: (c) => c.ore >= 1 && c.coal >= 1 && c.metal < 6,
+    can: (c) => have(c, 'ore') >= 1 && have(c, 'coal') >= 1,
     run: (c) => {
       const cap = teamOf(c);
-      c.ore--; c.coal--;
-      c.metal = Math.min(6, c.metal + (cap.windmill ? 2 : 1));   // Strom verdoppelt
+      takeRes(c, 'ore', 1); takeRes(c, 'coal', 1);
+      giveRes(c, 'metal', cap.windmill ? 2 : 1);   // Strom verdoppelt
       smoke(furnaceX(cap), cap.base.y - 44, '#e0a070');
       return cap.windmill ? '🪨+⚫ → 2 🔩 (⚡)' : '🪨+⚫ → 🔩';
     },
   },
   {
     key: 'saw', label: '🪵 → 2 🪜', name: 'Sägewerk',
-    can: (c) => c.wood >= 1 && c.plank < 8,
+    can: (c) => have(c, 'wood') >= 1,
     run: (c) => {
       const cap = teamOf(c);
-      c.wood--; c.plank = Math.min(8, c.plank + 2);
+      takeRes(c, 'wood', 1); giveRes(c, 'plank', 2);
       smoke(sawmillX(cap), cap.base.y - 30, '#d8c090');
       return '🪵 → 2 🪜 Bretter';
     },
   },
   {
     key: 'rails', label: '🪜+🔩 → 4 🛤', name: 'Schienenschmiede',
-    can: (c) => c.plank >= 1 && c.metal >= 1 && c.rail < 12,
+    can: (c) => have(c, 'plank') >= 1 && have(c, 'metal') >= 1,
     run: (c) => {
       const cap = teamOf(c);
-      c.plank--; c.metal--; c.rail = Math.min(12, c.rail + 4);
+      takeRes(c, 'plank', 1); takeRes(c, 'metal', 1); giveRes(c, 'rail', 4);
       smoke(factoryX(cap), cap.base.y - 40, '#aab4bd');
       return '🪜+🔩 → 4 🛤 Schienen';
     },
   },
   {
     key: 'flintM', label: '🔩 → 3 💣', name: 'Chemiefabrik',
-    can: (c) => c.metal >= 1 && c.flints < FLINT_MAX,
-    run: (c) => { c.metal--; c.flints = Math.min(FLINT_MAX, c.flints + 3); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '🔩 → 3 💣'; },
+    can: (c) => have(c, 'metal') >= 1,
+    run: (c) => { takeRes(c, 'metal', 1); giveRes(c, 'flint', 3); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '🔩 → 3 💣'; },
   },
   {
     key: 'flintC', label: '⚫ → 2 💣', name: 'Chemiefabrik',
-    can: (c) => c.coal >= 1 && c.flints < FLINT_MAX,
-    run: (c) => { c.coal--; c.flints = Math.min(FLINT_MAX, c.flints + 2); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '⚫ → 2 💣'; },
+    can: (c) => have(c, 'coal') >= 1,
+    run: (c) => { takeRes(c, 'coal', 1); giveRes(c, 'flint', 2); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '⚫ → 2 💣'; },
   },
   {
     key: 'flintW', label: '2 🪵 → 1 💣', name: 'Chemiefabrik',
-    can: (c) => c.wood >= 2 && c.flints < FLINT_MAX,
-    run: (c) => { c.wood -= 2; c.flints = Math.min(FLINT_MAX, c.flints + 1); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '2 🪵 → 1 💣'; },
+    can: (c) => have(c, 'wood') >= 2,
+    run: (c) => { takeRes(c, 'wood', 2); giveRes(c, 'flint', 1); smoke(factoryX(teamOf(c)), teamOf(c).base.y - 40, '#aab4bd'); return '2 🪵 → 1 💣'; },
   },
 ];
 
-// Handel: Preise in 💰 Gold (die abgelieferten Klumpen sind die Währung)
+// Handel: Preise in 💰 Gold (die abgelieferten Klumpen sind die Währung).
+// Gekauftes landet in der Hand, sonst im Lager.
 const SHOP = [
-  { key: 'flint', label: '💣 Feuerstein', price: 2, give: (c) => { if (c.flints >= FLINT_MAX) return false; c.flints++; return true; } },
-  { key: 'loam', label: '🧱 Lehm', price: 1, give: (c) => { if (c.loam >= LOAM_MAX) return false; c.loam++; return true; } },
-  { key: 'wood', label: '🪵 Holz', price: 1, give: (c) => { if (c.wood >= 6) return false; c.wood++; return true; } },
-  { key: 'coal', label: '⚫ Kohle', price: 2, give: (c) => { if (c.coal >= 6) return false; c.coal++; return true; } },
-  { key: 'metal', label: '🔩 Metall', price: 4, give: (c) => { if (c.metal >= 6) return false; c.metal++; return true; } },
-  { key: 'rail', label: '🛤 Schienen ×4', price: 2, give: (c) => { if (c.rail > 8) return false; c.rail = Math.min(12, c.rail + 4); return true; } },
-  { key: 'lore', label: '🛒 Lore', price: 6, give: (c) => { addLore(teamOf(c)); return true; } },
-  { key: 'mill', label: '🌬️ Windrad', price: 10, give: (c) => { const cap = teamOf(c); if (cap.windmill) return false; cap.windmill = true; return true; } },
+  { key: 'flint', label: '💣 Feuerstein', price: 2 },
+  { key: 'loam', label: '🧱 Lehm', price: 1 },
+  { key: 'wood', label: '🪵 Holz', price: 1 },
+  { key: 'coal', label: '⚫ Kohle', price: 2 },
+  { key: 'metal', label: '🔩 Metall', price: 4 },
+  { key: 'rail', label: '🛤 Schienen ×4', price: 2, amount: 4 },
+  { key: 'lore', label: '🛒 Lore', price: 6, special: (c) => { addLore(teamOf(c)); return true; } },
+  { key: 'mill', label: '🌬️ Windrad', price: 10, special: (c) => { const cap = teamOf(c); if (cap.windmill) return false; cap.windmill = true; return true; } },
 ];
 const SELL = [
-  { key: 'ore', label: '🪨 Erz', price: 2, has: (c) => c.ore > 0, take: (c) => c.ore-- },
-  { key: 'metal', label: '🔩 Metall', price: 5, has: (c) => c.metal > 0, take: (c) => c.metal-- },
-  { key: 'coal', label: '⚫ Kohle', price: 2, has: (c) => c.coal > 0, take: (c) => c.coal-- },
-  { key: 'plank', label: '🪜 Bretter', price: 2, has: (c) => c.plank > 0, take: (c) => c.plank-- },
-  { key: 'wood', label: '🪵 Holz', price: 1, has: (c) => c.wood > 0, take: (c) => c.wood-- },
+  { key: 'ore', label: '🪨 Erz', price: 2 },
+  { key: 'metal', label: '🔩 Metall', price: 5 },
+  { key: 'coal', label: '⚫ Kohle', price: 2 },
+  { key: 'plank', label: '🪜 Bretter', price: 2 },
+  { key: 'wood', label: '🪵 Holz', price: 1 },
 ];
 
 function smoke(x, y, color) { for (let i = 0; i < 7; i++) puff(x, y - i * 3, 1, color); }
@@ -1333,9 +1377,10 @@ function buyFlint(c) {
     addFloat(c.x, c.y - PH - 8, r.run(c), '#ffe6a0');
     return;
   }
-  // nichts zu produzieren: notfalls Gold in Feuersteine tauschen
+  // nichts zu produzieren: Taschen ins Lager leeren, sonst Gold tauschen
+  if (stockPutAll(c)) return;
   const cap = teamOf(c);
-  if (cap.score >= 2 && c.flints < FLINT_MAX) {
+  if (cap.score >= 2 && invFree(c) > 0) {
     cap.score -= 2; c.flints++;
     addFloat(c.x, c.y - PH - 8, '−2 💰 → 💣', '#ffe6a0');
     return;
@@ -1347,7 +1392,8 @@ function shopBuy(c, key) {
   const it = SHOP.find((s) => s.key === key);
   if (!it || !atBase(c)) return false;
   if (cap.score < it.price) { addFloat(c.x, c.y - PH - 8, 'Zu wenig 💰', '#ffb0a0'); return false; }
-  if (!it.give(c)) { addFloat(c.x, c.y - PH - 8, 'Kein Platz!', '#ffb0a0'); return false; }
+  if (it.special) { if (!it.special(c)) { addFloat(c.x, c.y - PH - 8, 'Geht nicht!', '#ffb0a0'); return false; } }
+  else giveRes(c, it.key, it.amount || 1);
   cap.score -= it.price;
   addFloat(c.x, c.y - PH - 8, `−${it.price} 💰 ${it.label}`, '#ffe6a0');
   return true;
@@ -1355,12 +1401,31 @@ function shopBuy(c, key) {
 function shopSell(c, key) {
   const cap = teamOf(c);
   const it = SELL.find((s) => s.key === key);
-  if (!it || !atBase(c) || !it.has(c)) return false;
-  it.take(c);
+  if (!it || !atBase(c) || have(c, key) < 1) return false;
+  takeRes(c, key, 1);
   cap.score += it.price;
   addFloat(c.x, c.y - PH - 8, `${it.label} → +${it.price} 💰`, '#ffd166');
   checkWin();
   return true;
+}
+// Lager <-> Hand: einzeln entnehmen bzw. alles ablegen
+function stockTake(c, key) {
+  if (!atBase(c)) return false;
+  const st = stockOf(c), g = goodOf(key);
+  if (!g || (st[key] || 0) < 1 || invFree(c) < 1) return false;
+  st[key]--; c[g.field]++;
+  return true;
+}
+function stockPutAll(c) {
+  if (!atBase(c)) return false;
+  const st = stockOf(c);
+  let n = 0;
+  for (const g of GOODS) {
+    if (g.key === 'nugget') continue;         // Gold wird an der Hütte abgeliefert
+    while (c[g.field] > 0) { c[g.field]--; st[g.key] = (st[g.key] || 0) + 1; n++; }
+  }
+  if (n) addFloat(c.x, c.y - PH - 8, `${n} → 📦 Lager`, '#eaf3fa');
+  return n > 0;
 }
 function craft(c, key) {
   const r = RECIPES.find((x) => x.key === key);
@@ -1428,10 +1493,10 @@ function explode(x, y, src) {
     const f = 1 - d / (R + 28);
     lo.vx += Math.sign(lo.x - x || 1) * 220 * f;
     lo.vy = -120 * f; lo.y -= 2;
-    while (lo.cargo > 0) {
-      lo.cargo--;
-      items.push({ type: 'nugget', x: lo.x, y: lo.y - 8, vx: rng() * 140 - 70, vy: -90 - rng() * 80 });
+    for (const [key, n] of Object.entries(lo.load || {})) {
+      for (let k = 0; k < n; k++) items.push({ type: key, x: lo.x, y: lo.y - 8, vx: rng() * 140 - 70, vy: -90 - rng() * 80 });
     }
+    lo.load = {};
   }
   // Bäume: direkter Treffer fällt, Nähe zündet an
   for (const t of trees) {
@@ -1482,7 +1547,8 @@ function hurt(c, dmg, src) {
 }
 
 function respawn(c) {
-  c.state = 'air'; c.hp = 100; c.flints = 1; c.carry = 0; c.goldPix = 0;
+  c.state = 'air'; c.hp = 100; c.flints = 1; c.loam = 1; c.carry = 0; c.goldPix = 0;
+  c.coal = 0; c.ore = 0; c.metal = 0; c.plank = 0; c.wood = 0; c.rail = 0;
   c.vx = 0; c.vy = 0; c.tumbleT = 0; c.breath = 1; c.burnT = 0;
   const cap = teamOf(c);
   c.x = cap.base.x + (cap.id === 0 ? 26 : -26) + (c.lead ? (cap.id === 0 ? -16 : 16) : 0);
@@ -1500,7 +1566,8 @@ function aiThink(cap) {
     c.dir = enemy.x >= c.x ? 1 : -1;
     s.throwNow = true;
   }
-  if (c.carry >= 3 || (c.carry > 0 && c.hp < 40) || c.hp < 30
+  // Taschen voll (oder angeschlagen): ab nach Hause
+  if (invFree(c) <= 0 || (c.carry > 0 && c.hp < 40) || c.hp < 30
     || (c.carry > 0 && game.t < 25)) {
     s.target = { x: cap.base.x, y: cap.base.y - 1, kind: 'base' };
     return;
@@ -1590,8 +1657,9 @@ function aiControl(cap, dt) {
     }
   }
 
-  if (t.kind === 'base' && Math.abs(c.x - cap.base.x) < 40 && c.flints === 0
-    && (c.coal >= 1 || c.wood >= 2 || cap.score >= 2)) v.use = true;
+  // an der Hütte: Taschen leeren bzw. nachproduzieren (Benutzen-Taste)
+  if (t.kind === 'base' && Math.abs(c.x - cap.base.x) < 40
+    && (invCount(c) > 0 || c.flints === 0)) v.use = true;
 }
 
 // ---- Grubenlift (Aufzug mit Förderturm, wie im Clonk-Objektpaket) ----------
@@ -1711,7 +1779,7 @@ function probeDown(x, yStart) {
 const railAt = (x) => (railY && x >= 0 && x < WORLD_W ? railY[x | 0] : -1);
 function addLore(cap) {
   const lx = cap.base.x + (cap.id === 0 ? 44 : -44);
-  lores.push({ team: cap.id, x: lx, y: groundY[clamp(lx, 0, WORLD_W - 1)] - 1, vx: 0, vy: 0, cargo: 0 });
+  lores.push({ team: cap.id, x: lx, y: groundY[clamp(lx, 0, WORLD_W - 1)] - 1, vx: 0, vy: 0, load: {} });
 }
 
 function updateLores(dt) {
@@ -1749,7 +1817,7 @@ function updateLores(dt) {
       if (lo.y > WORLD_H + 30) {
         const home = players[lo.team];
         lo.x = home.base.x + (lo.team === 0 ? 44 : -44); lo.y = home.base.y - 1;
-        lo.vx = 0; lo.vy = 0; lo.cargo = 0;
+        lo.vx = 0; lo.vy = 0; lo.load = {};
       }
     } else {
       const yl = probeDown(lo.x - 5, lo.y - 4), yr = probeDown(lo.x + 5, lo.y - 4);
@@ -1782,7 +1850,13 @@ function updateLores(dt) {
     loreWork(lo, dt);
   }
 }
-// Anschieben durch Clonks + getragenes Gold einladen
+// Ladung der Lore: alle Güterarten, gezählt in load[key]
+const loreCount = (lo) => Object.values(lo.load || {}).reduce((a, b) => a + b, 0);
+function loreAdd(lo, key, n = 1) {
+  lo.load = lo.load || {};
+  lo.load[key] = (lo.load[key] || 0) + n;
+}
+// Anschieben durch Clonks + Zeug aus der Hand einladen
 function pushLore(lo, dt) {
   for (const c of allClonks()) {
     if (c.state === 'dead') continue;
@@ -1790,31 +1864,42 @@ function pushLore(lo, dt) {
     if (Math.abs(dx) < 17 && Math.abs(lo.y - c.y) < 16) {
       const dirIn = (cIn(c, 'right') ? 1 : 0) - (cIn(c, 'left') ? 1 : 0);
       if (dirIn && Math.sign(dx) === dirIn) lo.vx = dirIn * (lo.onRail ? 96 : 62);
-      if (c.carry > 0 && lo.cargo < LORE_MAX) {
-        const n = Math.min(c.carry, LORE_MAX - lo.cargo);
-        lo.cargo += n; c.carry -= n;
-        addFloat(lo.x, lo.y - 16, `+${n} 🛒`, '#ffd166');
+      // Alles aus der Hand wandert in die Lore (Feuersteine behält der Clonk)
+      let moved = 0;
+      for (const g of GOODS) {
+        if (g.key === 'flint' || g.key === 'loam' || g.key === 'rail') continue;
+        while (c[g.field] > 0 && loreCount(lo) < LORE_MAX) { c[g.field]--; loreAdd(lo, g.key); moved++; }
       }
+      if (moved) addFloat(lo.x, lo.y - 16, `+${moved} 🛒`, '#ffd166');
     }
   }
 }
-// Klumpen aufsammeln + an der eigenen Hütte abkippen
+// Herumliegendes einsammeln + an der eigenen Hütte abkippen
 function loreWork(lo, dt) {
-  if (lo.cargo < LORE_MAX) {
+  // Fangbereich: die offene Wanne schluckt alles, was hineinfällt oder
+  // -fliegt (großzügig nach oben, damit Reinwerfen wirklich klappt)
+  if (loreCount(lo) < LORE_MAX) {
     for (const it of items) {
-      if (it.dead || it.buried || it.type !== 'nugget') continue;
-      if (Math.hypot(it.x - lo.x, it.y - (lo.y - 5)) < 13) {
-        it.dead = true; lo.cargo++;
-        if (lo.cargo >= LORE_MAX) break;
-      }
+      if (it.dead || it.buried || !goodOf(it.type)) continue;
+      if (Math.abs(it.x - lo.x) > 11) continue;
+      if (it.y > lo.y + 4 || it.y < lo.y - 30) continue;
+      it.dead = true; loreAdd(lo, it.type);
+      spark(lo.x, lo.y - 10, 3, '#ffd166');
+      if (loreCount(lo) >= LORE_MAX) break;
     }
   }
   const home = players[lo.team];
-  if (lo.cargo > 0 && Math.abs(lo.x - home.base.x) < 42 && Math.abs(lo.y - home.base.y) < 50) {
-    home.score += lo.cargo;
-    addFloat(lo.x, lo.y - 18, `+${lo.cargo} 💰`, '#ffd166');
-    lo.cargo = 0;
-    checkWin();
+  if (loreCount(lo) > 0 && Math.abs(lo.x - home.base.x) < 42 && Math.abs(lo.y - home.base.y) < 50) {
+    const gold = lo.load.nugget || 0;
+    let rest = 0;
+    for (const [key, n] of Object.entries(lo.load)) {
+      if (key === 'nugget') continue;
+      home.stock[key] = (home.stock[key] || 0) + n; rest += n;
+    }
+    home.score += gold;
+    lo.load = {};
+    addFloat(lo.x, lo.y - 18, (gold ? `+${gold} 💰` : '') + (rest ? ` +${rest} 📦` : ''), '#ffd166');
+    if (gold) checkWin();
   }
 }
 
@@ -2081,12 +2166,12 @@ function serialize() {
     mask: packMask(), groundY: Array.from(groundY),
     teams: players.map((p) => ({
       score: p.score, ko: p.ko, onBuddy: p.controlled === p.buddy ? 1 : 0,
-      windmill: p.windmill ? 1 : 0,
+      windmill: p.windmill ? 1 : 0, stock: p.stock,
       a: clk(p), b: clk(p.buddy),
     })),
     rails: Array.from(railY),
     items: items.filter((i) => !i.dead).map((i) => ({ t: i.type, x: Math.round(i.x), y: Math.round(i.y), bu: i.buried ? 1 : 0 })),
-    lores: lores.map((l) => ({ team: l.team, x: Math.round(l.x), y: Math.round(l.y), cargo: l.cargo })),
+    lores: lores.map((l) => ({ team: l.team, x: Math.round(l.x), y: Math.round(l.y), load: l.load || {} })),
     elevators: elevators.map((e) => ({ x: e.x, y: e.y, topY: e.topY })),
     trees: trees.map((t) => ({ x: t.x, y: Math.round(t.y), h: Math.round(t.h), dead: t.dead ? 1 : 0 })),
     goldSpots,
@@ -2113,12 +2198,13 @@ function applyLoad(s) {
     const p = players[i];
     if (!p) return;
     p.score = t.score || 0; p.ko = t.ko || 0; p.windmill = !!t.windmill;
+    if (t.stock) { Object.assign(p.stock, t.stock); p.buddy.stock = p.stock; }
     setClk(p, t.a); setClk(p.buddy, t.b);
     p.controlled = t.onBuddy ? p.buddy : p;
   });
   items = (s.items || []).map((i) => ({ type: i.t, x: i.x, y: i.y, vx: 0, vy: 0, buried: !!i.bu }));
   if (Array.isArray(s.rails) && s.rails.length === WORLD_W) railY = Int16Array.from(s.rails);
-  lores = (s.lores || []).map((l, i) => ({ team: l.team ?? (i < 2 ? i : 0), x: l.x, y: l.y, vx: 0, vy: 0, cargo: l.cargo || 0 }));
+  lores = (s.lores || []).map((l, i) => ({ team: l.team ?? (i < 2 ? i : 0), x: l.x, y: l.y, vx: 0, vy: 0, load: l.load || {} }));
   if (!lores.length) players.forEach((p) => addLore(p));
   (s.elevators || []).forEach((e, i) => { if (elevators[i]) Object.assign(elevators[i], { x: e.x, y: e.y, topY: e.topY, acc: 0 }); });
   trees = (s.trees || []).map((t) => ({ x: t.x, y: t.y, h: t.h, sway: rng() * 6.28, burn: 0, dead: !!t.dead }));
@@ -2586,8 +2672,9 @@ function drawLore(lo) {
   ctx.strokeStyle = '#4c3218'; ctx.lineWidth = 1.4; ctx.stroke();
   ctx.fillStyle = players[lo.team].color;
   ctx.fillRect(-7, -7, 14, 2);
-  if (lo.cargo > 0) {
-    const h = Math.min(6, 1.4 + lo.cargo);
+  const n = loreCount(lo);
+  if (n > 0) {
+    const h = Math.min(6, 1.4 + n * 0.5);
     ctx.fillStyle = '#e0b13a';
     ctx.beginPath(); ctx.ellipse(0, -12, 7, h * 0.7, 0, Math.PI, 0); ctx.fill();
     ctx.fillStyle = '#ffe28a'; ctx.fillRect(-2, -13 - h * 0.3, 2, 2);
@@ -2776,7 +2863,8 @@ function drawHUD() {
       ctx.fillText((p.ai ? '🤖 ' : left ? '🔴 ' : '🔵 ') + p.name + (c === p ? ' ①' : ' ②') + (p.windmill ? ' ⚡' : ''), x0 + 10, y0 + 14);
       ctx.fillStyle = '#eaf3fa'; ctx.font = '12px system-ui';
       ctx.fillText(sandbox ? `💰 ${p.score}` : `💰 ${p.score}/${game.goal}`, x0 + 118, y0 + 14);
-      ctx.fillText(`💰${c.carry} 💣${c.flints} 🧱${c.loam} 🛤${c.rail} ⚫${c.coal} 🪨${c.ore} 🔩${c.metal} 🪜${c.plank} 🪵${c.wood}`, x0 + 10, y0 + 35);
+      const bag = GOODS.filter((g) => c[g.field] > 0).map((g) => `${g.emoji}${c[g.field]}`).join(' ') || '—';
+      ctx.fillText(`🎒${invCount(c)}/${SLOTS} ${bag}`, x0 + 10, y0 + 35);
       ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0 + 178, y0 + 8, 70, 7);
       ctx.fillStyle = c.hp > 35 ? '#5ad06e' : '#ff6a5a';
       ctx.fillRect(x0 + 178, y0 + 8, 70 * clamp(c.hp / 100, 0, 1), 7);
@@ -2834,16 +2922,25 @@ function renderShop() {
   if (!c) return;
   document.getElementById('shop-title').textContent = `🏠 Basis ${cap.name} · 💰 ${cap.score}`;
   const body = document.getElementById('shop-body');
-  const bag = `💣${c.flints} 🧱${c.loam} 🛤${c.rail} ⚫${c.coal} 🪨${c.ore} 🔩${c.metal} 🪜${c.plank} 🪵${c.wood} 💰${c.carry}`;
+  const st = cap.stock;
+  const bag = GOODS.filter((g) => c[g.field] > 0).map((g) => `${g.emoji}${c[g.field]}`).join(' ') || '—';
+  const store = GOODS.filter((g) => g.key !== 'nugget' && (st[g.key] || 0) > 0)
+    .map((g) => `${g.emoji}${st[g.key]}`).join(' ') || '—';
   const sec = (title, rows) => `<div class="shop-sec"><div class="group-title">${title}</div><div class="shop-grid">${rows}</div></div>`;
   const prod = RECIPES.map((r) => `<button data-act="craft" data-key="${r.key}" ${r.can(c) ? '' : 'disabled'}>`
     + `<span>${r.label}</span><span class="cost">${r.name}</span></button>`).join('');
+  const take = GOODS.filter((g) => g.key !== 'nugget').map((g) =>
+    `<button data-act="take" data-key="${g.key}" ${(st[g.key] || 0) > 0 && invFree(c) > 0 ? '' : 'disabled'}>`
+    + `<span>${g.emoji} nehmen</span><span class="cost">📦 ${st[g.key] || 0}</span></button>`).join('')
+    + `<button data-act="putall" ${invCount(c) > 0 ? '' : 'disabled'}><span>📦 Alles ablegen</span><span class="cost">🎒 ${invCount(c)}</span></button>`;
   const buy = SHOP.map((s) => `<button data-act="buy" data-key="${s.key}" ${cap.score >= s.price ? '' : 'disabled'}>`
     + `<span>${s.label}</span><span class="cost">${s.price} 💰</span></button>`).join('');
-  const sell = SELL.map((s) => `<button data-act="sell" data-key="${s.key}" ${s.has(c) ? '' : 'disabled'}>`
+  const sell = SELL.map((s) => `<button data-act="sell" data-key="${s.key}" ${have(c, s.key) > 0 ? '' : 'disabled'}>`
     + `<span>${s.label}</span><span class="cost">+${s.price} 💰</span></button>`).join('');
-  body.innerHTML = `<p class="shop-bag">Taschen: ${bag}${cap.windmill ? ' · ⚡ Windrad' : ''}</p>`
-    + sec('🏭 Produktion (eigene Rohstoffe)', prod)
+  body.innerHTML = `<p class="shop-bag">🎒 Hand (${invCount(c)}/${SLOTS}): ${bag}<br>`
+    + `📦 Lager: ${store}${cap.windmill ? ' · ⚡ Windrad' : ''}</p>`
+    + sec('🏭 Produktion (Lager + Hand)', prod)
+    + sec('📦 Lager ↔ Hand', take)
     + sec('🛒 Kaufen', buy)
     + sec('💱 Verkaufen', sell);
 }
@@ -2853,9 +2950,12 @@ shopEl.addEventListener('click', (e) => {
   if (!b) return;
   const c = shopClonk();
   if (!c) return;
-  if (b.dataset.act === 'craft') craft(c, b.dataset.key);
-  else if (b.dataset.act === 'buy') shopBuy(c, b.dataset.key);
-  else shopSell(c, b.dataset.key);
+  const act = b.dataset.act;
+  if (act === 'craft') craft(c, b.dataset.key);
+  else if (act === 'buy') shopBuy(c, b.dataset.key);
+  else if (act === 'sell') shopSell(c, b.dataset.key);
+  else if (act === 'take') stockTake(c, b.dataset.key);
+  else if (act === 'putall') stockPutAll(c);
   renderShop();
 });
 document.getElementById('shop-close').addEventListener('click', closeShop);
@@ -2945,6 +3045,8 @@ window.__clonk = {
   serialize, applyLoad, saveGame, loadGame, joys, layoutTouch, GAME_SPEED,
   THROWABLES, throwItem, cycleThrow, bgMat, areaDiggable,
   RECIPES, SHOP, SELL, craft, shopBuy, shopSell, openShop, closeShop, atBase,
+  GOODS, SLOTS, invCount, invFree, have, takeRes, giveRes, stockTake, stockPutAll,
+  loreCount, loreAdd,
   railAt, addLore, fish: () => fish, get railY() { return railY; },
   players: () => players, allClonks, items: () => items, projectiles: () => projectiles,
   lores: () => lores, elevators: () => elevators, onElevatorCase,

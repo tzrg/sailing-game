@@ -515,17 +515,20 @@ try {
   r = await page.evaluate(() => {
     const C = window.__clonk;
     const lo = C.lores()[0];
-    const cargo1 = lo.cargo;
-    lo.x = C.players()[0].base.x; lo.y = C.players()[0].base.y - 1; lo.cargo = 3;
+    const cargo1 = C.loreCount(lo);
+    lo.x = C.players()[0].base.x; lo.y = C.players()[0].base.y - 1;
+    lo.load = { nugget: 3, coal: 2 };
     return { cargo1 };
   });
   await tick(0.2);
   r = await page.evaluate((cargo1) => {
     const C = window.__clonk;
-    return { cargo1, cargo: C.lores()[0].cargo, score: C.players()[0].score };
+    return { cargo1, cargo: C.loreCount(C.lores()[0]), score: C.players()[0].score,
+      stockCoal: C.players()[0].stock.coal };
   }, r.cargo1);
-  check('Lore sammelt Klumpen auf', r.cargo1 === 1, JSON.stringify(r));
-  check('Lore kippt ihre Ladung an der Hütte in die Kasse', r.cargo === 0 && r.score === 3, JSON.stringify(r));
+  check('Lore sammelt Herumliegendes auf', r.cargo1 === 1, JSON.stringify(r));
+  check('Lore kippt ab: Gold in die Kasse, Rest ins Lager',
+    r.cargo === 0 && r.score === 3 && r.stockCoal >= 3, JSON.stringify(r));
 
   // ---- Grubenlift: Korb ist begehbar, bohrt nach unten, fährt wieder hoch
   r = await page.evaluate(() => {
@@ -585,21 +588,29 @@ try {
     C.game.paused = true;
     const p = C.players()[0];
     p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk';
-    const clear = () => { p.flints = 0; p.coal = 0; p.wood = 0; p.ore = 0; p.metal = 0; p.plank = 0; p.rail = 0; };
+    const clear = () => {
+      p.flints = 0; p.coal = 0; p.wood = 0; p.ore = 0; p.metal = 0; p.plank = 0; p.rail = 0;
+      p.loam = 0; p.carry = 0;
+      for (const k of Object.keys(p.stock)) p.stock[k] = 0;     // Lager leeren
+    };
+    const inv = (k) => C.have(p, k);
     // Produktionsrezepte einzeln über das Basis-Menü auslösen
     clear(); p.coal = 1; C.craft(p, 'flintC');
-    const coalBuy = { flints: p.flints, coal: p.coal };
+    const coalBuy = { flints: inv('flint'), coal: inv('coal') };
     clear(); p.wood = 2; C.craft(p, 'flintW');
-    const woodBuy = { flints: p.flints, wood: p.wood };
+    const woodBuy = { flints: inv('flint'), wood: inv('wood') };
     clear(); p.wood = 1; C.craft(p, 'saw');
-    const saw = { wood: p.wood, plank: p.plank };
+    const saw = { wood: inv('wood'), plank: inv('plank') };
     clear(); p.ore = 1; p.coal = 1; C.craft(p, 'smelt');
-    const smelt = { ore: p.ore, coal: p.coal, metal: p.metal };
+    const smelt = { ore: inv('ore'), coal: inv('coal'), metal: inv('metal') };
     clear(); p.metal = 1; C.craft(p, 'flintM');
-    const metalBuy = { metal: p.metal, flints: p.flints };
+    const metalBuy = { metal: inv('metal'), flints: inv('flint') };
     clear(); p.plank = 1; p.metal = 1; C.craft(p, 'rails');
-    const rails = { plank: p.plank, metal: p.metal, rail: p.rail };
-    return { coalBuy, woodBuy, saw, smelt, metalBuy, rails };
+    const rails = { plank: inv('plank'), metal: inv('metal'), rail: inv('rail') };
+    // Slot-Limit: mehr als SLOTS passt nicht in die Hand, der Rest geht ins Lager
+    clear(); p.metal = 1; C.craft(p, 'flintM');
+    const overflow = { hand: C.invCount(p), total: inv('flint'), slots: C.SLOTS };
+    return { coalBuy, woodBuy, saw, smelt, metalBuy, rails, overflow };
   });
   check('Fabrik: 1 ⚫ Kohle → 2 💣', r.coalBuy.flints === 2 && r.coalBuy.coal === 0, JSON.stringify(r.coalBuy));
   check('Fabrik: 2 🪵 Holz → 1 💣', r.woodBuy.flints === 1 && r.woodBuy.wood === 0, JSON.stringify(r.woodBuy));
@@ -608,6 +619,8 @@ try {
     r.smelt.ore === 0 && r.smelt.coal === 0 && r.smelt.metal === 1, JSON.stringify(r.smelt));
   check('Fabrik: 1 🔩 Metall → 3 💣', r.metalBuy.metal === 0 && r.metalBuy.flints === 3, JSON.stringify(r.metalBuy));
   check('Schienenschmiede: 🪜+🔩 → 4 🛤', r.rails.plank === 0 && r.rails.metal === 0 && r.rails.rail === 4, JSON.stringify(r.rails));
+  check('Produziertes über der Handkapazität wandert ins 📦 Lager',
+    r.overflow.hand <= r.overflow.slots && r.overflow.total === 3, JSON.stringify(r.overflow));
 
   // Gold-Handel: kaufen und verkaufen an der Basis
   r = await page.evaluate(() => {
@@ -1065,6 +1078,99 @@ try {
     return { n: f.length, inWater: f.every((x) => C.matAt(x.x, x.y) === M.WATER) };
   });
   check('🐟 Fische schwimmen im See', r.n >= 3 && r.inWater, JSON.stringify(r));
+
+  // ---- Kleines Inventar: volle Taschen lassen alles liegen
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk';
+    p.flints = 0; p.loam = 0; p.rail = 0; p.carry = 0; p.coal = 0; p.ore = 0; p.metal = 0; p.plank = 0; p.wood = 0;
+    // 7 Klumpen direkt vor die Füße legen
+    for (let i = 0; i < 7; i++) C.items().push({ type: 'nugget', x: p.x + (i - 3) * 2, y: p.y - 6, vx: 0, vy: 0 });
+    return { slots: C.SLOTS };
+  }, dryA);
+  await tick(0.3);
+  r = await page.evaluate((slots) => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    return { slots, carry: p.carry, inv: C.invCount(p), left: C.items().filter((i) => i.type === 'nugget').length };
+  }, r.slots);
+  check('Ein Clonk trägt nur wenige Stücke (Slot-Limit)', r.inv === r.slots && r.carry === r.slots, JSON.stringify(r));
+  check('Der Rest bleibt liegen statt im Rucksack zu verschwinden', r.left === 7 - r.slots, JSON.stringify(r));
+
+  // ---- Lore als Transportmittel: Zeug aus der Hand einladen + Liegengebliebenes
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    const lo = C.lores()[0];
+    lo.x = x + 10; lo.y = C.groundY()[x + 10] - 1; lo.vx = 0; lo.load = {};
+    const p = C.players()[0];
+    p.x = lo.x - 8; p.y = lo.y; p.state = 'walk';
+    return { carried: p.carry };
+  }, dryA);
+  await tick(0.4);
+  r = await page.evaluate((carried) => {
+    const C = window.__clonk;
+    const lo = C.lores()[0];
+    const p = C.players()[0];
+    return { carried, inLore: C.loreCount(lo), hand: C.invCount(p), left: C.items().filter((i) => i.type === 'nugget').length };
+  }, r.carried);
+  check('An der Lore wandert alles aus der Hand in die Ladung',
+    r.inLore >= r.carried && r.hand === 0, JSON.stringify(r));
+  check('Die Lore sammelt auch das Liegengebliebene ein', r.left < 3, JSON.stringify(r));
+
+  // Von oben in die Lore fallen lassen (der klassische Weg über dem Schacht)
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const lo = C.lores()[0];
+    lo.load = {};
+    const p = C.players()[0];
+    p.x = lo.x - 200; p.y = C.groundY()[lo.x - 200] - 1;   // Clonk weit weg
+    C.items().push({ type: 'nugget', x: lo.x, y: lo.y - 60, vx: 0, vy: 0 });
+    return { dropped: true };
+  });
+  await tick(1.2);
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    return { inLore: C.loreCount(C.lores()[0]), left: C.items().filter((i) => i.type === 'nugget').length };
+  });
+  check('Von oben eingeworfenes Gold landet in der Lore', r.inLore >= 1 && r.left === 0, JSON.stringify(r));
+
+  // Direkt daneben geworfen: der Klumpen fliegt in die Ladung
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const lo = C.lores()[0];
+    lo.load = {};
+    const p = C.players()[0];
+    p.x = lo.x - 22; p.y = lo.y; p.state = 'walk'; p.dir = 1; p.vx = 0; p.vy = 0;
+    p.carry = 1; p.throwSel = C.THROWABLES.findIndex((t) => t.key === 'nugget');
+    p.throwCd = 0;
+    C.throwItem(p);
+    return { thrown: C.items().some((i) => i.type === 'nugget') };
+  });
+  await tick(1);
+  r = await page.evaluate((thrown) => {
+    const C = window.__clonk;
+    return { thrown, inLore: C.loreCount(C.lores()[0]) };
+  }, r.thrown);
+  check('Aus der Nähe geworfenes Gold fängt die Lore auf', r.thrown && r.inLore >= 1, JSON.stringify(r));
+
+  // ---- Basis-Lager: ablegen und wieder entnehmen
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    p.x = p.base.x; p.y = p.base.y - 1; p.state = 'walk';
+    for (const k of Object.keys(p.stock)) p.stock[k] = 0;
+    p.flints = 0; p.loam = 0; p.rail = 0; p.carry = 0; p.coal = 2; p.ore = 1; p.wood = 0; p.metal = 0; p.plank = 0;
+    const put = C.stockPutAll(p);
+    const afterPut = { hand: C.invCount(p), stockCoal: p.stock.coal, stockOre: p.stock.ore, put };
+    const took = C.stockTake(p, 'coal');
+    return { afterPut, took, hand: C.invCount(p), coal: p.coal, stockCoal: p.stock.coal };
+  });
+  check('📦 Alles ablegen räumt die Hand ins Basis-Lager',
+    r.afterPut.put && r.afterPut.hand === 0 && r.afterPut.stockCoal === 2 && r.afterPut.stockOre === 1, JSON.stringify(r.afterPut));
+  check('Aus dem Lager nimmt man einzeln wieder mit', r.took && r.hand === 1 && r.coal === 1 && r.stockCoal === 1, JSON.stringify(r));
 
   // ---- Basis-Menü öffnet nur an der eigenen Hütte
   r = await page.evaluate((x) => {
