@@ -290,6 +290,105 @@ try {
   check('F wechselt zum zweiten Clonk', r.onBuddy === true);
   check('Nur der gesteuerte Clonk läuft los', r.buddyMoved > 10 && Math.abs(r.capMoved) < 2, JSON.stringify(r));
 
+  // ---- Bewegung: flüssig laufen, nicht hängenbleiben, nicht an Wänden kleben
+  // (a) Hügelige Strecke am Stück durchlaufen
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.game.mode = '2p';
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    // Startpunkt: erste Spalte, ab der 220 px nach rechts kein Wasser liegt
+    let sx = 300;
+    outer: for (let x = 200; x < 640; x += 5) {
+      for (let xx = x; xx < x + 220; xx += 4) {
+        const g = C.groundY()[xx];
+        if (C.matAt(xx, g + 2) === C.MAT.WATER || C.matAt(xx, g - 6) === C.MAT.WATER) continue outer;
+      }
+      sx = x; break;
+    }
+    p.x = sx; p.y = C.groundY()[sx] - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.pressed.add('d');
+    return { x0: p.x };
+  });
+  await tick(2.2);
+  r = await page.evaluate((x0) => {
+    const C = window.__clonk;
+    C.pressed.delete('d');
+    const p = C.players()[0];
+    return { walked: p.x - x0, state: p.state };
+  }, r.x0);
+  check('Laufen über hügeliges Gelände bleibt nicht hängen (>150 px in 2,2 s)',
+    r.walked > 150, JSON.stringify(r));
+
+  // (b) Einzelner Pixel-Vorsprung trägt niemanden mehr
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    const g = C.groundY()[x];
+    C.carveCircle(x, g + 40, 22, true);          // Hohlraum
+    let floor = g + 40;
+    while (!C.solid(x, floor + 1)) floor++;
+    // eine einzelne Pixelsäule stehen lassen und den Clonk daraufsetzen
+    C.mask[(floor - 12) * C.WORLD_W + x] = C.MAT.EARTH;
+    p.x = x; p.y = floor - 13; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    return { y0: p.y, floor, gr: C.grounded(p.x, p.y) };
+  }, dryA);
+  check('Ein einzelner Pixel gilt nicht als Boden', r.gr === false, JSON.stringify(r));
+  await tick(0.8);
+  r = await page.evaluate((prev) => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    return { fell: p.y - prev.y0, onFloor: Math.abs(p.y - prev.floor) < 3, state: p.state };
+  }, r);
+  check('Auf einem Pixel-Vorsprung bleibt niemand stehen – er fällt durch',
+    r.fell > 6 && r.onFloor, JSON.stringify(r));
+
+  // (c) Gegen eine Wand springen klebt nicht sofort fest
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    const g = C.groundY()[x];
+    C.carveCircle(x + 14, g + 26, 16, true);      // Grube mit senkrechter Wand
+    let floor = g + 26;
+    while (!C.solid(x + 14, floor + 1)) floor++;
+    p.x = x + 6; p.y = floor; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.pressed.add('a'); C.pressed.add('w');       // gegen die linke Wand springen
+    return { y0: p.y };
+  }, dryB);
+  await tick(0.25);
+  r = await page.evaluate((y0) => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    return { y0, state: p.state, rose: y0 - p.y };
+  }, r.y0);
+  check('Sprung gegen die Wand klebt nicht sofort fest (erst im Fallen)',
+    r.state !== 'scale' && r.rose > 4, JSON.stringify(r));
+  await page.evaluate(() => { window.__clonk.pressed.delete('a'); window.__clonk.pressed.delete('w'); });
+
+  // (d) Verschüttet? Der Clonk schiebt sich wieder frei
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0];
+    const g = C.groundY()[x];
+    p.x = x; p.y = g + 30; p.state = 'walk'; p.vx = 0; p.vy = 0;   // mitten im Erdreich
+    return { stuck: C.solid(p.x, p.y - 6), y0: p.y };
+  }, dryC);
+  await tick(1.2);
+  r = await page.evaluate((prev) => {
+    const C = window.__clonk;
+    const p = C.players()[0];
+    const inMat = C.solid(Math.round(p.x), Math.round(p.y) - 6);
+    return { was: prev.stuck, inMat, moved: Math.abs(p.y - prev.y0) };
+  }, r);
+  check('Im Material eingeklemmt: der Clonk schiebt sich frei', r.was && !r.inMat, JSON.stringify(r));
+
   // ---- Klettern & Hangeln
   r = await page.evaluate((cx) => {
     const C = window.__clonk;

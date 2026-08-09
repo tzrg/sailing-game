@@ -139,7 +139,14 @@ Docker-Container deployt.
   für Stollen- und Lorenanlagen und **Lavaseen**; Wasser & Lava
   **fließen** (Zellautomat), Sand rieselt nach, und
   **Lava + Wasser = Stein**. Die Kamera zeigt die volle Kartenbreite und
-  scrollt vertikal mit, je tiefer ihr grabt. Bewegen wie im Original:
+  scrollt vertikal mit, je tiefer ihr grabt. Die Bewegung ist bewusst
+  glattgebügelt: der Kollisionskörper ist eine **Kapsel** (schmale Füße
+  für Hänge, breiterer Rumpf, Kopf-Streifzone für enge Stollen), ein
+  **einzelner Pixel trägt niemanden** mehr, es gibt **Coyote-Time** nach
+  der Kante, kleine Kanten nimmt man im Flug mit, an Wänden hält man sich
+  **erst im Fallen** fest (Anspringen bleibt Anspringen) und wer
+  verschüttet wird, **schiebt sich selbst frei**. Ansonsten bewegt man
+  sich wie im Original:
   laufen, springen, **klettern**, an Decken **hangeln**,
   **schwimmen & tauchen** mit Atem-Anzeige (Ertrinken inklusive),
   in Lava verbrennt man (Wasser löscht). **Graben** in alle Richtungen
@@ -383,7 +390,7 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
-- **`test/clonk.test.mjs`** – Klonk (110 Checks) über den Test-Hook
+- **`test/clonk.test.mjs`** – Klonk (124 Checks) über den Test-Hook
   `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/
   Granit/Erz/Grundgestein), Welttiefe, Granit-Sprengfestigkeit,
   alle Produktionsrezepte (Hochofen, Sägewerk, Schienenschmiede,

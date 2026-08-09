@@ -825,38 +825,87 @@ function layoutTouch() {
 }
 
 // ---- Kollisionshelfer -------------------------------------------------------
+// Der Kollisionskörper ist bewusst schmaler als die Zeichnung und lässt oben
+// etwas Kopffreiheit – so bleibt man nicht an jedem Pixel hängen.
+const FOOT_HW = 3;      // Fußbreite (halb)
+const BODY_HW = 3;      // Rumpfbreite (halb)
+const HEAD_CLEAR = 3;   // oberste Körperpixel dürfen streifen
+const SUPPORT_MIN = 2;  // so viele feste Pixel braucht ein tragfähiger Boden
+
+// Kollisionskörper als Kapsel: unten schmal (sonst klemmt jeder Hang), in
+// der Mitte breiter, oben eine Streifzone für niedrige Decken.
 function bodyBlocked(x, fy) {
   x |= 0; fy |= 0;
-  for (let yy = fy - PH + 1; yy <= fy; yy++) {
-    for (let xx = x - CWH; xx <= x + CWH; xx += 2) if (solid(xx, yy)) return true;
+  for (let yy = fy - PH + 1 + HEAD_CLEAR; yy <= fy; yy++) {
+    const hw = yy > fy - 5 ? 1 : BODY_HW;   // Fußbereich schmal
+    for (let xx = x - hw; xx <= x + hw; xx++) if (solid(xx, yy)) return true;
   }
   return false;
 }
-function rowSolid(x, y) {
+// feste Pixel in einer Zeile unter/über dem Clonk
+function rowCount(x, y) {
   x |= 0; y |= 0;
-  for (let xx = x - CWH; xx <= x + CWH; xx += 2) if (solid(xx, y)) return true;
+  let n = 0;
+  for (let xx = x - FOOT_HW; xx <= x + FOOT_HW; xx++) if (solid(xx, y)) n++;
+  return n;
+}
+const rowSolid = (x, y) => rowCount(x, y) > 0;
+// enger Kopfbereich – beim Klettern zählt nur, was wirklich über dem Kopf ist
+function headBlocked(x, y) {
+  x |= 0; y |= 0;
+  for (let xx = x - 1; xx <= x + 1; xx++) if (solid(xx, y)) return true;
   return false;
 }
-const grounded = (x, fy) => rowSolid(x, (fy | 0) + 1);
+// Tragfähiger Boden: ein einzelner Pixel-Vorsprung hält niemanden mehr
+const grounded = (x, fy) => rowCount(x, (fy | 0) + 1) >= SUPPORT_MIN;
+// Kletterwand: durchgehende Wand über fast die ganze Körperhöhe
 function wallAt(p, dir) {
-  const x = (p.x | 0) + dir * (CWH + 1);
+  const x = (p.x | 0) + dir * (BODY_HW + 1);
   let n = 0;
-  for (let yy = (p.y | 0) - 1; yy > (p.y | 0) - PH; yy--) if (solid(x, yy)) n++;
-  return n >= 5;
+  for (let yy = (p.y | 0) - 2; yy > (p.y | 0) - PH + 2; yy--) if (solid(x, yy)) n++;
+  return n >= 8;
+}
+// Steckt der Clonk wirklich im Material? Einzelne Pixel im Körper zählen
+// nicht (sonst hängt man an jedem Krümel), erst eine echte Verschüttung.
+function stuckIn(c) {
+  const x = Math.round(c.x), fy = Math.round(c.y);
+  let n = 0;
+  for (let yy = fy - PH + 1 + HEAD_CLEAR; yy <= fy; yy++) {
+    const hw = yy > fy - 5 ? 1 : BODY_HW;
+    for (let xx = x - hw; xx <= x + hw; xx++) if (solid(xx, yy)) { if (++n >= 6) return true; }
+  }
+  return false;
+}
+// freischieben: erst nach oben, dann zur Seite; wenn nichts frei ist, gräbt
+// sich der Clonk langsam nach oben durch (wie im Original)
+function unstick(c, dt) {
+  const step = 40 * dt + 0.5;
+  for (let up = 1; up <= 16; up++) {
+    if (!bodyBlocked(Math.round(c.x), Math.round(c.y) - up)) { c.y -= Math.min(up, step); return true; }
+  }
+  for (const dir of [c.dir, -c.dir]) {
+    for (let sx = 1; sx <= 10; sx++) {
+      if (!bodyBlocked(Math.round(c.x + dir * sx), Math.round(c.y))) { c.x += dir * Math.min(sx, step); return true; }
+    }
+  }
+  c.y -= step;   // tief verschüttet: nach oben durcharbeiten
+  return true;
 }
 
 // ---- Klonk-Steuerung & -Physik ---------------------------------------------
 function stepWalk(p, dir) {
   const nx = Math.round(p.x) + dir, fy = Math.round(p.y);
-  if (nx - HW < 1 || nx + HW > WORLD_W - 2) return 'wall';
+  if (nx - FOOT_HW < 1 || nx + FOOT_HW > WORLD_W - 2) return 'wall';
+  // Stufe hoch: so weit anheben, bis der Rumpf frei ist
   let up = 0;
   while (up <= STEP_UP && bodyBlocked(nx, fy - up)) up++;
   if (up > STEP_UP) return 'wall';
-  p.x = nx; p.y = fy - up;
-  if (up > 0) return 'ok';
+  if (up > 0) { p.x = nx; p.y = fy - up; return 'ok'; }
+  p.x = nx;
+  // Stufe runter: kleinen Absätzen folgen, sonst fallen
   let d = 0;
   while (d <= STEP_DOWN && !grounded(nx, fy + d)) d++;
-  if (d > STEP_DOWN) return 'fall';
+  if (d > STEP_DOWN) { p.y = fy; return 'fall'; }
   p.y = fy + d;
   return 'ok';
 }
@@ -923,11 +972,12 @@ function updateClonk(c, dt) {
 
   switch (c.state) {
     case 'walk': {
+      c.coyote = 0.12;   // kurze Gnadenfrist zum Springen nach der Kante
       // auf dem Aufzugskorb: Grabtaste ohne Richtung bohrt (der Lift übernimmt),
       // MIT Richtung/Sprungtaste gräbt man sich normal seitlich/schräg heraus
       if (D && !(onElevatorCase(c) && dirIn === 0)) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
       // auf dem Aufzugskorb: ⤒ ohne Richtung fährt hoch statt zu springen
-      if (J && !U && !(dirIn === 0 && onElevatorCase(c))) { c.vy = JUMP_VY; c.vx = dirIn * WALK; c.state = 'air'; break; }
+      if (J && !U && !(dirIn === 0 && onElevatorCase(c))) { doJump(c, dirIn); break; }
       if (dirIn) {
         c.walkPhase += dt * 11;
         c.rem += WALK * dt;
@@ -948,8 +998,14 @@ function updateClonk(c, dt) {
       c.vx += dirIn * 260 * control * dt;
       c.vx = clamp(c.vx, -180, 180);
       c.vy = Math.min(MAXFALL, c.vy + G * dt);
+      c.coyote = Math.max(0, (c.coyote || 0) - dt);
+      c.jumpLock = Math.max(0, (c.jumpLock || 0) - dt);
+      // Absprung kurz nach der Kante (Coyote-Time)
+      if (c.state === 'air' && J && !c.prevJump && c.coyote > 0) doJump(c, dirIn);
       moveAir(c, dt);
-      if (c.state === 'air' && dirIn && c.vy > -60 && wallAt(c, dirIn)) {
+      // An der Wand festhalten: nur im Fallen und nicht direkt nach dem Sprung
+      // (sonst klebt man beim Anspringen sofort fest)
+      if (c.state === 'air' && dirIn && c.vy > 25 && c.jumpLock <= 0 && wallAt(c, dirIn)) {
         c.state = 'scale'; c.dir = dirIn; c.vx = 0; c.vy = 0;
       }
       // Hangeln: unter der Decke ⤒ halten
@@ -1003,7 +1059,7 @@ function updateClonk(c, dt) {
       const away = (c.dir === 1 && L && !R) || (c.dir === -1 && R && !L);
       if (away) { c.state = 'air'; c.vy = -40; c.vx = -c.dir * 70; break; }
       if (!wallAt(c, c.dir)) {
-        c.y -= 2; c.x += c.dir * (HW + 2);
+        c.y -= 2; c.x += c.dir * (BODY_HW + 2);
         if (grounded(c.x, c.y)) { c.y = Math.round(c.y); c.state = 'walk'; }
         else { c.state = 'air'; c.vy = -60; c.vx = c.dir * 50; }
         break;
@@ -1012,9 +1068,9 @@ function updateClonk(c, dt) {
         c.rem += SCALE_SPEED * dt;
         let n = c.rem | 0; c.rem -= n;
         while (n-- > 0) {
-          if (rowSolid(c.x, (c.y | 0) - PH)) break;
+          if (headBlocked(c.x, (c.y | 0) - PH + HEAD_CLEAR)) break;   // echter Überhang
           c.y -= 1;
-          if (!wallAt(c, c.dir)) break;
+          if (!wallAt(c, c.dir)) break;                                // Kante erreicht
         }
       } else if (DN) {
         c.y += SCALE_SPEED * dt;
@@ -1028,6 +1084,13 @@ function updateClonk(c, dt) {
       break;
     }
   }
+
+  c.prevJump = J;
+  // Notausgang: im Material eingeklemmt (Verschüttung, Brücke, Lift) -> rausschieben
+  if (c.state !== 'dig' && c.state !== 'swim' && stuckIn(c)) {
+    c.stuckT = (c.stuckT || 0) + dt;
+    if (c.stuckT > 0.1) { unstick(c, dt); c.vy = Math.min(c.vy, 0); }
+  } else c.stuckT = 0;
 
   // Abliefern & Heilen an der eigenen Hütte
   if (nearBase) {
@@ -1072,18 +1135,22 @@ function moveAir(p, dt) {
   const sx = dx / n, sy = dy / n;
   for (let i = 0; i < n; i++) {
     if (sx) {
-      const nx = clamp(p.x + sx, HW + 1, WORLD_W - HW - 2);
-      if (bodyBlocked(Math.round(nx), Math.round(p.y))) p.vx = 0;
-      else p.x = nx;
+      const nx = clamp(p.x + sx, FOOT_HW + 1, WORLD_W - FOOT_HW - 2);
+      if (!bodyBlocked(Math.round(nx), Math.round(p.y))) p.x = nx;
+      // kleine Kante im Flug mitnehmen, statt hart abzubremsen
+      else if (!bodyBlocked(Math.round(nx), Math.round(p.y) - 3)) { p.x = nx; p.y -= 2; }
+      else p.vx = 0;
     }
     if (sy) {
       const ny = p.y + sy;
-      if (sy > 0 && rowSolid(Math.round(p.x), Math.round(ny))) {
+      if (sy > 0 && grounded(Math.round(p.x), Math.round(ny) - 1)) {
+        // Füße auf die tragfähige Oberfläche setzen
         let fy = Math.round(ny);
-        while (fy > 0 && rowSolid(Math.round(p.x), fy)) fy--;
+        while (fy > 0 && rowCount(Math.round(p.x), fy) >= SUPPORT_MIN) fy--;
         p.y = fy; land(p); return;
       }
-      if (sy < 0 && rowSolid(Math.round(p.x), Math.round(ny) - PH + 1)) p.vy = 0;
+      // Decke bremst nur, wenn es wirklich dicht ist (Kopf darf streifen)
+      if (sy < 0 && rowCount(Math.round(p.x), Math.round(ny) - PH + 1 + HEAD_CLEAR) >= SUPPORT_MIN) p.vy = 0;
       else p.y = ny;
     }
     if (p.y > WORLD_H + 20) { hurt(p, 999, null); return; }
@@ -1094,17 +1161,25 @@ function moveSwim(p, dt) {
   const n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy))));
   const sx = dx / n, sy = dy / n;
   for (let i = 0; i < n; i++) {
-    const nx = clamp(p.x + sx, HW + 1, WORLD_W - HW - 2);
+    const nx = clamp(p.x + sx, FOOT_HW + 1, WORLD_W - FOOT_HW - 2);
     if (!bodyBlocked(Math.round(nx), Math.round(p.y))) p.x = nx; else p.vx = 0;
     const ny = p.y + sy;
     if (!bodyBlocked(Math.round(p.x), Math.round(ny))) p.y = ny; else p.vy = 0;
   }
 }
 
+function doJump(c, dirIn) {
+  c.vy = JUMP_VY;
+  c.vx = dirIn * WALK;
+  c.state = 'air';
+  c.coyote = 0;
+  c.jumpLock = 0.28;   // solange kein Wandkleben (Anspringen bleibt Anspringen)
+}
 function land(p) {
   const v = p.vy;
   p.vy = 0; p.vx = 0;
   p.state = 'walk';
+  p.coyote = 0.12;
   if (v > FALL_HURT) {
     hurt(p, (v - FALL_HURT) * 0.14, null);
     puff(p.x, p.y, 6, '#9a8468');
@@ -1141,7 +1216,7 @@ function digStep(c, dt) {
     }
     const gold = carveCircle(cx, cy, DIG_R, false);
     collectGoldPix(c, gold, carveCircle.lastCoal, cx, cy);
-    const nx = clamp(c.x + dx, HW + 1, WORLD_W - HW - 2);
+    const nx = clamp(c.x + dx, FOOT_HW + 1, WORLD_W - FOOT_HW - 2);
     let ny = c.y + dy;
     if (bodyBlocked(Math.round(nx), Math.round(ny))) {
       // hartes Material (Fels, Aufzugskorb) unter den Füßen: waagerecht weiter
