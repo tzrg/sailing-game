@@ -127,14 +127,19 @@ Docker-Container deployt.
   🎯-Taste, die Wurf-Taste zeigt die Auswahl. Freigelegte Zellen werden
   über der ursprünglichen Oberfläche Himmel, darunter Stollen – keine
   dunklen Flecken mehr im See nach Sprengungen. Frisch generierte,
-  **tiefe** Pixel-Landschaft (960×1024) mit Schichtaufbau: **Erde**
-  (grabbar), **Fels** (nur Feuerstein), **Granitbänder** in der Tiefe
-  (halten drei Sprengungen aus und bröckeln dann weg) und ganz unten
-  **Grundgestein**, das allem standhält. Dazu **Goldadern** (die fetten
-  sitzen im Granit), **⚫ Kohleflöze**, **🪨 Eisenerz** (nur sprengbar),
-  Sandtaschen, ein See, große Kavernen und **Lavaseen**; Wasser & Lava
+  **tiefe** Pixel-Landschaft (960×1500) mit Schichtaufbau: eine **dicke
+  Erdzone** (~380 px reines Schaufelrevier), darunter eine breite
+  **Felszone** (nur Feuerstein), erst ganz unten **Granitbänder** (halten
+  drei Sprengungen aus und bröckeln dann weg) und **Grundgestein**, das
+  allem standhält. Die Bodenschätze wachsen als **organisch verzweigte
+  Adern** (mäandernde Flöze mit Seitenarmen) und werden **nach unten
+  immer fetter** – von kleinen Nestern dicht unter der Grasnarbe bis zu
+  riesigen Mutterlagern im Granit. Dazu **⚫ Kohleflöze**, **🪨 Eisenerz**
+  (nur sprengbar), Sandtaschen, ein See, weite **Kavernen** als Baugrund
+  für Stollen- und Lorenanlagen und **Lavaseen**; Wasser & Lava
   **fließen** (Zellautomat), Sand rieselt nach, und
-  **Lava + Wasser = Stein**. Bewegen wie im Original:
+  **Lava + Wasser = Stein**. Die Kamera zeigt die volle Kartenbreite und
+  scrollt vertikal mit, je tiefer ihr grabt. Bewegen wie im Original:
   laufen, springen, **klettern**, an Decken **hangeln**,
   **schwimmen & tauchen** mit Atem-Anzeige (Ertrinken inklusive),
   in Lava verbrennt man (Wasser löscht). **Graben** in alle Richtungen

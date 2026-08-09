@@ -8,7 +8,7 @@
 // zu zweit an einer Tastatur; Touch-Steuerkreuz + Zoom-Kamera für Handys.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-const WORLD_W = 960, WORLD_H = 1024;   // tiefe Karte: Erde, Fels, Tiefengestein
+const WORLD_W = 960, WORLD_H = 1500;   // tiefe Karte: Erde, Fels, Tiefengestein
 
 // ---- Materialien (Pixel-Maske) ---------------------------------------------
 const MAT = {
@@ -89,10 +89,10 @@ function genTerrain() {
     groundY[x] = Math.round(clamp(h, 120, 460));   // Oberfläche im oberen Drittel
   }
 
-  // Schichten: Erde, Fels, Tiefengestein mit Granitbändern; unten Grundgestein
-  const GRANIT_TOP = WORLD_H - 300;
+  // Schichten: dicke Erd- und Felszone zum Buddeln, erst ganz unten Granit
+  const GRANIT_TOP = WORLD_H - 260;
   for (let x = 0; x < WORLD_W; x++) {
-    const rockTop = groundY[x] + 130 + Math.sin(x * 0.016 + p4) * 38;
+    const rockTop = groundY[x] + 380 + Math.sin(x * 0.016 + p4) * 70;   // dicke Erdzone
     const granitTop = GRANIT_TOP + Math.sin(x * 0.011 + p2) * 34 + Math.sin(x * 0.03 + p3) * 12;
     for (let y = groundY[x]; y < WORLD_H; y++) {
       let m = y >= rockTop ? MAT.ROCK : MAT.EARTH;
@@ -111,74 +111,112 @@ function genTerrain() {
     for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
       if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) continue;
       const dx = x - cx, dy = y - cy;
-      if (dx * dx + dy * dy * 1.6 > r * r) continue;
+      // unrunder Rand: leichtes Rauschen auf dem Radius
+      const wob = 1 + (texNoise(x >> 2, y >> 2) - 0.5) * 0.55;
+      if (dx * dx + dy * dy * 1.35 > (r * wob) ** 2) continue;
       const m = mask[idx(x, y)];
       if (!onlyIn || onlyIn.includes(m)) mask[idx(x, y)] = mat;
     }
   };
+  // Organische Ader: mäandernder Random-Walk mit wechselnder Dicke und
+  // Verästelungen – so sehen Gold-, Kohle- und Erzvorkommen aus wie gewachsen
+  // statt wie hingelegte Eier.
+  const vein = (cx, cy, mat, onlyIn, opts = {}) => {
+    const len = opts.len || 60;
+    const thick = opts.thick || 5;
+    const branches = opts.branches === undefined ? 2 : opts.branches;
+    let a = opts.angle === undefined ? rng() * Math.PI * 2 : opts.angle;
+    let x = cx, y = cy;
+    const pts = [];
+    for (let i = 0; i < len; i++) {
+      a += (rng() - 0.5) * 0.55;
+      // Adern ziehen bevorzugt in die Waagerechte (wie echte Flöze)
+      a = a * 0.9 + (Math.abs(Math.cos(a)) > 0.5 ? a : Math.atan2(Math.sin(a) * 0.5, Math.cos(a))) * 0.1;
+      x += Math.cos(a) * 2.2; y += Math.sin(a) * 1.5;
+      if (x < 20 || x > WORLD_W - 20 || y < 60 || y > WORLD_H - 20) break;
+      const t = i / len;
+      const r = thick * (0.55 + Math.sin(t * Math.PI) * 0.9) * (0.75 + rng() * 0.5);
+      blob(x, y, Math.max(2, r), mat, onlyIn);
+      pts.push({ x, y, a });
+    }
+    for (let b = 0; b < branches && pts.length > 6; b++) {
+      const p = pts[(6 + rng() * (pts.length - 6)) | 0];
+      vein(p.x, p.y, mat, onlyIn, {
+        len: len * (0.35 + rng() * 0.3), thick: thick * 0.7, branches: 0,
+        angle: p.a + (rng() < 0.5 ? -1 : 1) * (0.7 + rng() * 0.8),
+      });
+    }
+    return pts;
+  };
 
-  // Goldadern: flache in der Erde, fette tief im Fels (nur per Sprengung)
-  for (let i = 0; i < 8; i++) {
-    const x = 40 + ((rng() * (WORLD_W - 80)) | 0);
-    const y = (groundY[clamp(x, 0, WORLD_W - 1)] + 45 + rng() * 70) | 0;
-    blob(x, y, 7 + rng() * 6, MAT.GOLD, [MAT.EARTH]);
+  // ---- Bodenschätze: je tiefer, desto fetter (organische Adern) ----------
+  const surf = (x) => groundY[clamp(x | 0, 0, WORLD_W - 1)];
+  const randX = (m) => m + ((rng() * (WORLD_W - 2 * m)) | 0);
+  // Zone 1 – flache Erde: kleine Nester zum Warmlaufen
+  for (let i = 0; i < 7; i++) {
+    const x = randX(50), y = (surf(x) + 40 + rng() * 90) | 0;
+    vein(x, y, MAT.GOLD, [MAT.EARTH], { len: 22 + rng() * 14, thick: 3.5 + rng() * 1.5, branches: 1 });
     goldSpots.push({ x, y, rock: false });
   }
-  for (let i = 0; i < 6; i++) {                       // Gold im mittleren Fels
-    const x = 60 + ((rng() * (WORLD_W - 120)) | 0);
-    const y = (GRANIT_TOP - 40 - rng() * 200) | 0;
-    blob(x, y, 10 + rng() * 8, MAT.GOLD, [MAT.ROCK, MAT.EARTH]);
+  // Zone 2 – tiefe Erde: ordentliche Flöze, noch mit der Schaufel abbaubar
+  for (let i = 0; i < 10; i++) {
+    const x = randX(50), y = (surf(x) + 150 + rng() * 210) | 0;
+    vein(x, y, MAT.GOLD, [MAT.EARTH, MAT.ROCK], { len: 50 + rng() * 40, thick: 6 + rng() * 3, branches: 2 });
+    goldSpots.push({ x, y, rock: false });
+  }
+  // Zone 3 – Felszone: dicke, weit verzweigte Adern
+  for (let i = 0; i < 7; i++) {
+    const x = randX(60), y = (GRANIT_TOP - 80 - rng() * 380) | 0;
+    vein(x, y, MAT.GOLD, [MAT.ROCK, MAT.EARTH], { len: 70 + rng() * 50, thick: 8 + rng() * 4, branches: 3 });
     goldSpots.push({ x, y, rock: true });
   }
-  for (let i = 0; i < 4; i++) {                       // fette Adern im Granit
-    const x = 80 + ((rng() * (WORLD_W - 160)) | 0);
-    const y = (GRANIT_TOP + 40 + rng() * 190) | 0;
-    blob(x, y, 12 + rng() * 9, MAT.GOLD, [MAT.ROCK, MAT.GRANIT]);
+  // Zone 4 – Granit: Mutterlager, riesig und stark verästelt
+  for (let i = 0; i < 5; i++) {
+    const x = randX(90), y = (GRANIT_TOP + 50 + rng() * 150) | 0;
+    vein(x, y, MAT.GOLD, [MAT.ROCK, MAT.GRANIT], { len: 95 + rng() * 60, thick: 12 + rng() * 6, branches: 4 });
     goldSpots.push({ x, y, rock: true, deep: true });
   }
-  // Kohleflöze (oben in der Erde, tiefer im Fels), Sandtaschen
+  // Kohleflöze: oben klein, in der Tiefe lange Bänder
+  for (let i = 0; i < 7; i++) {
+    const x = randX(50), y = (surf(x) + 35 + rng() * 150) | 0;
+    vein(x, y, MAT.COAL, [MAT.EARTH], { len: 26 + rng() * 20, thick: 3.5 + rng() * 2, branches: 1 });
+  }
   for (let i = 0; i < 6; i++) {
-    const x = 50 + ((rng() * (WORLD_W - 100)) | 0);
-    const y = (groundY[clamp(x, 0, WORLD_W - 1)] + 35 + rng() * 80) | 0;
-    blob(x, y, 6 + rng() * 5, MAT.COAL, [MAT.EARTH]);
+    const x = randX(50), y = (GRANIT_TOP - 100 - rng() * 380) | 0;
+    vein(x, y, MAT.COAL, [MAT.ROCK], { len: 60 + rng() * 40, thick: 6 + rng() * 3, branches: 2 });
   }
-  for (let i = 0; i < 5; i++) {
-    const x = 50 + ((rng() * (WORLD_W - 100)) | 0);
-    const y = (GRANIT_TOP - 60 - rng() * 220) | 0;
-    blob(x, y, 8 + rng() * 6, MAT.COAL, [MAT.ROCK]);
-  }
-  // Eisenerz: nur sprengbar, sitzt im Fels und tief im Granit (Hochofen!)
-  for (let i = 0; i < 6; i++) {
-    const x = 50 + ((rng() * (WORLD_W - 100)) | 0);
-    const y = (GRANIT_TOP - 30 - rng() * 240) | 0;
-    blob(x, y, 8 + rng() * 6, MAT.ORE, [MAT.ROCK]);
-  }
-  for (let i = 0; i < 3; i++) {
-    const x = 80 + ((rng() * (WORLD_W - 160)) | 0);
-    const y = (GRANIT_TOP + 60 + rng() * 180) | 0;
-    blob(x, y, 10 + rng() * 7, MAT.ORE, [MAT.ROCK, MAT.GRANIT]);
+  // Eisenerz: nur sprengbar, im Fels und als dicke Lager im Granit
+  for (let i = 0; i < 7; i++) {
+    const x = randX(50), y = (GRANIT_TOP - 60 - rng() * 400) | 0;
+    vein(x, y, MAT.ORE, [MAT.ROCK], { len: 45 + rng() * 35, thick: 6 + rng() * 3, branches: 2 });
   }
   for (let i = 0; i < 4; i++) {
-    const x = 70 + ((rng() * (WORLD_W - 140)) | 0);
-    const y = (groundY[clamp(x, 0, WORLD_W - 1)] + 30 + rng() * 60) | 0;
-    blob(x, y, 6 + rng() * 6, MAT.SAND, [MAT.EARTH]);
+    const x = randX(90), y = (GRANIT_TOP + 70 + rng() * 140) | 0;
+    vein(x, y, MAT.ORE, [MAT.ROCK, MAT.GRANIT], { len: 70 + rng() * 40, thick: 9 + rng() * 4, branches: 3 });
   }
-  // Höhlen in der Erdschicht, große Kavernen im Fels + Lavaseen ganz unten
-  for (let i = 0; i < 4; i++) {
-    const x = 80 + ((rng() * (WORLD_W - 160)) | 0);
-    const y = groundY[clamp(x, 0, WORLD_W - 1)] + 60 + rng() * 60;
-    blob(x, y | 0, 9 + rng() * 9, MAT.TUNNEL, [MAT.EARTH]);
+  // Sandtaschen in der Erdzone (rieseln beim Anschneiden nach)
+  for (let i = 0; i < 6; i++) {
+    const x = randX(70), y = (surf(x) + 30 + rng() * 180) | 0;
+    blob(x, y, 7 + rng() * 6, MAT.SAND, [MAT.EARTH]);
+  }
+  // Höhlen: kleine in der Erde, weite Kavernen als Baugrund für Anlagen,
+  // Lavaseen ganz unten
+  for (let i = 0; i < 6; i++) {
+    const x = randX(80), y = (surf(x) + 70 + rng() * 150) | 0;
+    blob(x, y, 10 + rng() * 10, MAT.TUNNEL, [MAT.EARTH]);
+  }
+  for (let i = 0; i < 4; i++) {   // breite, flache Hallen zum Ausbauen
+    const x = randX(120), y = (surf(x) + 200 + rng() * 220) | 0;
+    for (let k = -3; k <= 3; k++) blob(x + k * 14, y + Math.sin(k) * 6, 13 + rng() * 6, MAT.TUNNEL, [MAT.EARTH, MAT.ROCK, MAT.SAND]);
   }
   for (let i = 0; i < 5; i++) {
-    const x = 90 + ((rng() * (WORLD_W - 180)) | 0);
-    const y = (GRANIT_TOP - 40 - rng() * 220) | 0;
-    blob(x, y, 14 + rng() * 12, MAT.TUNNEL, [MAT.ROCK, MAT.COAL, MAT.ORE]);
+    const x = randX(90), y = (GRANIT_TOP - 60 - rng() * 320) | 0;
+    for (let k = -2; k <= 2; k++) blob(x + k * 16, y + Math.sin(k * 1.3) * 8, 15 + rng() * 8, MAT.TUNNEL, [MAT.ROCK, MAT.COAL, MAT.ORE]);
   }
   for (let i = 0; i < 3; i++) {
-    const x = 140 + ((rng() * (WORLD_W - 280)) | 0);
-    const y = (WORLD_H - 60 - rng() * 120) | 0;
-    blob(x, y, 15 + rng() * 9, MAT.TUNNEL, [MAT.ROCK, MAT.GRANIT, MAT.GOLD, MAT.ORE]);
-    blob(x, y + 10, 14 + rng() * 6, MAT.LAVA, [MAT.TUNNEL]);
+    const x = randX(140), y = (WORLD_H - 60 - rng() * 120) | 0;
+    blob(x, y, 16 + rng() * 10, MAT.TUNNEL, [MAT.ROCK, MAT.GRANIT, MAT.GOLD, MAT.ORE]);
+    blob(x, y + 10, 15 + rng() * 6, MAT.LAVA, [MAT.TUNNEL]);
   }
 
   // See in der tiefsten Senke (weit weg von den Hütten)
@@ -2210,8 +2248,10 @@ function update(dt) {
 const cam = { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1, scale: 0 };
 function setZoom(z) { cam.zoom = clamp(z, 1, 3.5); }
 function posOf(c) { return c.state === 'dead' ? { x: teamOf(c).base.x, y: teamOf(c).base.y - 30 } : c; }
+const VIEW_H = 760;   // Basis-Sichthöhe: die Welt ist tiefer als der Bildschirm
 function computeCam(dt) {
-  const fit = Math.min(CW / WORLD_W, (CH - TOP_UI - 8) / WORLD_H);
+  // Grundmaßstab: ganze Kartenbreite sichtbar, vertikal wird gescrollt
+  const fit = Math.max(CW / WORLD_W, (CH - TOP_UI - 8) / VIEW_H);
   let tx, ty, targetScale;
   // Buddel-Modus: solange Blau nicht mitspielt, folgt die Kamera Rot
   const soloView = game.mode === 'solo' || (game.mode === 'sandbox' && !(players[1] && players[1].activeT > 0));
@@ -2223,7 +2263,8 @@ function computeCam(dt) {
     const a = posOf(players[0].controlled), b = posOf(players[1].controlled);
     tx = (a.x + b.x) / 2; ty = (a.y + b.y) / 2 - 20;
     const needW = Math.abs(a.x - b.x) + 280, needH = Math.abs(a.y - b.y) + 240;
-    const fitBoth = Math.max(fit, Math.min(CW / needW, (CH - TOP_UI) / needH));
+    // beide im Bild halten, aber nie weiter als die ganze Karte rauszoomen
+    const fitBoth = Math.max(CW / WORLD_W * 0.55, Math.min(CW / needW, (CH - TOP_UI) / needH));
     targetScale = Math.min(fit * cam.zoom, fitBoth);
   }
   if (!cam.scale) cam.scale = targetScale;
