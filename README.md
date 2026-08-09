@@ -149,7 +149,14 @@ Docker-Container deployt.
   **Bäume** lassen sich sprengen oder fackeln ab (Feuer springt über)
   und geben 🪵 Holz; **Wipfe** buddeln durchs Erdreich, **Vögel** ziehen
   ihre Kreise und **🐟 Fische** schwimmen im See (und weichen Clonks
-  aus). Komplette Wirtschaft im **🛒 Basis-Menü** an der eigenen Hütte
+  aus). Wie im Original trägt ein Clonk nur **4 Stücke** – ist die Hand
+  voll, bleibt alles Weitere **liegen**. Die **🛒 Lore** (24 Plätze, alle
+  Güterarten) ist das Transportmittel: anschieben, Liegengebliebenes
+  aufsammeln lassen, Zeug hineinwerfen oder von oben hineinfallen
+  lassen; an der Hütte kippt sie ab – Gold in die Kasse, der Rest ins
+  **📦 Basis-Lager**, aus dem Werke und Handel schöpfen (und aus dem man
+  sich einzeln wieder eindeckt).
+  Komplette Wirtschaft im **🛒 Basis-Menü** an der eigenen Hütte
   (Taste B/K bzw. 🛒): **Produktion** aus eigenen Rohstoffen
   (🔥 Hochofen 🪨+⚫ → 🔩 · 🪚 Sägewerk 🪵 → 2 🪜 · Schienenschmiede
   🪜+🔩 → 4 🛤 · 🏭 Chemiefabrik 🔩 → 3 💣 / ⚫ → 2 💣 / 2 🪵 → 1 💣),
