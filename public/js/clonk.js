@@ -8,7 +8,12 @@
 // zu zweit an einer Tastatur; Touch-Steuerkreuz + Zoom-Kamera für Handys.
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-const WORLD_W = 960, WORLD_H = 1500;   // tiefe Karte: Erde, Fels, Tiefengestein
+// Die Welt ist waagerecht UNENDLICH und wird in Chunks prozedural erzeugt;
+// senkrecht reicht sie von Himmel bis Grundgestein.
+const CHK = 128;                     // Chunk-Kantenlänge (Pixel)
+const WORLD_H = 2048;                // Welttiefe
+const CH_ROWS = WORLD_H / CHK;        // Chunk-Zeilen
+const WORLD_W = 960;                 // Breite der "Heimatregion" (Hütten, Startgebiet)
 
 // ---- Materialien (Pixel-Maske) ---------------------------------------------
 const MAT = {
@@ -16,7 +21,7 @@ const MAT = {
   WATER: 5, LAVA: 6, SAND: 7, COAL: 8, GRANIT: 9, LOAM: 10,
   PLATFORM: 11,   // Aufzugskorb des Grubenlifts (beweglich, unzerstörbar)
   ORE: 12,        // Eisenerz: nur sprengbar, wird im Hochofen zu Metall
-  BEDROCK: 13,    // Kartenrand/Grundgestein: hält wirklich allem stand
+  BEDROCK: 13,    // Grundgestein: hält wirklich allem stand
 };
 //                  SKY    EARTH ROCK  GOLD  TUNNEL WATER  LAVA   SAND  COAL  GRANIT LOAM  PLATTF. ORE   BEDROCK
 const SOLID =      [false, true, true, true, false, false, false, true, true, true,  true, true,   true, true];
@@ -26,26 +31,51 @@ const TOUGH =      [0,     0,    0,    0,    0,     0,     0,     0,    0,    3,
 const isFree = (m) => m === MAT.SKY || m === MAT.TUNNEL;
 const isGrain = (m) => m === MAT.WATER || m === MAT.LAVA || m === MAT.SAND;
 
-let mask;                    // Uint8Array WORLD_W*WORLD_H mit MAT-Werten
-let groundY;                 // Oberflächen-Höhe je Spalte (Startzustand)
-let goldSpots = [];          // Zentren der Goldadern (für die KI)
-let terrainCanvas, terrainCtx, terrainImage;
-const idx = (x, y) => y * WORLD_W + x;
+// ---- Chunk-Speicher ---------------------------------------------------------
+// chunks: Map(key -> { mat, hp, canvas, dirty, edited })
+let chunks = new Map();
+let worldSeed = 1;
+let goldSpots = [];          // bekannte Adern in der Nähe (für die KI)
+const ckey = (cx, cy) => cx * 64 + cy;
 
+let _lastKey = NaN, _lastChunk = null;
+function chunkOf(cx, cy) {
+  const key = ckey(cx, cy);
+  if (key === _lastKey && _lastChunk) return _lastChunk;
+  let ch = chunks.get(key);
+  if (!ch) { ch = genChunk(cx, cy); chunks.set(key, ch); }
+  _lastKey = key; _lastChunk = ch;
+  return ch;
+}
 function matAt(x, y) {
   x |= 0; y |= 0;
-  if (x < 0 || x >= WORLD_W) return MAT.BEDROCK;   // Kartenränder: unzerstörbar
   if (y < 0) return MAT.SKY;
   if (y >= WORLD_H) return MAT.BEDROCK;
-  return mask[idx(x, y)];
+  return chunkOf(x >> 7, y >> 7).mat[((y & 127) << 7) | (x & 127)];
+}
+function setMat(x, y, m) {
+  x |= 0; y |= 0;
+  if (y < 0 || y >= WORLD_H) return;
+  const ch = chunkOf(x >> 7, y >> 7);
+  ch.mat[((y & 127) << 7) | (x & 127)] = m;
+  ch.dirty = true; ch.edited = true;
+}
+// Granit-Schadenskarte je Chunk (wird erst bei Bedarf angelegt)
+function hpAt(x, y) {
+  const ch = chunkOf(x >> 7, y >> 7);
+  return ch.hp ? ch.hp[((y & 127) << 7) | (x & 127)] : 0;
+}
+function setHp(x, y, v) {
+  const ch = chunkOf(x >> 7, y >> 7);
+  if (!ch.hp) ch.hp = new Uint8Array(CHK * CHK);
+  ch.hp[((y & 127) << 7) | (x & 127)] = v;
+  ch.dirty = true; ch.edited = true;
 }
 const solid = (x, y) => SOLID[matAt(x, y)];
-// Hintergrund für freigelegte Zellen: über der ursprünglichen Oberfläche
-// Himmel, darunter dunkler Stollen (sonst schwimmen dunkle Flecken im See,
-// wenn Sprengungen Wasser verdrängen)
+// Hintergrund für freigelegte Zellen: über der Geländeoberfläche Himmel,
+// darunter dunkler Stollen
 function bgMat(x, y) {
-  x |= 0; y |= 0;
-  return groundY && y < groundY[clamp(x, 0, WORLD_W - 1)] ? MAT.SKY : MAT.TUNNEL;
+  return (y | 0) < surfaceY(x) ? MAT.SKY : MAT.TUNNEL;
 }
 
 // ---- Zufall (seedbar, damit Tests reproduzierbar generieren können) --------
@@ -59,257 +89,279 @@ function mulberry32(seed) {
   };
 }
 let rng = mulberry32((Math.random() * 1e9) | 0);
+// deterministischer Zufall aus Koordinaten + Weltsaat (für die Generierung)
+function hash2(a, b, salt = 0) {
+  let h = (a * 374761393 + b * 668265263 + salt * 1274126177 + worldSeed * 2654435761) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+const rngAt = (a, b, salt = 0) => mulberry32(((hash2(a, b, salt) * 4294967296) | 0) >>> 0);
 
-// ---- Gelände-Erzeugung ------------------------------------------------------
-const BASE_X = [92, WORLD_W - 92];   // Hütten-Positionen (links / rechts)
+// ---- Prozedurale Weltgenerierung -------------------------------------------
+// Alles leitet sich deterministisch aus worldSeed + Koordinaten ab, damit die
+// Welt in beide Richtungen unendlich weiterwächst und beim Wiederbetreten
+// identisch aussieht.
+const BASE_X = [92, WORLD_W - 92];   // Hütten der beiden Teams (Heimatregion)
+// Bezugspunkt fürs Nachwachsen von Fauna, Wetter und Chunk-Pflege
+function homeX() {
+  const p = players && players[0] && players[0].controlled;
+  return p ? p.x : WORLD_W / 2;
+}
+const GRANIT_TOP = WORLD_H - 620;    // ab hier Granitbänder
 let trees = [];
 let wipfe = [];
 let birds = [];
+let worldTendT = 0;
 
-function genTerrain() {
-  mask = new Uint8Array(WORLD_W * WORLD_H);
-  granitHp = new Uint8Array(WORLD_W * WORLD_H);
-  groundY = new Int16Array(WORLD_W);
-  goldSpots = [];
-  const p1 = rng() * 6.28, p2 = rng() * 6.28, p3 = rng() * 6.28, p4 = rng() * 6.28;
-
-  // Hügelige Oberfläche; rund um die Hütten wird sanft eingeebnet
-  for (let x = 0; x < WORLD_W; x++) {
-    let h = 300 + Math.sin(x * 0.008 + p1) * 55 + Math.sin(x * 0.021 + p2) * 26
-      + Math.sin(x * 0.055 + p3) * 9;
-    for (const bx of BASE_X) {
-      const d = Math.abs(x - bx);
-      if (d < 110) {
-        // flacher Kern fürs Hütten-Plateau, außen weicher Übergang (Smoothstep)
-        const w = d < 60 ? 1 : 1 - (d - 60) / 50;
-        const ww = w * w * (3 - 2 * w);
-        h = h * (1 - ww) + 296 * ww;
-      }
-    }
-    groundY[x] = Math.round(clamp(h, 120, 460));   // Oberfläche im oberen Drittel
-  }
-
-  // Schichten: dicke Erd- und Felszone zum Buddeln, erst ganz unten Granit
-  const GRANIT_TOP = WORLD_H - 260;
-  for (let x = 0; x < WORLD_W; x++) {
-    const rockTop = groundY[x] + 380 + Math.sin(x * 0.016 + p4) * 70;   // dicke Erdzone
-    const granitTop = GRANIT_TOP + Math.sin(x * 0.011 + p2) * 34 + Math.sin(x * 0.03 + p3) * 12;
-    for (let y = groundY[x]; y < WORLD_H; y++) {
-      let m = y >= rockTop ? MAT.ROCK : MAT.EARTH;
-      // Tiefe: Granitbänder mit Fels-Zwischenlagen (sprengbar, aber zäh)
-      if (y >= granitTop) {
-        const band = Math.sin(y * 0.06 + Math.sin(x * 0.02) * 1.6);
-        m = band > -0.35 ? MAT.GRANIT : MAT.ROCK;
-      }
-      if (y >= WORLD_H - 6 || x < 4 || x >= WORLD_W - 4) m = MAT.BEDROCK;
-      mask[idx(x, y)] = m;
+// glattes Rauschen aus gehashten Stützstellen
+function noise1(x, period, salt) {
+  const p = x / period;
+  const i = Math.floor(p), f = p - i;
+  const a = hash2(i, 0, salt), b = hash2(i + 1, 0, salt);
+  const t = f * f * (3 - 2 * f);
+  return a + (b - a) * t;
+}
+// Geländeoberfläche je Spalte (gecacht – wird sehr oft gebraucht)
+const surfCache = new Map();
+function surfaceY(x) {
+  x |= 0;
+  let v = surfCache.get(x);
+  if (v !== undefined) return v;
+  let h = 330
+    + (noise1(x, 520, 1) - 0.5) * 200
+    + (noise1(x, 170, 2) - 0.5) * 90
+    + (noise1(x, 48, 3) - 0.5) * 26;
+  // Heimatregion: eine Senke in der Mitte (der Teich mit den Fischen)
+  const dPond = Math.abs(x - WORLD_W / 2);
+  if (dPond < 110) { const t = 1 - (dPond / 110) ** 2; h += 52 * t * t; }
+  // Heimatregion: Plateaus für die beiden Hütten
+  for (const bx of BASE_X) {
+    const d = Math.abs(x - bx);
+    if (d < 110) {
+      const w = d < 60 ? 1 : 1 - (d - 60) / 50;
+      const ww = w * w * (3 - 2 * w);
+      h = h * (1 - ww) + 300 * ww;
     }
   }
+  v = Math.round(clamp(h, 140, 520));
+  if (surfCache.size > 40000) surfCache.clear();
+  surfCache.set(x, v);
+  return v;
+}
+const earthBottom = (x) => surfaceY(x) + 380 + (noise1(x, 260, 7) - 0.5) * 140;
+const granitTopAt = (x) => GRANIT_TOP + (noise1(x, 340, 8) - 0.5) * 70;
 
-  const blob = (cx, cy, r, mat, onlyIn) => {
-    cx |= 0; cy |= 0; r = Math.round(r);
-    for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
-      if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) continue;
-      const dx = x - cx, dy = y - cy;
-      // unrunder Rand: leichtes Rauschen auf dem Radius
-      const wob = 1 + (texNoise(x >> 2, y >> 2) - 0.5) * 0.55;
-      if (dx * dx + dy * dy * 1.35 > (r * wob) ** 2) continue;
-      const m = mask[idx(x, y)];
-      if (!onlyIn || onlyIn.includes(m)) mask[idx(x, y)] = mat;
-    }
-  };
-  // Organische Ader: mäandernder Random-Walk mit wechselnder Dicke und
-  // Verästelungen – so sehen Gold-, Kohle- und Erzvorkommen aus wie gewachsen
-  // statt wie hingelegte Eier.
-  const vein = (cx, cy, mat, onlyIn, opts = {}) => {
-    const len = opts.len || 60;
-    const thick = opts.thick || 5;
-    const branches = opts.branches === undefined ? 2 : opts.branches;
-    let a = opts.angle === undefined ? rng() * Math.PI * 2 : opts.angle;
-    let x = cx, y = cy;
-    const pts = [];
-    for (let i = 0; i < len; i++) {
-      a += (rng() - 0.5) * 0.55;
-      // Adern ziehen bevorzugt in die Waagerechte (wie echte Flöze)
-      a = a * 0.9 + (Math.abs(Math.cos(a)) > 0.5 ? a : Math.atan2(Math.sin(a) * 0.5, Math.cos(a))) * 0.1;
-      x += Math.cos(a) * 2.2; y += Math.sin(a) * 1.5;
-      if (x < 20 || x > WORLD_W - 20 || y < 60 || y > WORLD_H - 20) break;
-      const t = i / len;
-      const r = thick * (0.55 + Math.sin(t * Math.PI) * 0.9) * (0.75 + rng() * 0.5);
-      blob(x, y, Math.max(2, r), mat, onlyIn);
-      pts.push({ x, y, a });
-    }
-    for (let b = 0; b < branches && pts.length > 6; b++) {
-      const p = pts[(6 + rng() * (pts.length - 6)) | 0];
-      vein(p.x, p.y, mat, onlyIn, {
-        len: len * (0.35 + rng() * 0.3), thick: thick * 0.7, branches: 0,
-        angle: p.a + (rng() < 0.5 ? -1 : 1) * (0.7 + rng() * 0.8),
-      });
-    }
-    return pts;
-  };
-
-  // ---- Bodenschätze: je tiefer, desto fetter (organische Adern) ----------
-  const surf = (x) => groundY[clamp(x | 0, 0, WORLD_W - 1)];
-  const randX = (m) => m + ((rng() * (WORLD_W - 2 * m)) | 0);
-  // Zone 1 – flache Erde: kleine Nester zum Warmlaufen
-  for (let i = 0; i < 7; i++) {
-    const x = randX(50), y = (surf(x) + 40 + rng() * 90) | 0;
-    vein(x, y, MAT.GOLD, [MAT.EARTH], { len: 22 + rng() * 14, thick: 3.5 + rng() * 1.5, branches: 1 });
-    goldSpots.push({ x, y, rock: false });
+// Adern & Höhlen entstehen pro 128er-Region deterministisch; beim Füllen eines
+// Chunks werden auch die Nachbarregionen abgeklopft, damit nichts abreißt.
+const VEIN_R = 128;
+// Merkmale einer Region einmal berechnen und wiederverwenden – sonst
+// rastert jeder Nachbar-Chunk dieselben Adern erneut.
+const regionCache = new Map();
+function regionFeatures(rx, ry) {
+  const key = rx * 65536 + ry;
+  let f = regionCache.get(key);
+  if (!f) {
+    f = { veins: [], caves: [] };
+    veinsOfRegion(rx, ry, f.veins);
+    cavesOfRegion(rx, ry, f.caves);
+    if (regionCache.size > 4000) regionCache.clear();
+    regionCache.set(key, f);
   }
-  // Zone 2 – tiefe Erde: ordentliche Flöze, noch mit der Schaufel abbaubar
-  for (let i = 0; i < 10; i++) {
-    const x = randX(50), y = (surf(x) + 150 + rng() * 210) | 0;
-    vein(x, y, MAT.GOLD, [MAT.EARTH, MAT.ROCK], { len: 50 + rng() * 40, thick: 6 + rng() * 3, branches: 2 });
-    goldSpots.push({ x, y, rock: false });
-  }
-  // Zone 3 – Felszone: dicke, weit verzweigte Adern
-  for (let i = 0; i < 7; i++) {
-    const x = randX(60), y = (GRANIT_TOP - 80 - rng() * 380) | 0;
-    vein(x, y, MAT.GOLD, [MAT.ROCK, MAT.EARTH], { len: 70 + rng() * 50, thick: 8 + rng() * 4, branches: 3 });
-    goldSpots.push({ x, y, rock: true });
-  }
-  // Zone 4 – Granit: Mutterlager, riesig und stark verästelt
-  for (let i = 0; i < 5; i++) {
-    const x = randX(90), y = (GRANIT_TOP + 50 + rng() * 150) | 0;
-    vein(x, y, MAT.GOLD, [MAT.ROCK, MAT.GRANIT], { len: 95 + rng() * 60, thick: 12 + rng() * 6, branches: 4 });
-    goldSpots.push({ x, y, rock: true, deep: true });
-  }
-  // Kohleflöze: oben klein, in der Tiefe lange Bänder
-  for (let i = 0; i < 7; i++) {
-    const x = randX(50), y = (surf(x) + 35 + rng() * 150) | 0;
-    vein(x, y, MAT.COAL, [MAT.EARTH], { len: 26 + rng() * 20, thick: 3.5 + rng() * 2, branches: 1 });
-  }
-  for (let i = 0; i < 6; i++) {
-    const x = randX(50), y = (GRANIT_TOP - 100 - rng() * 380) | 0;
-    vein(x, y, MAT.COAL, [MAT.ROCK], { len: 60 + rng() * 40, thick: 6 + rng() * 3, branches: 2 });
-  }
-  // Eisenerz: nur sprengbar, im Fels und als dicke Lager im Granit
-  for (let i = 0; i < 7; i++) {
-    const x = randX(50), y = (GRANIT_TOP - 60 - rng() * 400) | 0;
-    vein(x, y, MAT.ORE, [MAT.ROCK], { len: 45 + rng() * 35, thick: 6 + rng() * 3, branches: 2 });
-  }
-  for (let i = 0; i < 4; i++) {
-    const x = randX(90), y = (GRANIT_TOP + 70 + rng() * 140) | 0;
-    vein(x, y, MAT.ORE, [MAT.ROCK, MAT.GRANIT], { len: 70 + rng() * 40, thick: 9 + rng() * 4, branches: 3 });
-  }
-  // Sandtaschen in der Erdzone (rieseln beim Anschneiden nach)
-  for (let i = 0; i < 6; i++) {
-    const x = randX(70), y = (surf(x) + 30 + rng() * 180) | 0;
-    blob(x, y, 7 + rng() * 6, MAT.SAND, [MAT.EARTH]);
-  }
-  // Höhlen: kleine in der Erde, weite Kavernen als Baugrund für Anlagen,
-  // Lavaseen ganz unten
-  for (let i = 0; i < 6; i++) {
-    const x = randX(80), y = (surf(x) + 70 + rng() * 150) | 0;
-    blob(x, y, 10 + rng() * 10, MAT.TUNNEL, [MAT.EARTH]);
-  }
-  for (let i = 0; i < 4; i++) {   // breite, flache Hallen zum Ausbauen
-    const x = randX(120), y = (surf(x) + 200 + rng() * 220) | 0;
-    for (let k = -3; k <= 3; k++) blob(x + k * 14, y + Math.sin(k) * 6, 13 + rng() * 6, MAT.TUNNEL, [MAT.EARTH, MAT.ROCK, MAT.SAND]);
-  }
-  for (let i = 0; i < 5; i++) {
-    const x = randX(90), y = (GRANIT_TOP - 60 - rng() * 320) | 0;
-    for (let k = -2; k <= 2; k++) blob(x + k * 16, y + Math.sin(k * 1.3) * 8, 15 + rng() * 8, MAT.TUNNEL, [MAT.ROCK, MAT.COAL, MAT.ORE]);
-  }
-  for (let i = 0; i < 3; i++) {
-    const x = randX(140), y = (WORLD_H - 60 - rng() * 120) | 0;
-    blob(x, y, 16 + rng() * 10, MAT.TUNNEL, [MAT.ROCK, MAT.GRANIT, MAT.GOLD, MAT.ORE]);
-    blob(x, y + 10, 15 + rng() * 6, MAT.LAVA, [MAT.TUNNEL]);
-  }
-
-  // See in der tiefsten Senke (weit weg von den Hütten)
-  let vx = -1, vy = -1;
-  for (let x = 220; x < WORLD_W - 220; x++) {
-    if (Math.abs(x - BASE_X[0]) < 170 || Math.abs(x - BASE_X[1]) < 170) continue;
-    if (groundY[x] > vy) { vy = groundY[x]; vx = x; }
-  }
-  if (vx >= 0) {
-    const level = vy - 22;
-    for (let x = Math.max(6, vx - 140); x < Math.min(WORLD_W - 6, vx + 140); x++) {
-      if (groundY[x] <= level) continue;
-      for (let y = level; y < groundY[x]; y++) {
-        if (mask[idx(x, y)] === MAT.SKY) mask[idx(x, y)] = MAT.WATER;
-      }
-    }
-  }
-
-  // Bäume auf freier Fläche (nicht an Hütten, nicht im See)
-  trees = [];
-  for (let i = 0; i < 24 && trees.length < 8; i++) {
-    const x = 60 + ((rng() * (WORLD_W - 120)) | 0);
-    if (Math.abs(x - BASE_X[0]) < 80 || Math.abs(x - BASE_X[1]) < 80) continue;
-    const g = groundY[x];
-    if (matAt(x, g - 4) === MAT.WATER) continue;
-    if (Math.abs(groundY[clamp(x - 6, 0, WORLD_W - 1)] - groundY[clamp(x + 6, 0, WORLD_W - 1)]) > 9) continue;
-    if (trees.some((t) => Math.abs(t.x - x) < 46)) continue;
-    trees.push({ x, y: g, h: 24 + rng() * 12, sway: rng() * 6.28, burn: 0, dead: false });
-  }
-
-  // Wipfe: kleine Erdbuddler
-  wipfe = [];
-  for (let i = 0; i < 3; i++) {
-    const x = 150 + ((rng() * (WORLD_W - 300)) | 0);
-    wipfe.push({ x, y: groundY[x] - 1, dir: rng() < 0.5 ? -1 : 1, t: rng() * 3, state: 'walk', fleeT: 0, dead: false, respT: 0 });
-  }
-  // Fische im See (Wasserzellen einsammeln und ein paar besetzen)
-  fish = [];
-  const pond = [];
-  for (let x = 20; x < WORLD_W - 20; x += 7) {
-    for (let y = 150; y < WORLD_H - 20; y += 7) {
-      if (mask[idx(x, y)] === MAT.WATER && mask[idx(x, y + 6)] === MAT.WATER) pond.push({ x, y });
-    }
-  }
-  for (let i = 0; i < 6 && pond.length; i++) {
-    const s = pond[(rng() * pond.length) | 0];
-    fish.push({ x: s.x, y: s.y, dir: rng() < 0.5 ? -1 : 1, v: 18 + rng() * 16, ph: rng() * 6.28, size: 0.8 + rng() * 0.5 });
-  }
-
-  // Vögel: ziehen ihre Kreise über der Landschaft
-  birds = [];
-  for (let i = 0; i < 5; i++) {
-    birds.push({
-      x: rng() * WORLD_W, y: 60 + rng() * 140, dir: rng() < 0.5 ? -1 : 1,
-      v: 26 + rng() * 22, ph: rng() * 6.28, amp: 6 + rng() * 10, scale: 0.8 + rng() * 0.5,
+  return f;
+}
+function veinsOfRegion(rx, ry, out) {
+  const r = rngAt(rx, ry, 11);
+  const x0 = rx * VEIN_R, y0 = ry * VEIN_R;
+  const n = 1 + ((r() * 2) | 0);
+  for (let i = 0; i < n; i++) {
+    const x = x0 + r() * VEIN_R, y = y0 + r() * VEIN_R;
+    const depth = y - surfaceY(Math.round(x));
+    if (y >= WORLD_H - 40 || depth < 30) continue;
+    const deep = y > granitTopAt(x);
+    const inRock = y > earthBottom(x);
+    // Materialwahl: Gold überall, Kohle/Erz je nach Tiefe
+    const pick = r();
+    let mat, only;
+    if (pick < 0.45) { mat = MAT.GOLD; only = deep ? [MAT.ROCK, MAT.GRANIT] : inRock ? [MAT.ROCK, MAT.EARTH] : [MAT.EARTH]; }
+    else if (pick < 0.75) { mat = MAT.COAL; only = inRock ? [MAT.ROCK] : [MAT.EARTH]; }
+    else if (inRock) { mat = MAT.ORE; only = deep ? [MAT.ROCK, MAT.GRANIT] : [MAT.ROCK]; }
+    else { mat = MAT.SAND; only = [MAT.EARTH]; }
+    // je tiefer, desto fetter
+    const t = clamp(depth / (WORLD_H - 200), 0, 1);
+    const len = 24 + t * 90 + r() * 40;
+    const thick = 3 + t * 10 + r() * 3;
+    out.push({
+      x, y, mat, only, seed: r() * 1e9, len, thick,
+      branches: mat === MAT.SAND ? 0 : 1 + ((t * 3 + r()) | 0),
+      reach: len * 2.3 + thick + 6,           // maximaler Aktionsradius
     });
   }
 }
-
-// ---- Terrain-Rendering (eigener Offscreen-Canvas wie bei Lemminge) ---------
-function buildTerrainCanvas() {
-  terrainCanvas = document.createElement('canvas');
-  terrainCanvas.width = WORLD_W; terrainCanvas.height = WORLD_H;
-  terrainCtx = terrainCanvas.getContext('2d');
-  terrainImage = terrainCtx.createImageData(WORLD_W, WORLD_H);
-  recolor(0, 0, WORLD_W, WORLD_H);
-  terrainCtx.putImageData(terrainImage, 0, 0);
+function cavesOfRegion(rx, ry, out) {
+  const r = rngAt(rx, ry, 23);
+  if (r() > 0.55) return;
+  const x = rx * VEIN_R + r() * VEIN_R, y = ry * VEIN_R + r() * VEIN_R;
+  const depth = y - surfaceY(Math.round(x));
+  if (depth < 60 || y >= WORLD_H - 30) return;
+  const t = clamp(depth / (WORLD_H - 200), 0, 1);
+  out.push({ x, y, r: 10 + t * 16 + r() * 8, wide: r() < 0.5, seed: r() * 1e9,
+    lava: y > GRANIT_TOP + 120 && r() < 0.5 });
 }
-// körniges Textur-Rauschen (zwei "Oktaven": fein + blockig) für den
-// erdig-handgemalten Clonk-Look
+
+// Ein Chunk erzeugen: Schichten, dann Adern/Höhlen der Umgebung einstanzen
+function genChunk(cx, cy) {
+  const mat = new Uint8Array(CHK * CHK);
+  const bx = cx * CHK, by = cy * CHK;
+  for (let lx = 0; lx < CHK; lx++) {
+    const x = bx + lx;
+    const surf = surfaceY(x), eb = earthBottom(x), gt = granitTopAt(x);
+    for (let ly = 0; ly < CHK; ly++) {
+      const y = by + ly;
+      let m;
+      if (y < surf) m = MAT.SKY;
+      else if (y >= WORLD_H - 6) m = MAT.BEDROCK;
+      else if (y >= gt) {
+        const band = Math.sin(y * 0.06 + Math.sin(x * 0.02) * 1.6);
+        m = band > -0.35 ? MAT.GRANIT : MAT.ROCK;
+      } else m = y >= eb ? MAT.ROCK : MAT.EARTH;
+      mat[(ly << 7) | lx] = m;
+    }
+  }
+  const ch = { mat, hp: null, canvas: null, dirty: true, edited: false, cx, cy };
+
+  // Nur innerhalb dieses Chunks zeichnen
+  const put = (x, y, m, only) => {
+    const lx = x - bx, ly = y - by;
+    if (lx < 0 || lx >= CHK || ly < 0 || ly >= CHK) return;
+    if (y >= WORLD_H - 6) return;
+    const i = (ly << 7) | lx;
+    if (only && !only.includes(mat[i])) return;
+    mat[i] = m;
+  };
+  const blob = (cxp, cyp, rad, m, only) => {
+    cxp = Math.round(cxp); cyp = Math.round(cyp); rad = Math.round(rad);
+    if (cxp + rad < bx || cxp - rad >= bx + CHK || cyp + rad < by || cyp - rad >= by + CHK) return;
+    for (let y = cyp - rad; y <= cyp + rad; y++) for (let x = cxp - rad; x <= cxp + rad; x++) {
+      const dx = x - cxp, dy = y - cyp;
+      const wob = 1 + (hash2(x >> 2, y >> 2, 5) - 0.5) * 0.55;
+      if (dx * dx + dy * dy * 1.35 > (rad * wob) ** 2) continue;
+      put(x, y, m, only);
+    }
+  };
+  const vein = (v) => {
+    const r = mulberry32(v.seed | 0);
+    let a = r() * Math.PI * 2, x = v.x, y = v.y;
+    const pts = [];
+    for (let i = 0; i < v.len; i++) {
+      a += (r() - 0.5) * 0.55;
+      a = Math.atan2(Math.sin(a) * 0.72, Math.cos(a));   // eher waagerecht
+      x += Math.cos(a) * 2.2; y += Math.sin(a) * 1.5;
+      if (y < 40 || y > WORLD_H - 20) break;
+      const t = i / v.len;
+      const rad = Math.max(2, v.thick * (0.55 + Math.sin(t * Math.PI) * 0.9) * (0.75 + r() * 0.5));
+      if (x > bx - rad - 1 && x < bx + CHK + rad + 1 && y > by - rad - 1 && y < by + CHK + rad + 1) {
+        blob(x, y, rad, v.mat, v.only);
+      }
+      pts.push({ x, y, a });
+    }
+    for (let b = 0; b < v.branches && pts.length > 6; b++) {
+      const p = pts[(6 + r() * (pts.length - 6)) | 0];
+      let a2 = p.a + (r() < 0.5 ? -1 : 1) * (0.7 + r() * 0.8);
+      let x2 = p.x, y2 = p.y;
+      const len2 = v.len * (0.35 + r() * 0.3);
+      for (let i = 0; i < len2; i++) {
+        a2 += (r() - 0.5) * 0.6;
+        x2 += Math.cos(a2) * 2.2; y2 += Math.sin(a2) * 1.5;
+        if (y2 < 40 || y2 > WORLD_H - 20) break;
+        const rad2 = Math.max(2, v.thick * 0.7 * (0.6 + r() * 0.6));
+        if (x2 > bx - rad2 - 1 && x2 < bx + CHK + rad2 + 1 && y2 > by - rad2 - 1 && y2 < by + CHK + rad2 + 1) {
+          blob(x2, y2, rad2, v.mat, v.only);
+        }
+      }
+    }
+  };
+
+  const feats = [], caves = [];
+  const r0 = Math.floor(bx / VEIN_R), r1 = Math.floor((bx + CHK) / VEIN_R);
+  const c0 = Math.floor(by / VEIN_R), c1 = Math.floor((by + CHK) / VEIN_R);
+  // nur Merkmale einsammeln, die diesen Chunk überhaupt erreichen können
+  const near = (fx, fy, reach) => fx > bx - reach && fx < bx + CHK + reach
+    && fy > by - reach && fy < by + CHK + reach;
+  for (let rx = r0 - 2; rx <= r1 + 2; rx++) {
+    for (let ry = c0 - 2; ry <= c1 + 2; ry++) {
+      const f = regionFeatures(rx, ry);
+      for (const v of f.veins) if (near(v.x, v.y, v.reach)) feats.push(v);
+      for (const c of f.caves) if (near(c.x, c.y, c.r * 4 + 20)) caves.push(c);
+    }
+  }
+  for (const v of feats) vein(v);
+  for (const c of caves) {
+    if (c.wide) for (let k = -2; k <= 2; k++) blob(c.x + k * (c.r * 0.9), c.y + Math.sin(k * 1.3) * 6, c.r, MAT.TUNNEL, [MAT.EARTH, MAT.ROCK, MAT.SAND, MAT.COAL, MAT.ORE, MAT.GRANIT]);
+    else blob(c.x, c.y, c.r, MAT.TUNNEL, [MAT.EARTH, MAT.ROCK, MAT.SAND, MAT.COAL, MAT.ORE, MAT.GRANIT]);
+    if (c.lava) blob(c.x, c.y + c.r * 0.5, c.r * 0.8, MAT.LAVA, [MAT.TUNNEL]);
+  }
+  // Seen: pro 512er-Abschnitt eine Senke fluten
+  lakesNear(bx, bx + CHK, (lx0, lx1, level) => {
+    for (let x = Math.max(bx, lx0); x < Math.min(bx + CHK, lx1); x++) {
+      for (let y = level; y < surfaceY(x); y++) put(x, y, MAT.WATER, [MAT.SKY]);
+    }
+  });
+  return ch;
+}
+// Seen-Definition für einen x-Bereich (deterministisch, ohne Chunk-Grenzen)
+function lakesNear(xa, xb, cb) {
+  const s0 = Math.floor(xa / 512) - 1, s1 = Math.floor(xb / 512) + 1;
+  for (let s = s0; s <= s1; s++) {
+    const r = rngAt(s, 0, 31);
+    const home = s === 0;            // Heimatregion bekommt immer ihren See
+    if (!home && r() > 0.55) continue;
+    const cx = home ? WORLD_W / 2 : s * 512 + 100 + r() * 312;
+    // tiefste Stelle in der Umgebung suchen
+    let bestX = cx, bestY = -1;
+    const span = home ? 110 : 150;
+    for (let x = cx - span; x <= cx + span; x += 6) {
+      const y = surfaceY(Math.round(x));
+      if (y > bestY) { bestY = y; bestX = Math.round(x); }
+    }
+    const level = bestY - 24 - r() * 26;
+    // Ufer: so weit, wie das Gelände unter dem Spiegel liegt
+    let x0 = bestX, x1 = bestX;
+    while (x0 > bestX - 200 && surfaceY(x0 - 1) > level) x0--;
+    while (x1 < bestX + 200 && surfaceY(x1 + 1) > level) x1++;
+    if (x1 - x0 < 40) continue;
+    // die Heimatregion mit den Hütten bleibt trocken
+    if (BASE_X.some((bx) => x1 > bx - 130 && x0 < bx + 130)) continue;
+    cb(x0, x1, level);
+  }
+}
+
+// ---- Terrain-Rendering (ein Canvas je Chunk, nur sichtbare werden gemalt) --
 function texNoise(x, y) {
   let h = (x * 374761393 + y * 668265263) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) & 255) / 255;
 }
-function recolor(x0, y0, x1, y1) {
-  x0 = clamp(x0 | 0, 0, WORLD_W); x1 = clamp(x1 | 0, 0, WORLD_W);
-  y0 = clamp(y0 | 0, 0, WORLD_H); y1 = clamp(y1 | 0, 0, WORLD_H);
-  const d = terrainImage.data;
-  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-    const i = idx(x, y), p = i * 4, m = mask[i];
-    const n = texNoise(x, y);                 // feines Korn
-    const n2 = texNoise(x >> 2, y >> 2);      // blockige Flecken
+function paintChunk(ch) {
+  if (!ch.canvas) {
+    ch.canvas = document.createElement('canvas');
+    ch.canvas.width = CHK; ch.canvas.height = CHK;
+    ch.ctx = ch.canvas.getContext('2d');
+    ch.img = ch.ctx.createImageData(CHK, CHK);
+  }
+  const d = ch.img.data, bx = ch.cx * CHK, by = ch.cy * CHK;
+  for (let ly = 0; ly < CHK; ly++) for (let lx = 0; lx < CHK; lx++) {
+    const i = (ly << 7) | lx, p = i * 4, m = ch.mat[i];
+    const x = bx + lx, y = by + ly;
+    const n = texNoise(x, y), n2 = texNoise(x >> 2, y >> 2);
     if (m === MAT.SKY) { d[p + 3] = 0; continue; }
     d[p + 3] = 255;
-    if (m === MAT.TUNNEL) {                   // Stollen: dunkler Erd-Hintergrund
-      d[p] = 42 + n * 10 + n2 * 6; d[p + 1] = 29 + n * 7; d[p + 2] = 19; continue;
-    }
-    if (m === MAT.WATER) {                    // halbtransparent, leichte Wellenbänder
+    if (m === MAT.TUNNEL) { d[p] = 42 + n * 10 + n2 * 6; d[p + 1] = 29 + n * 7; d[p + 2] = 19; continue; }
+    if (m === MAT.WATER) {
       const band = y % 9 < 2 ? 10 : 0;
       d[p] = 36 + n * 10 + band; d[p + 1] = 102 + n * 14 + band; d[p + 2] = 192 + band; d[p + 3] = 170; continue;
     }
-    if (m === MAT.LAVA) {                     // glühende Schlieren
+    if (m === MAT.LAVA) {
       const hot = n2 > 0.55;
       d[p] = hot ? 250 : 205 + n * 24; d[p + 1] = (hot ? 140 : 68) + n * 26; d[p + 2] = hot ? 46 : 24; continue;
     }
@@ -317,46 +369,44 @@ function recolor(x0, y0, x1, y1) {
       const spk = n > 0.92 ? 26 : 0;
       d[p] = 202 + n * 18 + spk; d[p + 1] = 178 + n * 14 + spk; d[p + 2] = 118 + spk; continue;
     }
-    if (m === MAT.COAL) {                     // fast schwarz mit Glanzpunkten
+    if (m === MAT.COAL) {
       const shine = n > 0.94 ? 62 : 0;
       d[p] = 38 + n * 10 + shine; d[p + 1] = 38 + n * 10 + shine; d[p + 2] = 44 + shine; continue;
     }
-    if (m === MAT.GRANIT) {                   // dunkles Gestein, angeschlagen heller gesprenkelt
-      const hp = granitHp && granitHp[i] ? granitHp[i] : TOUGH[MAT.GRANIT];
-      const crack = hp < TOUGH[MAT.GRANIT] && n > 0.45 ? (TOUGH[MAT.GRANIT] - hp) * 12 : 0;
+    if (m === MAT.GRANIT) {
+      const hp = ch.hp ? ch.hp[i] : 0;
+      const crack = hp && hp < TOUGH[MAT.GRANIT] && n > 0.45 ? (TOUGH[MAT.GRANIT] - hp) * 12 : 0;
       const g = 56 + n * 10 + (n2 > 0.75 ? 22 : 0) + crack;
       d[p] = g + crack * 0.4; d[p + 1] = g; d[p + 2] = g + 9; continue;
     }
-    if (m === MAT.BEDROCK) {                  // Grundgestein: fast schwarz, sehr grob
+    if (m === MAT.BEDROCK) {
       const g = 34 + n * 8 + (n2 > 0.8 ? 14 : 0);
       d[p] = g; d[p + 1] = g; d[p + 2] = g + 6; continue;
     }
-    if (m === MAT.ORE) {                      // Eisenerz: rostrote Adern im Grau
+    if (m === MAT.ORE) {
       const vein = texNoise(x >> 1, y >> 1) > 0.62;
       if (vein) { d[p] = 166 + n * 22; d[p + 1] = 88 + n * 16; d[p + 2] = 52; }
       else { d[p] = 96 + n * 14; d[p + 1] = 86 + n * 12; d[p + 2] = 84; }
       continue;
     }
-    if (m === MAT.LOAM) {
-      d[p] = 164 + n * 18; d[p + 1] = 132 + n * 14; d[p + 2] = 80 + n2 * 10; continue;
-    }
-    if (m === MAT.PLATFORM) {                 // Stahlkorb mit Nieten
+    if (m === MAT.LOAM) { d[p] = 164 + n * 18; d[p + 1] = 132 + n * 14; d[p + 2] = 80 + n2 * 10; continue; }
+    if (m === MAT.PLATFORM) {
       const b = (x + y) % 5 === 0 ? 34 : 0;
       d[p] = 116 + n * 10 + b; d[p + 1] = 112 + n * 10 + b; d[p + 2] = 124 + b; continue;
     }
-    if (m === MAT.ROCK) {                     // Fels mit Schichten und Rissen
+    if (m === MAT.ROCK) {
       let g = 94 + n * 18 + (n2 > 0.62 ? 13 : 0);
-      if (texNoise(x >> 1, y >> 1) > 0.96) g -= 34;   // Risse
+      if (texNoise(x >> 1, y >> 1) > 0.96) g -= 34;
       d[p] = g; d[p + 1] = g + 4; d[p + 2] = g + 10; continue;
     }
-    if (m === MAT.GOLD) {                     // glitzernde Klumpen-Klüfte
+    if (m === MAT.GOLD) {
       const blk = texNoise(x >> 1, y >> 1);
       if (blk > 0.72) { d[p] = 255; d[p + 1] = 218 + n * 20; d[p + 2] = 90; }
       else if (n < 0.07) { d[p] = 150; d[p + 1] = 110; d[p + 2] = 26; }
       else { d[p] = 204 + n * 18; d[p + 1] = 158 + n * 18; d[p + 2] = 42; }
       continue;
     }
-    // Erde – Grasnarbe (mit unregelmäßigen Halmen) nur, wo oberhalb Himmel ist
+    // Erde mit Grasnarbe
     let skyDist = 0;
     for (let k = 1; k <= 5; k++) { if (matAt(x, y - k) === MAT.SKY) { skyDist = k; break; } }
     const grassDepth = 2 + ((texNoise(x, 0) * 3) | 0);
@@ -365,32 +415,44 @@ function recolor(x0, y0, x1, y1) {
       d[p] = 78 + n * 20 + light * 0.4; d[p + 1] = 136 + n * 20 + light; d[p + 2] = 58 + light * 0.3;
       continue;
     }
-    const pebble = n > 0.955;
-    const fleck = n < 0.04;
+    const pebble = n > 0.955, fleck = n < 0.04;
     let r = 118 + n * 14 + n2 * 10, g2 = 86 + n * 11 + n2 * 8, b = 52 + n * 7;
     if (pebble) { r -= 34; g2 -= 28; b -= 18; }
     if (fleck) { r += 22; g2 += 18; b += 10; }
     d[p] = r; d[p + 1] = g2; d[p + 2] = b;
   }
+  ch.ctx.putImageData(ch.img, 0, 0);
+  ch.dirty = false;
 }
+// Material setzen + Chunk zum Neuzeichnen vormerken
+function paintDirty(x, y) {
+  const ch = chunkOf(x >> 7, y >> 7);
+  ch.dirty = true;
+  // Grasnarbe/Ränder der Nachbarn können mitbetroffen sein
+  if ((x & 127) < 6) chunkOf((x >> 7) - 1, y >> 7).dirty = true;
+  if ((x & 127) > 121) chunkOf((x >> 7) + 1, y >> 7).dirty = true;
+  if ((y & 127) < 6) chunkOf(x >> 7, (y >> 7) - 1).dirty = true;
+  if ((y & 127) > 121) chunkOf(x >> 7, (y >> 7) + 1).dirty = true;
+}
+// alte Signaturen (Bereich neu einfärben) – jetzt Chunk-Markierung
 function applyRegion(x, y, w, h) {
-  recolor(x - 2, y - 6, x + w + 2, y + h + 2);
-  terrainCtx.putImageData(terrainImage, 0, 0);
+  for (let cy = (y - 2) >> 7; cy <= (y + h + 2) >> 7; cy++) {
+    for (let cx = (x - 2) >> 7; cx <= (x + w + 2) >> 7; cx++) {
+      if (cy < 0 || cy >= CH_ROWS) continue;
+      chunkOf(cx, cy).dirty = true;
+    }
+  }
 }
 // setzt Material in ein Rechteck (Lehmbrücke) – nur in freie/flüssige Zellen
 function fillMat(x0, y0, w, h, mat) {
   for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
-    if (x < 1 || x >= WORLD_W - 1 || y < 1 || y >= WORLD_H - 1) continue;
-    const m = mask[idx(x, y)];
-    if (isFree(m) || m === MAT.WATER) mask[idx(x, y)] = mat;
+    if (y < 1 || y >= WORLD_H - 1) continue;
+    const m = matAt(x, y);
+    if (isFree(m) || m === MAT.WATER) setMat(x, y, mat);
   }
   applyRegion(x0, y0, w, h);
   wakeArea(x0 - 3, y0 - 3, x0 + w + 3, y0 + h + 3);
 }
-
-// Granit-Schadenskarte: Granit hält im Original mehrere Sprengungen aus,
-// bröckelt aber Stück für Stück weg (nur der Kartenrand ist wirklich fest).
-let granitHp = null;
 
 // Kreis ausheben. breakRock=false: Fels bleibt stehen (Graben);
 // true: Sprengung – alles außer Grundgestein fliegt, Granit erst nach
@@ -400,25 +462,22 @@ function carveCircle(cx, cy, r, breakRock) {
   let gold = 0, coal = 0, ore = 0;
   const r2 = r * r;
   for (let y = cy - r; y <= cy + r; y++) {
+    if (y < 0 || y >= WORLD_H) continue;
     for (let x = cx - r; x <= cx + r; x++) {
-      if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) continue;
       if ((x - cx) ** 2 + (y - cy) ** 2 > r2) continue;
-      const i = idx(x, y), m = mask[i];
+      const m = matAt(x, y);
       if (isFree(m) || m === MAT.PLATFORM || m === MAT.BEDROCK) continue;
-      if (!breakRock && !DIGGABLE[m]) continue;         // Fels/Wasser/Lava: Schaufel scheitert
-      if (breakRock && TOUGH[m] > 0) {                  // zäh: erst anschlagen
-        granitHp[i] = (granitHp[i] || TOUGH[m]) - 1;
-        if (granitHp[i] > 0) continue;
+      if (!breakRock && !DIGGABLE[m]) continue;
+      if (breakRock && TOUGH[m] > 0) {
+        const left = (hpAt(x, y) || TOUGH[m]) - 1;
+        setHp(x, y, left);
+        if (left > 0) continue;
       }
-      if (breakRock && (m === MAT.WATER || m === MAT.LAVA)) {
-        mask[i] = bgMat(x, y);                           // Sprengung verdrängt Flüssigkeit
-        continue;
-      }
+      if (breakRock && (m === MAT.WATER || m === MAT.LAVA)) { setMat(x, y, bgMat(x, y)); continue; }
       if (m === MAT.GOLD) gold++;
       if (m === MAT.COAL) coal++;
       if (m === MAT.ORE) ore++;
-      // oben offen? Dann wird's Himmel, sonst dunkler Stollen
-      mask[i] = bgMat(x, y);
+      setMat(x, y, bgMat(x, y));
     }
   }
   applyRegion(cx - r, cy - r, 2 * r + 1, 2 * r + 1);
@@ -430,82 +489,64 @@ function carveCircle(cx, cy, r, breakRock) {
 carveCircle.lastCoal = 0;
 carveCircle.lastOre = 0;
 
-// ---- Flüssigkeits-/Sand-Simulation ------------------------------------------
-// Zellautomat mit Aktiv-Liste: Wasser & Lava fallen und fließen seitlich,
-// Sand rieselt. Lava + Wasser => Fels. Budget pro Frame hält die FPS stabil.
+// ---- Flüssigkeits-/Sand-Simulation -----------------------------------------
+// Zellautomat mit Aktiv-Liste (Schlüssel = x * 4096 + y, auch für negative x).
 let active = [];
-let activeFlag;
+let activeSet = new Set();
 let simTick = 0;
 const SPREAD = 8;   // Reichweite des Druckausgleichs für Flüssigkeiten
-let dirty = null;
+const pack = (x, y) => x * 4096 + y;
+const unpackX = (k) => Math.floor(k / 4096);
+const unpackY = (k) => k - Math.floor(k / 4096) * 4096;
+
 function wake(x, y) {
-  if (x < 0 || x >= WORLD_W || y < 0 || y >= WORLD_H) return;
-  const i = idx(x, y);
-  if (!isGrain(mask[i]) || activeFlag[i]) return;
-  activeFlag[i] = 1; active.push(i);
+  x |= 0; y |= 0;
+  if (y < 0 || y >= WORLD_H) return;
+  if (!isGrain(matAt(x, y))) return;
+  const k = pack(x, y);
+  if (activeSet.has(k)) return;
+  activeSet.add(k); active.push(k);
 }
 function wakeArea(x0, y0, x1, y1) {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) wake(x, y);
 }
-function markDirty(x, y) {
-  if (!dirty) dirty = { x0: x, y0: y, x1: x, y1: y };
-  else {
-    if (x < dirty.x0) dirty.x0 = x; if (x > dirty.x1) dirty.x1 = x;
-    if (y < dirty.y0) dirty.y0 = y; if (y > dirty.y1) dirty.y1 = y;
-  }
-}
-// Lava trifft Wasser: an der Kontaktstelle entsteht Fels (+ Dampf)
 function quench(x, y) {
-  const i = idx(x, y);
-  mask[i] = MAT.ROCK;
-  markDirty(x, y);
+  setMat(x, y, MAT.ROCK);
   puff(x, y, 2, '#cfd8dd');
 }
-function tryFlow(i, x, y, m) {
+function tryFlow(x, y, m) {
   const liquid = m !== MAT.SAND;
   const opposing = m === MAT.WATER ? MAT.LAVA : m === MAT.LAVA ? MAT.WATER : -1;
-  const moves = [];
-  if (y + 1 < WORLD_H) moves.push(i + WORLD_W);
   const par = ((x + simTick) & 1) ? 1 : -1;
-  if (y + 1 < WORLD_H) { moves.push(i + WORLD_W + par, i + WORLD_W - par); }
-  if (liquid) moves.push(i + par, i - par);
-  for (const j of moves) {
-    const jy = (j / WORLD_W) | 0, jx = j - jy * WORLD_W;
-    if (Math.abs(jx - x) > 1) continue;                 // Zeilenumbruch abfangen
-    const mj = mask[j];
-    if (opposing !== -1 && mj === opposing) { quench(jx, jy); mask[i] = bgMat(x, y); markDirty(x, y); return true; }
+  const moves = [[0, 1], [par, 1], [-par, 1]];
+  if (liquid) moves.push([par, 0], [-par, 0]);
+  for (const [ox, oy] of moves) {
+    const jx = x + ox, jy = y + oy;
+    if (jy >= WORLD_H) continue;
+    const mj = matAt(jx, jy);
+    if (opposing !== -1 && mj === opposing) { quench(jx, jy); setMat(x, y, bgMat(x, y)); return true; }
     if (!isFree(mj)) continue;
-    mask[j] = m;
-    mask[i] = bgMat(x, y);
-    activeFlag[j] = 1; active.push(j);
-    markDirty(x, y); markDirty(jx, jy);
-    // Nachbarn wecken – auch die DARUNTER, sonst hört eine abfließende
-    // Säule nach einer Zelle auf und es bleiben Wasserhügel stehen.
+    setMat(jx, jy, m);
+    setMat(x, y, bgMat(x, y));
+    activeSet.add(pack(jx, jy)); active.push(pack(jx, jy));
     wake(x - 1, y); wake(x + 1, y); wake(x, y - 1); wake(x, y + 1);
     wake(x - 1, y + 1); wake(x + 1, y + 1);
     wake(jx - 1, jy); wake(jx + 1, jy); wake(jx, jy - 1); wake(jx, jy + 1);
     return true;
   }
-  // Druckausgleich: Flüssigkeiten suchen in der eigenen Zeile nach einem
-  // freien Platz in Reichweite (nur durch eigenes Material hindurch) und
-  // fließen dorthin – so bleiben keine Wasserhügel stehen.
+  // Druckausgleich: freien Platz in der eigenen Zeile suchen (nur durch
+  // eigenes Material hindurch) – so bleiben keine Wasserhügel stehen
   if (liquid) {
     for (let d = 1; d <= SPREAD; d++) {
-      for (const dir of ((x + simTick) & 1 ? [1, -1] : [-1, 1])) {
+      for (const dir of (par > 0 ? [1, -1] : [-1, 1])) {
         const tx = x + dir * d;
-        if (tx < 1 || tx >= WORLD_W - 1) continue;
         let blocked = false;
-        for (let k = 1; k < d; k++) if (mask[idx(x + dir * k, y)] !== m) { blocked = true; break; }
+        for (let k = 1; k < d; k++) if (matAt(x + dir * k, y) !== m) { blocked = true; break; }
         if (blocked) continue;
-        const j = idx(tx, y);
-        if (!isFree(mask[j])) continue;
-        if (!isFree(mask[j + WORLD_W]) && y + 1 < WORLD_H) {
-          // nur ausbreiten, wenn dort auch Boden ist (sonst fällt es gleich weiter)
-        }
-        mask[j] = m;
-        mask[i] = bgMat(x, y);
-        activeFlag[j] = 1; active.push(j);
-        markDirty(x, y); markDirty(tx, y);
+        if (!isFree(matAt(tx, y))) continue;
+        setMat(tx, y, m);
+        setMat(x, y, bgMat(x, y));
+        activeSet.add(pack(tx, y)); active.push(pack(tx, y));
         wake(x, y - 1); wake(x - 1, y); wake(x + 1, y);
         wake(tx, y + 1); wake(tx - 1, y); wake(tx + 1, y);
         return true;
@@ -514,25 +555,21 @@ function tryFlow(i, x, y, m) {
   }
   return false;
 }
-function simStep(budget = 6000) {
+function simStep(budget = 8000) {
   simTick++;
   const n = Math.min(active.length, budget);
   const next = [];
   for (let k = 0; k < active.length; k++) {
-    const i = active[k];
-    activeFlag[i] = 0;
-    if (k >= n) { const m = mask[i]; if (isGrain(m)) { activeFlag[i] = 1; next.push(i); } continue; }
-    const m = mask[i];
+    const key = active[k];
+    activeSet.delete(key);
+    if (k >= n) { activeSet.add(key); next.push(key); continue; }
+    const x = unpackX(key), y = unpackY(key);
+    const m = matAt(x, y);
     if (!isGrain(m)) continue;
-    const y = (i / WORLD_W) | 0, x = i - y * WORLD_W;
-    if (tryFlow(i, x, y, m)) continue;
-    // liegt still – schläft, bis Nachbarn wecken
+    tryFlow(x, y, m);
   }
   active = next;
-  if (dirty) {
-    applyRegion(dirty.x0, dirty.y0, dirty.x1 - dirty.x0 + 1, dirty.y1 - dirty.y0 + 1);
-    dirty = null;
-  }
+  for (const key of next) activeSet.add(key);
 }
 
 // ---- Spielzustand -----------------------------------------------------------
@@ -604,7 +641,7 @@ let players = [];        // die beiden Team-Anführer (zugleich Clonk Nr. 1)
 let items = [];          // { type, x, y, vx, vy, buried, chute, rest }
 let projectiles = [];    // Feuersteine + Meteore
 let lores = [];          // Minen-Loren { team, x, y, vx, vy, load{} }
-let railY = null;        // Schienen-Höhe je Spalte (-1 = keine Schiene)
+let rails = new Map();   // Schienen: x -> y (unendliche Welt)
 let fish = [];           // Fische im See
 let elevators = [];      // Grubenlifte { team, x, y (Korb-Oberkante), topY, acc }
 let volcanoes = [];      // aktive Vulkanschlote
@@ -645,13 +682,12 @@ function allClonks() {
 }
 
 function startGame(seed) {
-  rng = mulberry32((seed !== undefined ? seed : (Math.random() * 1e9)) | 0);
-  genTerrain();
-  buildTerrainCanvas();
-  activeFlag = new Uint8Array(WORLD_W * WORLD_H);
-  active = []; dirty = null;
-  // alle beweglichen Materialien einmal wecken, dann pendelt sich alles ein
-  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) wake(x, y);
+  worldSeed = ((seed !== undefined ? seed : (Math.random() * 1e9)) | 0) >>> 0;
+  rng = mulberry32(worldSeed);
+  chunks = new Map(); surfCache.clear(); regionCache.clear();
+  _lastKey = NaN; _lastChunk = null;
+  active = []; activeSet.clear();
+  goldSpots = [];
 
   items = []; projectiles = []; parts = []; floats = []; volcanoes = [];
   pendingBooms.length = 0;
@@ -668,69 +704,109 @@ function startGame(seed) {
   ];
   players[1].ai = game.mode === 'solo';
   for (const p of players) {
-    p.base.y = groundY[p.base.x];
+    p.base.y = surfaceY(p.base.x);
     p.x = p.base.x + (p.id === 0 ? 26 : -26);
-    p.y = groundY[p.x | 0] - 1;
-    // zweiter Clonk der Mannschaft (teilt sich Basis und Lager)
+    p.y = surfaceY(p.x | 0) - 1;
     const b = makeClonk(p.id, p.name, p.color, p.keys, p.base.x);
     b.lead = p; b.base = p.base; b.flints = 1; b.loam = 1; b.stock = p.stock;
     b.x = p.base.x + (p.id === 0 ? 8 : -8);
-    b.y = groundY[b.x | 0] - 1;
+    b.y = surfaceY(b.x | 0) - 1;
     p.buddy = b;
     p.controlled = p;
     p.aiS.lastX = p.x; p.aiS.lastY = p.y;
   }
-  // je Hütte eine Lore (Richtung Kartenmitte geparkt, auf der Oberfläche)
   lores = players.map((p) => {
     const lx = p.base.x + (p.id === 0 ? 44 : -44);
-    return { team: p.id, x: lx, y: groundY[lx] - 1, vx: 0, vy: 0, load: {} };
+    return { team: p.id, x: lx, y: surfaceY(lx) - 1, vx: 0, vy: 0, load: {} };
   });
-  // Schienenstück ab Werk vor jeder Hütte (Anschluss ans Netz)
-  railY = new Int16Array(WORLD_W).fill(-1);
+  rails = new Map();
   for (const p of players) {
     const from = p.id === 0 ? p.base.x + 20 : p.base.x - 56;
-    for (let x = from; x < from + 36; x++) railY[clamp(x, 0, WORLD_W - 1)] = groundY[clamp(x, 0, WORLD_W - 1)] - 1;
+    for (let x = from; x < from + 36; x++) rails.set(x, surfaceY(x) - 1);
   }
-  // je Team ein Grubenlift mit Förderturm (Richtung Kartenmitte)
   elevators = players.map((p) => {
     const ex = p.base.x + (p.id === 0 ? 66 : -66);
-    // Korb (3 px hoch) sitzt zu Beginn auf der Oberfläche
-    const el = { team: p.id, x: ex, y: groundY[ex] - 3, topY: groundY[ex] - 3, acc: 0, goldPix: 0, coalPix: 0 };
-    // Schachtstation freiräumen: kein Geländeüberhang über dem Korb,
-    // damit Fahrgäste oben sauber ein- und aussteigen können
+    const el = { team: p.id, x: ex, y: surfaceY(ex) - 3, topY: surfaceY(ex) - 3, acc: 0, goldPix: 0, coalPix: 0 };
     for (let y = el.topY - 18; y <= el.topY + 2; y++) {
       for (let x = el.x - CASE_HW - 1; x <= el.x + CASE_HW + 1; x++) {
         const m = matAt(x, y);
-        if (m !== MAT.GRANIT && SOLID[m]) {
-          mask[idx(x, y)] = bgMat(x, y);
-        }
+        if (m !== MAT.BEDROCK && SOLID[m]) setMat(x, y, bgMat(x, y));
       }
     }
     writeCase(el);
-    applyRegion(el.x - CASE_HW - 2, el.topY - 20, CASE_HW * 2 + 5, 26);
     return el;
   });
 
-  // Fundsachen: Feuersteine offen + vergraben, Lehmklumpen vergraben
+  // Fundsachen rund um die Heimatregion
   for (let i = 0; i < 3; i++) {
-    const x = 300 + ((rng() * 360) | 0);
-    items.push({ type: 'flint', x, y: groundY[x] - 3, vx: 0, vy: 0 });
+    const x = Math.round(300 + rng() * 360);
+    items.push({ type: 'flint', x, y: surfaceY(x) - 3, vx: 0, vy: 0 });
   }
   for (let i = 0; i < 8; i++) {
-    const x = 50 + ((rng() * (WORLD_W - 100)) | 0);
-    const y = groundY[x] + 25 + rng() * (WORLD_H - groundY[x] - 80);
-    items.push({ type: 'flint', x, y: y | 0, vx: 0, vy: 0, buried: true });
+    const x = Math.round(50 + rng() * (WORLD_W - 100));
+    items.push({ type: 'flint', x, y: Math.round(surfaceY(x) + 25 + rng() * 260), vx: 0, vy: 0, buried: true });
   }
   for (let i = 0; i < 6; i++) {
-    const x = 60 + ((rng() * (WORLD_W - 120)) | 0);
-    const y = groundY[x] + 20 + rng() * 70;
-    items.push({ type: 'loam', x, y: y | 0, vx: 0, vy: 0, buried: true });
+    const x = Math.round(60 + rng() * (WORLD_W - 120));
+    items.push({ type: 'loam', x, y: Math.round(surfaceY(x) + 20 + rng() * 120), vx: 0, vy: 0, buried: true });
   }
+  spawnFauna(WORLD_W / 2, true);
 
-  // Kamera zurücksetzen + Touch-Layout an den Modus anpassen
   cam.zoom = game.mode === '2p' ? 1 : 2.1;
-  cam.x = WORLD_W / 2; cam.y = WORLD_H / 2; cam.scale = 0;
+  cam.x = WORLD_W / 2; cam.y = surfaceY(WORLD_W / 2); cam.scale = 0;
   layoutTouch();
+}
+
+// Bäume, Wipfe, Vögel und Fische rund um einen Punkt bevölkern
+function spawnFauna(cx, reset) {
+  if (reset) { trees = []; wipfe = []; birds = []; fish = []; }
+  for (let i = 0; i < 30 && trees.length < 10; i++) {
+    const x = Math.round(cx + (rng() - 0.5) * 1200);
+    if (Math.abs(x - BASE_X[0]) < 80 || Math.abs(x - BASE_X[1]) < 80) continue;
+    const g = surfaceY(x);
+    if (matAt(x, g + 4) !== MAT.EARTH) continue;
+    if (Math.abs(surfaceY(x - 6) - surfaceY(x + 6)) > 9) continue;
+    if (trees.some((t) => Math.abs(t.x - x) < 46)) continue;
+    trees.push({ x, y: g, h: 24 + rng() * 12, sway: rng() * 6.28, burn: 0, dead: false });
+  }
+  while (wipfe.length < 3) {
+    const x = Math.round(cx + (rng() - 0.5) * 900);
+    wipfe.push({ x, y: surfaceY(x) - 1, dir: rng() < 0.5 ? -1 : 1, t: rng() * 3, state: 'walk', fleeT: 0, dead: false, respT: 0 });
+  }
+  while (birds.length < 5) {
+    birds.push({ x: cx + (rng() - 0.5) * 1200, y: 60 + rng() * 140, dir: rng() < 0.5 ? -1 : 1,
+      v: 26 + rng() * 22, ph: rng() * 6.28, amp: 6 + rng() * 10, scale: 0.8 + rng() * 0.5 });
+  }
+  // Fische in nahegelegenem Wasser
+  for (let i = 0; i < 24 && fish.length < 6; i++) {
+    const x = Math.round(cx + (rng() - 0.5) * 1400);
+    const top = surfaceY(x) - 60, bot = surfaceY(x) + 120;
+    for (let y = top; y < bot; y += 5) {
+      if (matAt(x, y) === MAT.WATER && matAt(x, y + 6) === MAT.WATER) {
+        fish.push({ x, y, dir: rng() < 0.5 ? -1 : 1, v: 18 + rng() * 16, ph: rng() * 6.28, size: 0.8 + rng() * 0.5 });
+        break;
+      }
+    }
+  }
+}
+// weit entfernte Chunks und Deko wieder freigeben (die Welt ist unendlich)
+function tendWorld() {
+  const hx = homeX();
+  // Bäume/Fische, die weit weg sind, verschwinden – näher dran wächst Neues
+  trees = trees.filter((t) => Math.abs(t.x - hx) < 2200);
+  fish = fish.filter((f) => Math.abs(f.x - hx) < 2200);
+  spawnFauna(hx, false);
+  // Speicher zügeln: Chunk-Bilder weit weg freigeben, unveränderte Chunks
+  // ganz verwerfen (sie wachsen aus dem Seed identisch nach)
+  const keepCx = Math.floor(hx / CHK);
+  for (const [key, ch] of chunks) {
+    const d = Math.abs(ch.cx - keepCx);
+    if (d > 8 && ch.canvas) { ch.canvas = null; ch.ctx = null; ch.img = null; ch.dirty = true; }
+    if (d > 16 && !ch.edited) {
+      chunks.delete(key);
+      if (_lastKey === key) { _lastKey = NaN; _lastChunk = null; }
+    }
+  }
 }
 
 // ---- Eingabe (Tastatur + Touch-Joysticks/-Buttons + KI) ---------------------
@@ -925,7 +1001,7 @@ function unstick(c, dt) {
 // ---- Klonk-Steuerung & -Physik ---------------------------------------------
 function stepWalk(p, dir) {
   const nx = Math.round(p.x) + dir, fy = Math.round(p.y);
-  if (nx - FOOT_HW < 1 || nx + FOOT_HW > WORLD_W - 2) return 'wall';
+  // (waagerecht ist die Welt unbegrenzt)
   // Stufe hoch: so weit anheben, bis der Rumpf frei ist
   let up = 0;
   while (up <= STEP_UP && bodyBlocked(nx, fy - up)) up++;
@@ -1053,7 +1129,7 @@ function updateClonk(c, dt) {
         let n = c.rem | 0; c.rem -= n;
         while (n-- > 0) {
           const nx = c.x + dirIn;
-          if (nx - HW < 1 || nx + HW > WORLD_W - 2) break;
+          // waagerecht unbegrenzt
           // unebene Decken (±1 px) mitgehen
           let ny = c.y;
           if (!rowSolid(nx, (ny | 0) - PH)) {
@@ -1165,7 +1241,7 @@ function moveAir(p, dt) {
   const sx = dx / n, sy = dy / n;
   for (let i = 0; i < n; i++) {
     if (sx) {
-      const nx = clamp(p.x + sx, FOOT_HW + 1, WORLD_W - FOOT_HW - 2);
+      const nx = p.x + sx;
       if (!bodyBlocked(Math.round(nx), Math.round(p.y))) p.x = nx;
       // kleine Kante im Flug mitnehmen, statt hart abzubremsen
       else if (!bodyBlocked(Math.round(nx), Math.round(p.y) - 3)) { p.x = nx; p.y -= 2; }
@@ -1191,7 +1267,7 @@ function moveSwim(p, dt) {
   const n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy))));
   const sx = dx / n, sy = dy / n;
   for (let i = 0; i < n; i++) {
-    const nx = clamp(p.x + sx, FOOT_HW + 1, WORLD_W - FOOT_HW - 2);
+    const nx = p.x + sx;
     if (!bodyBlocked(Math.round(nx), Math.round(p.y))) p.x = nx; else p.vx = 0;
     const ny = p.y + sy;
     if (!bodyBlocked(Math.round(p.x), Math.round(ny))) p.y = ny; else p.vy = 0;
@@ -1253,7 +1329,7 @@ function digStep(c, dt) {
     }
     const gold = carveCircle(cx, cy, DIG_R, false);
     collectGoldPix(c, gold, carveCircle.lastCoal, cx, cy);
-    const nx = clamp(c.x + dx, FOOT_HW + 1, WORLD_W - FOOT_HW - 2);
+    const nx = c.x + dx;
     let ny = c.y + dy;
     if (bodyBlocked(Math.round(nx), Math.round(ny))) {
       // hartes Material (Fels, Aufzugskorb) unter den Füßen: waagerecht weiter
@@ -1327,9 +1403,9 @@ function layRail(c, dt) {
   const x = Math.round(c.x), y = Math.round(c.y);
   let n = 0;
   for (let xx = x - 5; xx <= x + 5; xx++) {
-    const cx = clamp(xx, 0, WORLD_W - 1);
-    if (railY[cx] === y - 1) continue;
-    railY[cx] = y - 1; n++;
+    const cx = xx;
+    if (rails.get(cx) === y - 1) continue;
+    rails.set(cx, y - 1); n++;
   }
   if (!n) return;
   c.railPix = (c.railPix || 0) + 1;
@@ -1563,7 +1639,7 @@ function updateProjectiles(dt) {
       if (f.meteor && (simTick & 1) === 0) {
         parts.push({ x: f.x + rng() * 8 - 4, y: f.y - 6, vx: rng() * 30 - 15, vy: -30, t: 0, life: 0.5, color: rng() < 0.5 ? '#ff9040' : '#666', size: 2.5, grav: -40 });
       }
-      if (f.x < 2 || f.x > WORLD_W - 2 || solid(f.x, f.y)) {
+      if (solid(f.x, f.y)) {
         boom(f); break;
       }
       for (const c of allClonks()) {
@@ -1671,7 +1747,7 @@ function respawn(c) {
   c.vx = 0; c.vy = 0; c.tumbleT = 0; c.breath = 1; c.burnT = 0;
   const cap = teamOf(c);
   c.x = cap.base.x + (cap.id === 0 ? 26 : -26) + (c.lead ? (cap.id === 0 ? -16 : 16) : 0);
-  c.y = groundY[c.x | 0] - 30;
+  c.y = surfaceY(c.x | 0) - 30;
   c.aiS.target = null; c.aiS.phase = 'seek'; c.aiS.stuckT = 0;
 }
 
@@ -1793,14 +1869,14 @@ function onElevatorCase(c) {
 function eraseCase(el) {
   for (let y = el.y; y < el.y + 3; y++) for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
     if (matAt(x, y) === MAT.PLATFORM) {
-      mask[idx(x, y)] = bgMat(x, y);
+      setMat(x, y, bgMat(x, y));
     }
   }
 }
 function writeCase(el) {
   for (let y = el.y; y < el.y + 3; y++) for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
     const m = matAt(x, y);
-    if (isFree(m) || m === MAT.WATER || m === MAT.LAVA) mask[idx(x, y)] = MAT.PLATFORM;
+    if (isFree(m) || m === MAT.WATER || m === MAT.LAVA) setMat(x, y, MAT.PLATFORM);
   }
   applyRegion(el.x - CASE_HW - 1, el.y - 2, CASE_HW * 2 + 3, 7);
 }
@@ -1814,7 +1890,7 @@ function moveCase(el, dir) {
       if (m === MAT.GRANIT || m === MAT.BEDROCK || m === MAT.ORE) return false;   // zu hart für den Bohrer
       if (m === MAT.GOLD) gold++;
       if (m === MAT.COAL) coal++;
-      if (!isFree(m) && m !== MAT.PLATFORM) mask[idx(xx, el.y + 3)] = bgMat(xx, el.y + 3);
+      if (!isFree(m) && m !== MAT.PLATFORM) setMat(xx, el.y + 3, bgMat(xx, el.y + 3));
     }
     el.goldPix += gold; el.coalPix += coal;
     while (el.goldPix >= GOLD_PER_NUGGET) {
@@ -1832,10 +1908,7 @@ function moveCase(el, dir) {
     // über dem Korb wird beiseitegeschaufelt
     for (let y = el.y - 19; y <= el.y + 1; y++) {
       for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
-        if (isGrain(matAt(x, y))) {
-          mask[idx(x, y)] = bgMat(x, y);
-          markDirty(x, y);
-        }
+        if (isGrain(matAt(x, y))) setMat(x, y, bgMat(x, y));
       }
     }
     // festes Hindernis über einem Fahrgast? Dann stoppt der Lift
@@ -1912,10 +1985,10 @@ function probeDown(x, yStart) {
   for (let d = 0; d <= 14; d++) if (solid(x, yStart + d)) return yStart + d;
   return null;
 }
-const railAt = (x) => (railY && x >= 0 && x < WORLD_W ? railY[x | 0] : -1);
+const railAt = (x) => { const v = rails.get(x | 0); return v === undefined ? -1 : v; };
 function addLore(cap) {
   const lx = cap.base.x + (cap.id === 0 ? 44 : -44);
-  lores.push({ team: cap.id, x: lx, y: groundY[clamp(lx, 0, WORLD_W - 1)] - 1, vx: 0, vy: 0, load: {} });
+  lores.push({ team: cap.id, x: lx, y: surfaceY(lx) - 1, vx: 0, vy: 0, load: {} });
 }
 
 function updateLores(dt) {
@@ -1934,7 +2007,7 @@ function updateLores(dt) {
       let m = Math.abs(lo.vx * dt), dir = Math.sign(lo.vx);
       while (m > 0) {
         const step = Math.min(1, m); m -= step;
-        const nx = clamp(lo.x + dir * step, 10, WORLD_W - 10);
+        const nx = lo.x + dir * step;
         const ny = railAt(nx);
         if (ny < 0 || Math.abs(ny - lo.y) > 6) { lo.onRail = false; break; }
         lo.x = nx; lo.y = ny;
@@ -1968,7 +2041,7 @@ function updateLores(dt) {
       let m = Math.abs(lo.vx * dt), dir = Math.sign(lo.vx);
       while (m > 0) {
         const step = Math.min(1, m); m -= step;
-        const nx = clamp(lo.x + dir * step, 10, WORLD_W - 10);
+        const nx = lo.x + dir * step;
         if (railAt(nx) >= 0 && Math.abs(lo.y - railAt(nx)) < 7) { lo.x = nx; lo.y = railAt(nx); break; }
         let wall = 0;
         for (let yy = -2; yy >= -9; yy--) if (solid(nx + dir * 8, lo.y + yy)) wall++;
@@ -2099,8 +2172,9 @@ function updateBirds(dt) {
   for (const b of birds) {
     b.x += b.dir * b.v * dt;
     b.ph += dt * 6;
-    if (b.x < -40) { b.x = WORLD_W + 40; b.y = 60 + rng() * 140; }
-    if (b.x > WORLD_W + 40) { b.x = -40; b.y = 60 + rng() * 140; }
+    const hx = homeX();
+    if (b.x < hx - 700) { b.x = hx + 700; b.y = 60 + rng() * 140; }
+    if (b.x > hx + 700) { b.x = hx - 700; b.y = 60 + rng() * 140; }
     // Explosionen und Feuer scheuchen sie auf
     for (const f of projectiles) {
       if (Math.hypot(f.x - b.x, f.y - b.y) < 90) { b.dir = b.x < f.x ? -1 : 1; b.v = Math.min(90, b.v * 1.5); }
@@ -2113,8 +2187,8 @@ function updateWipfe(dt) {
     if (w.dead) {
       w.respT -= dt;
       if (w.respT <= 0) {
-        const x = 150 + ((rng() * (WORLD_W - 300)) | 0);
-        w.dead = false; w.x = x; w.y = groundY[x] - 1; w.state = 'walk'; w.fleeT = 0;
+        const x = Math.round(homeX() + (rng() - 0.5) * 900);
+        w.dead = false; w.x = x; w.y = surfaceY(x) - 1; w.state = 'walk'; w.fleeT = 0;
       }
       continue;
     }
@@ -2130,7 +2204,7 @@ function updateWipfe(dt) {
     const speed = w.fleeT > 0 ? 66 : 22;
     if (w.state === 'walk' || w.fleeT > 0) {
       const nx = w.x + w.dir * speed * dt;
-      if (nx < 20 || nx > WORLD_W - 20) { w.dir = -w.dir; continue; }
+      if (Math.abs(nx - homeX()) > 1400) { w.dir = -w.dir; continue; }
       // simple Lauflogik: kleine Stufen hoch/runter
       let ny = w.y;
       if (solid(nx, ny - 1)) { let u = 0; while (u <= 5 && solid(nx, ny - 1 - u)) u++; if (u > 5) { w.dir = -w.dir; continue; } ny -= u; }
@@ -2165,7 +2239,7 @@ function updateItems(dt) {
     }
     const inWater = matAt(it.x, it.y) === MAT.WATER;
     it.vy = Math.min(it.chute ? 38 : inWater ? 50 : 420, it.vy + 420 * dt);
-    it.x = clamp(it.x + it.vx * dt, 8, WORLD_W - 8);
+    it.x += it.vx * dt;
     it.y += it.vy * dt;
     if (matAt(it.x, it.y) === MAT.LAVA) { it.dead = true; puff(it.x, it.y, 3, '#ff9040'); continue; }
     if (solid(it.x, it.y + 2)) {
@@ -2183,7 +2257,7 @@ function updateFlintDrops(dt) {
   game.flintDropT = 16 + rng() * 10;
   const inWorld = items.filter((i) => i.type === 'flint' && !i.buried).length;
   if (inWorld >= 5) return;
-  items.push({ type: 'flint', x: 80 + rng() * (WORLD_W - 160), y: -14, vx: 0, vy: 20, chute: true });
+  items.push({ type: 'flint', x: homeX() + (rng() - 0.5) * 700, y: -14, vx: 0, vy: 20, chute: true });
 }
 
 // ---- Katastrophen -----------------------------------------------------------
@@ -2202,15 +2276,15 @@ function updateDisasters(dt) {
   if (game.rainT > 0) {
     game.rainT -= dt;
     for (let i = 0; i < 5; i++) {
-      const x = 10 + rng() * (WORLD_W - 20);
+      const x = homeX() + (rng() - 0.5) * (CW / (cam.scale || 1) + 200);
       parts.push({ x, y: -4, vx: 14, vy: 330, t: 0, life: 1.9, color: 'rgba(160,200,255,0.7)', size: 1.6, grav: 0, rain: true });
     }
     if (game.rainBudget > 0 && rng() < dt * 14) {
-      const x = 10 + ((rng() * (WORLD_W - 20)) | 0);
+      const x = Math.round(homeX() + (rng() - 0.5) * 900);
       let y = 0; while (y < WORLD_H - 2 && !solid(x, y) && matAt(x, y) !== MAT.WATER) y++;
       if (y > 4 && y < WORLD_H - 10) {
-        mask[idx(x, y - 2)] = MAT.WATER;
-        markDirty(x, y - 2); wake(x, y - 2);
+        setMat(x, y - 2, MAT.WATER);
+        wake(x, y - 2);
         game.rainBudget--;
       }
     }
@@ -2220,8 +2294,8 @@ function updateDisasters(dt) {
     game.quakeT -= dt;
     game.shakeT = Math.max(game.shakeT, 0.2); game.shakeA = 4;
     if (rng() < dt * 5) {
-      const x = 40 + ((rng() * (WORLD_W - 80)) | 0);
-      const y = groundY[x] + 10 + rng() * 120;
+      const x = Math.round(homeX() + (rng() - 0.5) * 900);
+      const y = surfaceY(x) + 10 + rng() * 120;
       carveCircle(x, y | 0, 4 + rng() * 4, true);
     }
   }
@@ -2230,16 +2304,16 @@ function updateDisasters(dt) {
     if (v.done) continue;
     v.t += dt;
     v.riseY -= 60 * dt;
-    const top = groundY[clamp(v.x | 0, 0, WORLD_W - 1)] - 6;
+    const top = surfaceY(v.x | 0) - 6;
     if (v.riseY <= top) { v.riseY = top; v.spewT = (v.spewT || 0) + dt; }
     // Schlot schmelzen + mit Lava füllen
     for (let yy = 0; yy < 4; yy++) {
       const y = (v.riseY + yy) | 0;
       for (let xx = -4; xx <= 4; xx++) {
         const x = (v.x + xx) | 0;
-        if (x < 2 || x >= WORLD_W - 2 || y < 2 || y >= WORLD_H - 9) continue;
-        const m = mask[idx(x, y)];
-        if (m !== MAT.GRANIT) { mask[idx(x, y)] = MAT.LAVA; markDirty(x, y); wake(x, y); }
+        if (y < 2 || y >= WORLD_H - 9) continue;
+        const m = matAt(x, y);
+        if (m !== MAT.BEDROCK) { setMat(x, y, MAT.LAVA); wake(x, y); }
       }
     }
     wakeArea((v.x - 7) | 0, (v.riseY - 4) | 0, (v.x + 7) | 0, (v.riseY + 8) | 0);
@@ -2248,46 +2322,48 @@ function updateDisasters(dt) {
   }
   volcanoes = volcanoes.filter((v) => !v.done);
 }
-function doRain() { game.rainT = 14; game.rainBudget = 420; addFloat(WORLD_W / 2, 60, '🌧 Regen!', '#bcd6ea'); }
-function doQuake() { game.quakeT = 2.6; addFloat(WORLD_W / 2, 60, '🫨 Erdbeben!', '#e8c37a'); }
+function doRain() { game.rainT = 14; game.rainBudget = 420; addFloat(homeX(), 60, '🌧 Regen!', '#bcd6ea'); }
+function doQuake() { game.quakeT = 2.6; addFloat(homeX(), 60, '🫨 Erdbeben!', '#e8c37a'); }
 function doMeteor(x) {
-  const mx = x !== undefined ? x : 80 + rng() * (WORLD_W - 160);
+  const mx = x !== undefined ? x : homeX() + (rng() - 0.5) * 700;
   projectiles.push({ x: mx, y: -16, vx: rng() * 80 - 40, vy: 160, owner: null, t: 0, spin: 0, meteor: true });
-  addFloat(clamp(mx, 60, WORLD_W - 60), 60, '☄️ Meteor!', '#ffb054');
+  addFloat(mx, 60, '☄️ Meteor!', '#ffb054');
 }
 function doVolcano(x) {
   const vx = x !== undefined ? x : (() => {
-    let c = 140 + rng() * (WORLD_W - 280);
-    for (let i = 0; i < 6 && (Math.abs(c - BASE_X[0]) < 140 || Math.abs(c - BASE_X[1]) < 140); i++) c = 140 + rng() * (WORLD_W - 280);
+    let c = homeX() + (rng() - 0.5) * 800;
+    for (let i = 0; i < 6 && (Math.abs(c - BASE_X[0]) < 140 || Math.abs(c - BASE_X[1]) < 140); i++) c = homeX() + (rng() - 0.5) * 800;
     return c;
   })();
   volcanoes.push({ x: vx, riseY: WORLD_H - 12, t: 0, done: false });
-  addFloat(clamp(vx, 60, WORLD_W - 60), 60, '🌋 Vulkan!', '#ff7030');
+  addFloat(vx, 60, '🌋 Vulkan!', '#ff7030');
 }
 
 // ---- Spielstände ------------------------------------------------------------
 // Die Weltmaske wird lauflängen-kodiert ("b3k.a12..." = Material+Anzahl in
 // Base36) – so passt der komplette Stand in den Server-Slot /api/save/clonk
 // (eingeloggt, geräteübergreifend) bzw. in localStorage.
-function packMask() {
+// Nur veränderte Chunks werden gespeichert (der Rest wächst aus dem Seed
+// wieder nach) – jeder Chunk lauflängen-kodiert.
+function packChunk(mat) {
   const out = [];
-  let cur = mask[0], n = 1;
-  for (let i = 1; i < mask.length; i++) {
-    if (mask[i] === cur) n++;
-    else { out.push(String.fromCharCode(97 + cur) + n.toString(36)); cur = mask[i]; n = 1; }
+  let cur = mat[0], n = 1;
+  for (let i = 1; i < mat.length; i++) {
+    if (mat[i] === cur) n++;
+    else { out.push(String.fromCharCode(97 + cur) + n.toString(36)); cur = mat[i]; n = 1; }
   }
   out.push(String.fromCharCode(97 + cur) + n.toString(36));
   return out.join('.');
 }
-function unpackMask(s) {
-  const m = new Uint8Array(WORLD_W * WORLD_H);
+function unpackChunk(str) {
+  const mat = new Uint8Array(CHK * CHK);
   let i = 0;
-  for (const tok of s.split('.')) {
+  for (const tok of str.split('.')) {
     const v = tok.charCodeAt(0) - 97;
     const n = parseInt(tok.slice(1), 36);
-    m.fill(v, i, i + n); i += n;
+    mat.fill(v, i, i + n); i += n;
   }
-  return m;
+  return mat;
 }
 function serialize() {
   const clk = (c) => ({
@@ -2296,31 +2372,36 @@ function serialize() {
     ore: c.ore, metal: c.metal, plank: c.plank, rail: c.rail,
     dead: c.state === 'dead' ? 1 : 0,
   });
+  const edited = [];
+  for (const [key, ch] of chunks) if (ch.edited) edited.push({ k: key, d: packChunk(ch.mat) });
   return {
-    v: 3, ts: Date.now(),
+    v: 4, ts: Date.now(), seed: worldSeed,
     mode: game.mode, goal: game.goal, disasters: game.disasters, t: Math.round(game.t),
-    mask: packMask(), groundY: Array.from(groundY),
+    chunks: edited,
     teams: players.map((p) => ({
       score: p.score, ko: p.ko, onBuddy: p.controlled === p.buddy ? 1 : 0,
       windmill: p.windmill ? 1 : 0, stock: p.stock,
       a: clk(p), b: clk(p.buddy),
     })),
-    rails: Array.from(railY),
+    rails: [...rails.entries()],
     items: items.filter((i) => !i.dead).map((i) => ({ t: i.type, x: Math.round(i.x), y: Math.round(i.y), bu: i.buried ? 1 : 0 })),
     lores: lores.map((l) => ({ team: l.team, x: Math.round(l.x), y: Math.round(l.y), load: l.load || {} })),
     elevators: elevators.map((e) => ({ x: e.x, y: e.y, topY: e.topY })),
     trees: trees.map((t) => ({ x: t.x, y: Math.round(t.y), h: Math.round(t.h), dead: t.dead ? 1 : 0 })),
-    goldSpots,
   };
 }
+
 function applyLoad(s) {
   // ältere Stände stammen aus früheren Weltversionen und passen nicht mehr
-  if (!s || s.v !== 3 || typeof s.mask !== 'string' || !Array.isArray(s.teams)) return false;
+  if (!s || s.v !== 4 || !Array.isArray(s.teams)) return false;
   game.mode = MODES.includes(s.mode) ? s.mode : 'sandbox';
-  startGame(0);                        // Grundgerüst (Teams, Loren, Lifte) aufbauen
-  mask = unpackMask(s.mask);
-  groundY = Int16Array.from(s.groundY || groundY);
-  goldSpots = s.goldSpots || goldSpots;
+  startGame(s.seed);                   // gleiche Saat -> gleiche Grundwelt
+  for (const c of s.chunks || []) {    // veränderte Chunks zurückspielen
+    const key = c.k;
+    const cy = ((key % 64) + 64) % 64, cx = Math.round((key - cy) / 64);
+    chunks.set(key, { mat: unpackChunk(c.d), hp: null, canvas: null, dirty: true, edited: true, cx, cy });
+  }
+  _lastKey = NaN; _lastChunk = null;
   game.goal = s.goal || 8;
   game.t = typeof s.t === 'number' ? s.t : ROUND_TIME;
   game.state = 'play'; game.winner = null;
@@ -2338,20 +2419,16 @@ function applyLoad(s) {
     setClk(p, t.a); setClk(p.buddy, t.b);
     p.controlled = t.onBuddy ? p.buddy : p;
   });
+  rails = new Map(s.rails || []);
   items = (s.items || []).map((i) => ({ type: i.t, x: i.x, y: i.y, vx: 0, vy: 0, buried: !!i.bu }));
-  if (Array.isArray(s.rails) && s.rails.length === WORLD_W) railY = Int16Array.from(s.rails);
   lores = (s.lores || []).map((l, i) => ({ team: l.team ?? (i < 2 ? i : 0), x: l.x, y: l.y, vx: 0, vy: 0, load: l.load || {} }));
   if (!lores.length) players.forEach((p) => addLore(p));
   (s.elevators || []).forEach((e, i) => { if (elevators[i]) Object.assign(elevators[i], { x: e.x, y: e.y, topY: e.topY, acc: 0 }); });
   trees = (s.trees || []).map((t) => ({ x: t.x, y: t.y, h: t.h, sway: rng() * 6.28, burn: 0, dead: !!t.dead }));
-  granitHp = new Uint8Array(WORLD_W * WORLD_H);   // Anschläge im Granit heilen beim Laden
   // Wipfe auf die geladene Oberfläche setzen
-  for (const w of wipfe) { const x = 150 + ((rng() * (WORLD_W - 300)) | 0); w.x = x; w.y = groundY[x] - 1; w.dead = false; w.fleeT = 0; }
+  for (const w of wipfe) { const x = 150 + ((rng() * (WORLD_W - 300)) | 0); w.x = x; w.y = surfaceY(x) - 1; w.dead = false; w.fleeT = 0; }
   projectiles = []; volcanoes = []; parts = []; floats = []; pendingBooms.length = 0;
-  buildTerrainCanvas();
-  activeFlag = new Uint8Array(WORLD_W * WORLD_H);
-  active = []; dirty = null;
-  for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) wake(x, y);
+  active = []; activeSet.clear();
   cam.zoom = game.mode === '2p' ? 1 : 2.1; cam.scale = 0;
   layoutTouch();
   if (typeof refreshMenu === 'function') refreshMenu();
@@ -2462,6 +2539,8 @@ function update(dt) {
   updateBirds(dt);
   updateFish(dt);
   updateDisasters(dt);
+  worldTendT = (worldTendT || 0) + dt;
+  if (worldTendT > 0.6) { worldTendT = 0; tendWorld(); }
   simStep();
   updateFx(dt);
 }
@@ -2470,10 +2549,10 @@ function update(dt) {
 const cam = { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1, scale: 0 };
 function setZoom(z) { cam.zoom = clamp(z, 1, 3.5); }
 function posOf(c) { return c.state === 'dead' ? { x: teamOf(c).base.x, y: teamOf(c).base.y - 30 } : c; }
-const VIEW_H = 760;   // Basis-Sichthöhe: die Welt ist tiefer als der Bildschirm
+const VIEW_W = 960, VIEW_H = 760;   // Basis-Sichthöhe: die Welt ist tiefer als der Bildschirm
 function computeCam(dt) {
   // Grundmaßstab: ganze Kartenbreite sichtbar, vertikal wird gescrollt
-  const fit = Math.max(CW / WORLD_W, (CH - TOP_UI - 8) / VIEW_H);
+  const fit = Math.max(CW / VIEW_W, (CH - TOP_UI - 8) / VIEW_H);
   let tx, ty, targetScale;
   // Buddel-Modus: solange Blau nicht mitspielt, folgt die Kamera Rot
   const soloView = game.mode === 'solo' || (game.mode === 'sandbox' && !(players[1] && players[1].activeT > 0));
@@ -2486,14 +2565,14 @@ function computeCam(dt) {
     tx = (a.x + b.x) / 2; ty = (a.y + b.y) / 2 - 20;
     const needW = Math.abs(a.x - b.x) + 280, needH = Math.abs(a.y - b.y) + 240;
     // beide im Bild halten, aber nie weiter als die ganze Karte rauszoomen
-    const fitBoth = Math.max(CW / WORLD_W * 0.55, Math.min(CW / needW, (CH - TOP_UI) / needH));
+    const fitBoth = Math.max(CW / VIEW_W * 0.5, Math.min(CW / needW, (CH - TOP_UI) / needH));
     targetScale = Math.min(fit * cam.zoom, fitBoth);
   }
   if (!cam.scale) cam.scale = targetScale;
   const k = Math.min(1, dt * 5);
   cam.scale += (targetScale - cam.scale) * k;
   const vw = CW / cam.scale, vh = (CH - TOP_UI) / cam.scale;
-  tx = vw >= WORLD_W ? WORLD_W / 2 : clamp(tx, vw / 2, WORLD_W - vw / 2);
+  // waagerecht wird nicht begrenzt – die Welt geht endlos weiter
   ty = vh >= WORLD_H ? WORLD_H / 2 : clamp(ty, vh / 2, WORLD_H - vh / 2);
   cam.x += (tx - cam.x) * k;
   cam.y += (ty - cam.y) * k;
@@ -2537,35 +2616,52 @@ function draw(time) {
   ctx.save();
   ctx.translate(OX, OY); ctx.scale(S, S);
 
-  // Himmel (bei Regen düsterer)
+  // Himmel (bei Regen düsterer) – folgt der Kamera, die Welt ist endlos
+  const vwHalf = CW / S / 2 + 40;
   const sky = ctx.createLinearGradient(0, 0, 0, WORLD_H);
   if (game.rainT > 0) { sky.addColorStop(0, '#5a7c96'); sky.addColorStop(0.55, '#87a4b8'); sky.addColorStop(1, '#a8bfc9'); }
   else { sky.addColorStop(0, '#7ec3ea'); sky.addColorStop(0.55, '#b9e0f2'); sky.addColorStop(1, '#dcedf5'); }
-  ctx.fillStyle = sky; ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-  ctx.fillStyle = '#ffe38a'; ctx.beginPath(); ctx.arc(840, 70, 26, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = 'rgba(255,227,138,0.35)'; ctx.beginPath(); ctx.arc(840, 70, 38, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = sky; ctx.fillRect(cam.x - vwHalf, 0, vwHalf * 2, WORLD_H);
+  // Sonne (leichte Parallaxe, damit sie am Himmel "steht")
+  const sunX = cam.x * 0.85 + 300;
+  ctx.fillStyle = '#ffe38a'; ctx.beginPath(); ctx.arc(sunX, 70, 26, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,227,138,0.35)'; ctx.beginPath(); ctx.arc(sunX, 70, 38, 0, Math.PI * 2); ctx.fill();
+  // Wolken ziehen mit dem Ausschnitt mit
   ctx.fillStyle = game.rainT > 0 ? 'rgba(120,140,155,0.9)' : 'rgba(255,255,255,0.85)';
   for (const c of clouds) {
-    c.x += c.v * 0.016; if (c.x > WORLD_W + 60) c.x = -60;
+    c.x += c.v * 0.016;
+    const span = vwHalf * 2 + 200;
+    let cxp = ((c.x - (cam.x - vwHalf - 100)) % span + span) % span + (cam.x - vwHalf - 100);
     ctx.beginPath();
-    ctx.ellipse(c.x, c.y, 34 * c.s, 12 * c.s, 0, 0, Math.PI * 2);
-    ctx.ellipse(c.x + 22 * c.s, c.y + 4 * c.s, 24 * c.s, 10 * c.s, 0, 0, Math.PI * 2);
-    ctx.ellipse(c.x - 22 * c.s, c.y + 5 * c.s, 22 * c.s, 9 * c.s, 0, 0, Math.PI * 2);
+    ctx.ellipse(cxp, c.y, 34 * c.s, 12 * c.s, 0, 0, Math.PI * 2);
+    ctx.ellipse(cxp + 22 * c.s, c.y + 4 * c.s, 24 * c.s, 10 * c.s, 0, 0, Math.PI * 2);
+    ctx.ellipse(cxp - 22 * c.s, c.y + 5 * c.s, 22 * c.s, 9 * c.s, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // ferne Bergketten mit leichter Parallaxe (rein dekorativ)
-  drawHills(0.18, 'rgba(150,180,200,0.75)', 268, 46);
-  drawHills(0.34, 'rgba(120,156,180,0.8)', 320, 58);
+  drawHills(0.18, 'rgba(150,180,200,0.75)', 268, 46, vwHalf);
+  drawHills(0.34, 'rgba(120,156,180,0.8)', 320, 58, vwHalf);
 
   // Vögel am Himmel, Bäume hinter dem Gelände (wurzeln im Boden)
   for (const b of birds) drawBird(b);
   for (const t of trees) drawTree(t, time);
 
+  // Gelände: nur die sichtbaren Chunks zeichnen (die Welt ist unendlich)
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(terrainCanvas, 0, 0);
+  const vw = CW / S, vh = (CH - TOP_UI) / S;
+  const vx0 = cam.x - vw / 2 - 8, vx1 = cam.x + vw / 2 + 8;
+  const vy0 = cam.y - vh / 2 - 8, vy1 = cam.y + vh / 2 + 8;
+  let painted = 0;
+  for (let cy = Math.max(0, Math.floor(vy0 / CHK)); cy <= Math.min(CH_ROWS - 1, Math.floor(vy1 / CHK)); cy++) {
+    for (let cx = Math.floor(vx0 / CHK); cx <= Math.floor(vx1 / CHK); cx++) {
+      const ch = chunkOf(cx, cy);
+      if (ch.dirty && painted < 30) { paintChunk(ch); painted++; }
+      if (ch.canvas && !ch.blank) ctx.drawImage(ch.canvas, cx * CHK, cy * CHK);
+    }
+  }
 
-  drawRails();
+  drawRails(vx0, vx1);
   for (const p of players) drawHut(p);
   for (const el of elevators) drawElevator(el);
   for (const lo of lores) drawLore(lo);
@@ -2600,17 +2696,18 @@ function draw(time) {
 
 // Ferne Bergketten: enden am Erdboden (nicht am Kartenboden – sonst schauen
 // sie in der tiefen Welt neben dem Gelände hervor)
-function drawHills(par, col, base, amp) {
-  const off = (cam.x - WORLD_W / 2) * par;
+function drawHills(par, col, base, amp, vwHalf) {
+  const off = cam.x * par;
   const foot = base + amp * 2 + 60;
+  const x0 = cam.x - vwHalf, x1 = cam.x + vwHalf;
   ctx.fillStyle = col;
   ctx.beginPath();
-  ctx.moveTo(-60, foot);
-  for (let x = -60; x <= WORLD_W + 60; x += 16) {
-    const wx = x + off;
+  ctx.moveTo(x0, foot);
+  for (let x = x0; x <= x1; x += 16) {
+    const wx = x - off;
     ctx.lineTo(x, base + Math.sin(wx * 0.006 + 1.7) * amp + Math.sin(wx * 0.017 + 4.1) * amp * 0.35);
   }
-  ctx.lineTo(WORLD_W + 60, foot);
+  ctx.lineTo(x1, foot);
   ctx.closePath(); ctx.fill();
 }
 function drawBird(b) {
@@ -2766,24 +2863,24 @@ function drawElevator(el) {
   ctx.stroke();
 }
 
-// Schienennetz: zwei Gleise mit Schwellen, in zusammenhängenden Segmenten
-function drawRails() {
-  if (!railY) return;
-  for (let x = 0; x < WORLD_W; x++) {
-    if (railY[x] < 0) continue;
+// Schienennetz: zwei Gleise mit Schwellen (nur der sichtbare Ausschnitt)
+function drawRails(x0, x1) {
+  for (let x = Math.floor(x0); x <= x1; x++) {
+    if (!rails.has(x)) continue;
     const start = x;
-    // Segment läuft, solange die Schienenhöhe stetig bleibt
-    while (x + 1 < WORLD_W && railY[x + 1] >= 0 && Math.abs(railY[x + 1] - railY[x]) < 8) x++;
+    let y = rails.get(x);
+    while (rails.has(x + 1) && Math.abs(rails.get(x + 1) - y) < 8) { x++; y = rails.get(x); }
     const end = x;
     ctx.strokeStyle = '#6a563c'; ctx.lineWidth = 1.2;          // Schwellen
     for (let sx = start; sx <= end; sx += 6) {
-      ctx.beginPath(); ctx.moveTo(sx, railY[sx] + 1); ctx.lineTo(sx + 3, railY[sx] + 1); ctx.stroke();
+      const sy = rails.get(sx);
+      ctx.beginPath(); ctx.moveTo(sx, sy + 1); ctx.lineTo(sx + 3, sy + 1); ctx.stroke();
     }
     ctx.strokeStyle = '#9aa4b0'; ctx.lineWidth = 1;            // Gleise
     for (const off of [-0.5, 1.5]) {
       ctx.beginPath();
-      ctx.moveTo(start, railY[start] + off);
-      for (let sx = start + 1; sx <= end; sx++) ctx.lineTo(sx, railY[sx] + off);
+      ctx.moveTo(start, rails.get(start) + off);
+      for (let sx = start + 1; sx <= end; sx++) ctx.lineTo(sx, rails.get(sx) + off);
       ctx.stroke();
     }
   }
@@ -2883,7 +2980,7 @@ function drawClonk(c, time) {
   const cap = teamOf(c);
   if (c.state === 'dead') {
     ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = 'bold 11px system-ui';
-    ctx.fillText(`⏳ ${Math.ceil(c.respawnT)}`, cap.base.x + (cap.id === 0 ? 26 : -26), groundY[cap.base.x] - 40);
+    ctx.fillText(`⏳ ${Math.ceil(c.respawnT)}`, cap.base.x + (cap.id === 0 ? 26 : -26), surfaceY(cap.base.x) - 40);
     return;
   }
   ctx.save();
@@ -3171,6 +3268,9 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// Kompatibilitäts-Sicht auf die Oberfläche: groundY()[x] liefert surfaceY(x)
+const surfProxy = new Proxy({}, { get: (_, k) => surfaceY(Number(k)) });
+
 // Test-Hook (Muster wie window.__td / window.__lem)
 window.__clonk = {
   MAT, game, WORLD_W, WORLD_H, cam, setZoom, IS_TOUCH,
@@ -3183,12 +3283,13 @@ window.__clonk = {
   RECIPES, SHOP, SELL, craft, shopBuy, shopSell, openShop, closeShop, atBase,
   GOODS, SLOTS, invCount, invFree, have, takeRes, giveRes, stockTake, stockPutAll,
   loreCount, loreAdd,
-  railAt, addLore, fish: () => fish, get railY() { return railY; },
+  railAt, addLore, fish: () => fish, rails: () => rails, setMat, surfaceY, chunks: () => chunks,
+  CHK, spawnFauna, tendWorld, get worldSeed() { return worldSeed; },
   players: () => players, allClonks, items: () => items, projectiles: () => projectiles,
   lores: () => lores, elevators: () => elevators, onElevatorCase,
   goldSpots: () => goldSpots, trees: () => trees, wipfe: () => wipfe,
   volcanoes: () => volcanoes,
-  groundY: () => groundY, birds: () => birds, pressed, buttons, throwFlint, hurt,
+  groundY: () => surfProxy, birds: () => birds, pressed, buttons, throwFlint, hurt,
   TOUGH, ORE_PER_CHUNK,
 };
 

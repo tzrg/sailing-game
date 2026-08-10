@@ -57,7 +57,7 @@ try {
   // ---- Gelände: alle Materialien vorhanden, Teams komplett
   let r = await page.evaluate(() => {
     const C = window.__clonk, M = C.MAT, counts = {};
-    for (const v of C.mask) counts[v] = (counts[v] || 0) + 1;
+    for (let x = 0; x < C.WORLD_W; x++) for (let y = 0; y < C.WORLD_H; y++) counts[C.matAt(x, y)] = (counts[C.matAt(x, y)] || 0) + 1;
     const [a, b] = C.players();
     // wie tief liegt der tiefste Granit/Bedrock? (Weltdicke prüfen)
     let deepest = 0;
@@ -82,6 +82,70 @@ try {
   check('Zwei Teams à zwei Clonks an ihren Hütten', r.n === 2 && r.crew === 4 && Math.abs(r.ax - r.baseA) < 40 && Math.abs(r.bx - r.baseB) < 40);
   check('Bäume wachsen, Wipfe buddeln, Vögel ziehen ihre Kreise',
     r.trees >= 3 && r.wipfe === 3 && r.birds === 5, `trees=${r.trees} wipfe=${r.wipfe} birds=${r.birds}`);
+
+  // ---- Unendliche, prozedurale Welt
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42);
+    C.game.paused = true;
+    // weit draußen (positiv wie negativ) gibt es Gelände und Bodenschätze
+    const probe = (x0, x1) => {
+      const cnt = {};
+      for (let x = x0; x < x1; x += 3) {
+        const s = C.surfaceY(x);
+        for (let y = s - 20; y < s + 700; y += 3) cnt[C.matAt(x, y)] = (cnt[C.matAt(x, y)] || 0) + 1;
+      }
+      return cnt;
+    };
+    const far = probe(20000, 20400);
+    const neg = probe(-20400, -20000);
+    return {
+      far, neg,
+      surfFar: C.surfaceY(20000), surfNeg: C.surfaceY(-20000),
+      chunkSize: C.CHK, worldH: C.WORLD_H,
+    };
+  });
+  const hasStuff = (c) => (c[1] || 0) > 500 && (c[2] || 0) > 500 && ((c[3] || 0) + (c[8] || 0) + (c[12] || 0)) > 50;
+  check('Welt geht weit nach rechts weiter (x = 20 000)', hasStuff(r.far), JSON.stringify(r.far));
+  check('Welt geht auch nach links ins Negative weiter (x = −20 000)', hasStuff(r.neg), JSON.stringify(r.neg));
+  check('Auch dort gibt es eine sinnvolle Oberfläche',
+    r.surfFar > 100 && r.surfFar < 600 && r.surfNeg > 100 && r.surfNeg < 600,
+    `far=${r.surfFar} neg=${r.surfNeg}`);
+
+  // Gleiche Saat -> gleiche Welt (deterministisch), andere Saat -> andere Welt
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    const sample = () => {
+      let h = 0;
+      for (let x = 5000; x < 5200; x += 7) h = (h * 31 + C.surfaceY(x) + C.matAt(x, C.surfaceY(x) + 40) * 7) | 0;
+      return h;
+    };
+    C.startGame(42); const a = sample();
+    C.startGame(7);  const b = sample();
+    C.startGame(42); const c = sample();
+    return { a, b, c };
+  });
+  check('Gleiche Saat erzeugt dieselbe Welt', r.a === r.c, JSON.stringify(r));
+  check('Andere Saat erzeugt eine andere Welt', r.a !== r.b, JSON.stringify(r));
+
+  // Chunks werden nachgeladen und weit entfernte wieder freigegeben
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.startGame(42);
+    C.game.paused = true;
+    const p = C.players()[0].controlled;
+    const before = C.chunks().size;
+    p.x = 12000; p.y = C.surfaceY(12000) - 1; p.state = 'walk';
+    for (let x = 11800; x < 12200; x += 20) C.matAt(x, C.surfaceY(x) + 30);   // Gelände anfassen
+    const mid = C.chunks().size;
+    // viel Gelände weit weg anfassen, bis der Speicher aufräumen muss
+    for (let x = 0; x < 40000; x += 40) C.matAt(x, C.surfaceY(x) + 60);
+    const big = C.chunks().size;
+    C.tendWorld();
+    return { before, mid, big, after: C.chunks().size };
+  });
+  check('Neues Gelände wird beim Weiterlaufen erzeugt', r.mid > r.before && r.big > 200, JSON.stringify(r));
+  check('Weit entfernte Chunks werden wieder freigegeben', r.after < r.big / 2, JSON.stringify(r));
 
   // ---- Graben: Erde weicht, Fels nicht, Granit hält sogar Sprengungen stand
   r = await page.evaluate((x) => {
@@ -299,8 +363,8 @@ try {
     C.game.paused = true;
     const p = C.players()[0];
     // Startpunkt: erste Spalte, ab der 220 px nach rechts kein Wasser liegt
-    let sx = 300;
-    outer: for (let x = 200; x < 640; x += 5) {
+    let sx = 1200;
+    outer: for (let x = 1000; x < 2600; x += 5) {
       for (let xx = x; xx < x + 220; xx += 4) {
         const g = C.groundY()[xx];
         if (C.matAt(xx, g + 2) === C.MAT.WATER || C.matAt(xx, g - 6) === C.MAT.WATER) continue outer;
@@ -332,7 +396,7 @@ try {
     let floor = g + 40;
     while (!C.solid(x, floor + 1)) floor++;
     // eine einzelne Pixelsäule stehen lassen und den Clonk daraufsetzen
-    C.mask[(floor - 12) * C.WORLD_W + x] = C.MAT.EARTH;
+    C.setMat(x, floor - 12, C.MAT.EARTH);
     p.x = x; p.y = floor - 13; p.state = 'walk'; p.vx = 0; p.vy = 0;
     return { y0: p.y, floor, gr: C.grounded(p.x, p.y) };
   }, dryA);
@@ -519,8 +583,7 @@ try {
   r = await page.evaluate(({ lx, ly }) => {
     const C = window.__clonk, M = C.MAT;
     // Wasser direkt über die Lava setzen -> Kontakt macht Fels
-    const i = (ly - 1) * C.WORLD_W + lx;
-    C.mask[i] = M.WATER;
+    C.setMat(lx, ly - 1, M.WATER);
     C.wakeArea(lx - 2, ly - 3, lx + 2, ly + 2);
     return null;
   }, lavaPos);
@@ -569,20 +632,22 @@ try {
     C.carveCircle(x + 18, g + 6, 10, true);   // Grube voraus
     p.x = x; p.y = C.groundY()[x] - 1; p.state = 'walk'; p.dir = 1; p.loam = 2;
     C.pressed.add('e');
-    return { x0: p.x };
+    return { x0: p.x, y0: p.y };
   }, dryA);
   await tick(1.4);
-  r = await page.evaluate(({ x, x0 }) => {
+  r = await page.evaluate(({ x, x0, y0 }) => {
     const C = window.__clonk, M = C.MAT;
     C.pressed.delete('e');
     const p = C.players()[0];
     let loamCells = 0;
-    for (let xx = x + 6; xx < x + 34; xx++) for (let y = C.groundY()[x] - 6; y < C.groundY()[x] + 20; y++) {
+    for (let xx = x + 2; xx < x + 46; xx++) for (let y = C.groundY()[x] - 20; y < C.groundY()[x] + 40; y++) {
       if (C.matAt(xx, y) === M.LOAM) loamCells++;
     }
-    return { adv: p.x - x0, loamCells, loamLeft: p.loam };
-  }, { x: dryA, x0: r.x0 });
-  check('Lehmbrücke: Benutzen-Taste baut über die Grube', r.loamCells > 20 && r.adv > 10, JSON.stringify(r));
+    return { adv: p.x - x0, loamCells, loamLeft: p.loam, drop: p.y - y0, state: p.state };
+  }, { x: dryA, x0: r.x0, y0: r.y0 });
+  check('Lehmbrücke: Benutzen-Taste legt Lehm vor den Clonk', r.loamCells >= 8 && r.loamLeft < 2, JSON.stringify(r));
+  check('Über die Grube kommt man trocken hinweg (kein Absturz)',
+    r.adv > 10 && r.drop < 12, JSON.stringify(r));
 
   // ---- Lore: anschieben, Klumpen aufsammeln, entladen (auf freier Fläche,
   // damit weder Förderturm noch Gefälle an der Hütte dazwischenfunken)
@@ -688,7 +753,9 @@ try {
     const el = C.elevators()[0];
     const p = C.players()[0];
     p.x = el.x; p.y = el.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
-    C.items().push({ type: 'nugget', x: el.x, y: el.y - 3, vx: 0, vy: 0, rest: true });
+    p.flints = C.SLOTS;            // Hände voll -> das Fördergut bleibt liegen
+    p.loam = 0; p.carry = 0; p.rail = 0; p.coal = 0; p.ore = 0; p.metal = 0; p.plank = 0; p.wood = 0;
+    C.items().push({ type: 'nugget', x: el.x + 5, y: el.y - 3, vx: 0, vy: 0, rest: true });
     C.pressed.add('s');            // Korb bohrt nach unten
     return { y0: el.y, itemY0: C.items().find((i) => i.type === 'nugget').y };
   });
@@ -729,8 +796,8 @@ try {
     C.startGame(42);
     C.game.paused = true;
     const x0 = 400, y0 = C.groundY()[x0] + 60;
-    for (let x = x0 - 60; x < x0 + 60; x++) for (let y = y0 - 60; y < y0; y++) C.mask[y * C.WORLD_W + x] = M.SKY;
-    for (let x = x0 - 6; x < x0 + 6; x++) for (let y = y0 - 50; y < y0; y++) C.mask[y * C.WORLD_W + x] = M.WATER;
+    for (let x = x0 - 60; x < x0 + 60; x++) for (let y = y0 - 60; y < y0; y++) C.setMat(x, y, M.SKY);
+    for (let x = x0 - 6; x < x0 + 6; x++) for (let y = y0 - 50; y < y0; y++) C.setMat(x, y, M.WATER);
     C.wakeArea(x0 - 70, y0 - 70, x0 + 70, y0 + 5);
     for (let i = 0; i < 60 * 12; i++) C.update(0.016);
     const surf = [];
@@ -862,16 +929,16 @@ try {
   r = await page.evaluate((x) => {
     const C = window.__clonk, M = C.MAT;
     let lava = 0;
-    for (const v of C.mask) if (v === M.LAVA) lava++;
+    for (let xx = x - 200; xx < x + 200; xx++) for (let y = 200; y < C.WORLD_H; y += 2) if (C.matAt(xx, y) === M.LAVA) lava++;
     C.doVolcano(x);
-    return { lava0: lava, vents: C.volcanoes().length };
+    return { lava0: lava, vents: C.volcanoes().length, x };
   }, dryC);
   check('Vulkan bricht aus', r.vents === 1);
   await tick(3);
   r = await page.evaluate((prev) => {
     const C = window.__clonk, M = C.MAT;
     let lava = 0;
-    for (const v of C.mask) if (v === M.LAVA) lava++;
+    for (let xx = prev.x - 200; xx < prev.x + 200; xx++) for (let y = 200; y < C.WORLD_H; y += 2) if (C.matAt(xx, y) === M.LAVA) lava++;
     return { grown: lava - prev.lava0 };
   }, r);
   check('Der Schlot füllt sich mit aufsteigender Lava', r.grown > 150, 'grown=' + r.grown);
@@ -1218,7 +1285,7 @@ try {
     const C = window.__clonk;
     // ebenes Gleis von x-20 bis x+140 legen (Lore-Physik isoliert prüfen)
     const y = C.groundY()[x] - 1;
-    for (let xx = x - 20; xx < x + 140; xx++) C.railY[xx] = y;
+    for (let xx = x - 20; xx < x + 140; xx++) C.rails().set(xx, y);
     const lo = C.lores()[0];
     lo.x = x; lo.y = y; lo.vx = 60; lo.cargo = 0;
     const p = C.players()[0];
@@ -1282,15 +1349,16 @@ try {
   check('Die Lore sammelt auch das Liegengebliebene ein', r.left < 3, JSON.stringify(r));
 
   // Von oben in die Lore fallen lassen (der klassische Weg über dem Schacht)
-  r = await page.evaluate(() => {
+  r = await page.evaluate((x) => {
     const C = window.__clonk;
     const lo = C.lores()[0];
-    lo.load = {};
+    lo.load = {}; lo.vx = 0;
+    lo.x = x; lo.y = C.groundY()[x] - 1;                    // ebener Standplatz
     const p = C.players()[0];
-    p.x = lo.x - 200; p.y = C.groundY()[lo.x - 200] - 1;   // Clonk weit weg
-    C.items().push({ type: 'nugget', x: lo.x, y: lo.y - 60, vx: 0, vy: 0 });
+    p.x = x - 260; p.y = C.groundY()[x - 260] - 1;          // Clonk weit weg
+    C.items().push({ type: 'nugget', x: lo.x, y: lo.y - 40, vx: 0, vy: 0 });
     return { dropped: true };
-  });
+  }, dryA);
   await tick(1.2);
   r = await page.evaluate(() => {
     const C = window.__clonk;

@@ -129,8 +129,11 @@ Docker-Container deployt.
   direkt in die Lore werfen!); Wurfgut wechseln mit R/M bzw. der
   🎯-Taste, die Wurf-Taste zeigt die Auswahl. Freigelegte Zellen werden
   über der ursprünglichen Oberfläche Himmel, darunter Stollen – keine
-  dunklen Flecken mehr im See nach Sprengungen. Frisch generierte,
-  **tiefe** Pixel-Landschaft (960×1500) mit Schichtaufbau: eine **dicke
+  dunklen Flecken mehr im See nach Sprengungen. Die Welt ist
+  **prozedural erzeugt und waagerecht unendlich**: sie besteht aus
+  128×128-Chunks, die beim Weiterlaufen aus der Weltsaat nachwachsen
+  (in beide Richtungen, auch ins Negative) und weit hinter dem Spieler
+  wieder freigegeben werden; 2048 px tief mit Schichtaufbau: eine **dicke
   Erdzone** (~380 px reines Schaufelrevier), darunter eine breite
   **Felszone** (nur Feuerstein), erst ganz unten **Granitbänder** (halten
   drei Sprengungen aus und bröckeln dann weg) und **Grundgestein**, das
@@ -190,8 +193,9 @@ Docker-Container deployt.
   Querformat-Drehung; im 2-Spieler-Modus bekommt Blau einen **eigenen
   Joystick samt Tasten** (Tablet quer aufstellen). Menü-Optionen als
   Button-Reihen (in der gedrehten Bühne lesbarer als native Selects).
-  **💾 Spielstände** über das Menü: kompletter Weltzustand (RLE-gepackte
-  Maske), eingeloggt im Server-Slot `/api/save/clonk`
+  **💾 Spielstände** über das Menü: Weltsaat plus alle **veränderten
+  Chunks** (RLE-gepackt) – der Rest wächst deterministisch nach;
+  eingeloggt im Server-Slot `/api/save/clonk`
   (geräteübergreifend), sonst lokal im Browser. Das Spieltempo läuft
   bewusst leicht gedrosselt (GAME_SPEED 0.8). Die KI gräbt nach Gold,
   bringt es heim, sprengt Felsadern frei, kauft nach und wirft auch mal
