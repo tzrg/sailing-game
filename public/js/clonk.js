@@ -6,6 +6,9 @@
 // Chemiefabrik mit Rezepten, zwei Clonks pro Team mit Wechsel-Taste und
 // Katastrophen (Regen, Erdbeben, Meteor, Vulkan). Solo gegen die 🤖-KI oder
 // zu zweit an einer Tastatur; Touch-Steuerkreuz + Zoom-Kamera für Handys.
+// Ton und Musik werden live synthetisiert (siehe sfx.js).
+
+import { Sfx } from './sfx.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 // Die Welt ist waagerecht UNENDLICH und wird in Chunks prozedural erzeugt;
@@ -691,6 +694,7 @@ function startGame(seed) {
 
   items = []; projectiles = []; parts = []; floats = []; volcanoes = [];
   pendingBooms.length = 0;
+  Sfx.stopAllLoops();
   game.state = 'play'; game.paused = false; game.t = ROUND_TIME;
   game.winner = null; game.flintDropT = 12; game.shakeT = 0;
   game.disasterT = (game.disasters === 'wild' ? 25 : 55) + rng() * 30;
@@ -1049,7 +1053,10 @@ function updateClonk(c, dt) {
   } else c.breath = Math.min(1, c.breath + dt / 1.5);
   if (c.state === 'dead') return;   // an Lava/Atemnot gestorben
 
-  if (inLiquid && c.state !== 'swim') { c.state = 'swim'; c.vy *= 0.3; c.vx *= 0.5; }
+  if (inLiquid && c.state !== 'swim') {
+    c.state = 'swim'; c.vy *= 0.3; c.vx *= 0.5;
+    sfxAt('splash', c.x, c.y);
+  }
   if (!inLiquid && c.state === 'swim') { c.state = grounded(c.x, c.y) ? 'walk' : 'air'; }
 
   const L = cIn(c, 'left'), R = cIn(c, 'right'), J = cIn(c, 'jump');
@@ -1202,6 +1209,7 @@ function updateClonk(c, dt) {
   if (nearBase) {
     if (c.carry > 0) {
       cap.score += c.carry;
+      sfxAt('gold', c.x, c.y);
       addFloat(c.x, c.y - PH - 8, `+${c.carry} 💰`, '#ffd166');
       c.carry = 0;
       checkWin();
@@ -1223,6 +1231,7 @@ function updateClonk(c, dt) {
       continue;
     }
     it.dead = true; c[g.field]++;
+    sfxAt(it.type === 'nugget' ? 'gold' : 'pick', c.x, c.y);
     addFloat(c.x, c.y - PH - 6, g.emoji, '#ffd166');
   }
   c.fullHintT = Math.max(0, (c.fullHintT || 0) - dt);
@@ -1328,6 +1337,7 @@ function digStep(c, dt) {
       continue;
     }
     const gold = carveCircle(cx, cy, DIG_R, false);
+    sfxAt('dig', c.x, c.y);
     collectGoldPix(c, gold, carveCircle.lastCoal, cx, cy);
     const nx = c.x + dx;
     let ny = c.y + dy;
@@ -1336,6 +1346,7 @@ function digStep(c, dt) {
       if (dy > 0 && dx !== 0 && !bodyBlocked(Math.round(nx), Math.round(c.y))) ny = c.y;
       else {                                                    // Fels im Weg
         spark(c.x + dx * 8, c.y - PH / 2 + dy * 8, 2, '#c9c9d4');
+        sfxAt('clink', c.x, c.y);
         break;
       }
     }
@@ -1411,6 +1422,7 @@ function layRail(c, dt) {
   c.railPix = (c.railPix || 0) + 1;
   if (c.railPix >= 3) { c.railPix = 0; c.rail--; }
   spark(c.x, c.y - 2, 2, '#9aa4b0');
+  sfxAt('rail', c.x, c.y, 0.8);
 }
 
 // Lehmbrücke: Benutzen-Taste unterwegs halten, baut in Blickrichtung
@@ -1456,6 +1468,7 @@ function throwItem(c) {
   const t = THROWABLES[i];
   t.take(c);
   c.throwCd = 0.45;
+  sfxAt('throw', c.x, c.y);
   if (t.key === 'flint') {
     projectiles.push({
       x: c.x + c.dir * 6, y: c.y - PH + 2,
@@ -1590,6 +1603,7 @@ function shopBuy(c, key) {
   if (it.special) { if (!it.special(c)) { addFloat(c.x, c.y - PH - 8, 'Geht nicht!', '#ffb0a0'); return false; } }
   else giveRes(c, it.key, it.amount || 1);
   cap.score -= it.price;
+  sfxAt('buy', c.x, c.y);
   addFloat(c.x, c.y - PH - 8, `−${it.price} 💰 ${it.label}`, '#ffe6a0');
   return true;
 }
@@ -1599,6 +1613,7 @@ function shopSell(c, key) {
   if (!it || !atBase(c) || have(c, key) < 1) return false;
   takeRes(c, key, 1);
   cap.score += it.price;
+  sfxAt('buy', c.x, c.y);
   addFloat(c.x, c.y - PH - 8, `${it.label} → +${it.price} 💰`, '#ffd166');
   checkWin();
   return true;
@@ -1625,6 +1640,7 @@ function stockPutAll(c) {
 function craft(c, key) {
   const r = RECIPES.find((x) => x.key === key);
   if (!r || !atBase(c) || !r.can(c)) return false;
+  sfxAt('craft', c.x, c.y);
   addFloat(c.x, c.y - PH - 8, r.run(c), '#ffe6a0');
   return true;
 }
@@ -1660,6 +1676,7 @@ function boom(f) {
 
 function explode(x, y, src) {
   const R = 26;
+  sfxAt('boom', x, y);
   const gold = carveCircle(x, y, R, true);
   if (gold) {
     let n = Math.max(1, Math.round(gold / GOLD_PER_NUGGET));
@@ -1725,8 +1742,10 @@ function explodeLater(x, y, src) { pendingBooms.push({ x, y, src, t: 0.12 + rng(
 function hurt(c, dmg, src) {
   if (c.state === 'dead' || game.state !== 'play') return;
   c.hp -= dmg; c.hurtT = 0.35;
+  if (dmg > 6) sfxAt('hurt', c.x, c.y);
   if (c.hp > 0) return;
   c.hp = 0; c.state = 'dead'; c.respawnT = 4; c.burnT = 0;
+  sfxAt('ko', c.x, c.y);
   if (src && src !== c && teamOf(src) !== teamOf(c)) teamOf(src).ko++;
   addFloat(c.x, c.y - PH - 10, '💀 K. o.!', '#ff7a6a');
   for (let i = 0; i < c.carry; i++) {
@@ -1950,6 +1969,7 @@ function bodyBlockedRow(el) {
   return false;
 }
 function updateElevators(dt) {
+  let running = 0, near = 0;
   for (const el of elevators) {
     // Fahrgast-Wunsch: ⛏️/↓ bohrt runter, ⤒ (ohne Richtung) fährt hoch
     let move = 0, rockBelow = false;
@@ -1968,6 +1988,7 @@ function updateElevators(dt) {
       if (el.y + 6 >= WORLD_H - 8) move = 0;                 // Grundgestein erreicht
     }
     if (!move) { el.acc = 0; continue; }
+    running++; near = Math.max(near, sfxVol(el.x, el.y));
     const power = players[el.team] && players[el.team].windmill ? 1.8 : 1;   // Strom vom Windrad
     // Leerfahrt (freier Schacht) ist deutlich flotter als das Bohren
     const freeRun = move === -1 || !bodyBlockedRow(el);
@@ -1978,6 +1999,8 @@ function updateElevators(dt) {
       if (!moveCase(el, move)) { spark(el.x, el.y + 3, 2, '#c9c9d4'); break; }
     }
   }
+  // Der Förderturm brummt, solange der Korb fährt
+  Sfx.loop('drill', running > 0 && near > 0.05, 0.16 * near);
 }
 
 // ---- Loren (Goldtransport wie im Clonk-Objektpaket) -------------------------
@@ -2094,6 +2117,7 @@ function loreWork(lo, dt) {
       if (it.y > lo.y + 4 || it.y < lo.y - 30) continue;
       it.dead = true; loreAdd(lo, it.type);
       spark(lo.x, lo.y - 10, 3, '#ffd166');
+      sfxAt('pick', lo.x, lo.y);
       if (loreCount(lo) >= LORE_MAX) break;
     }
   }
@@ -2107,6 +2131,7 @@ function loreWork(lo, dt) {
     }
     home.score += gold;
     lo.load = {};
+    sfxAt(gold ? 'gold' : 'pick', lo.x, lo.y);
     addFloat(lo.x, lo.y - 18, (gold ? `+${gold} 💰` : '') + (rest ? ` +${rest} 📦` : ''), '#ffd166');
     if (gold) checkWin();
   }
@@ -2121,6 +2146,7 @@ function fellTree(t) {
     items.push({ type: 'wood', x: t.x + rng() * 14 - 7, y: t.y - 6 - rng() * t.h * 0.5, vx: rng() * 60 - 30, vy: -40 - rng() * 40 });
   }
   puff(t.x, t.y - t.h / 2, 8, '#7a9a4a');
+  sfxAt('lore', t.x, t.y, 0.9);
 }
 function updateTrees(dt) {
   for (const t of trees) {
@@ -2262,7 +2288,12 @@ function updateFlintDrops(dt) {
 
 // ---- Katastrophen -----------------------------------------------------------
 function updateDisasters(dt) {
-  if (game.disasters === 'aus' || game.state !== 'play') { game.rainT = Math.max(0, game.rainT - dt); return; }
+  if (game.disasters === 'aus' || game.state !== 'play') {
+    game.rainT = Math.max(0, game.rainT - dt);
+    Sfx.loop('rumble', false); Sfx.loop('rain', false);
+    Sfx.intensity = 0;
+    return;
+  }
   game.disasterT -= dt;
   if (game.disasterT <= 0) {
     game.disasterT = (game.disasters === 'wild' ? 22 : 50) + rng() * (game.disasters === 'wild' ? 20 : 40);
@@ -2299,44 +2330,143 @@ function updateDisasters(dt) {
       carveCircle(x, y | 0, 4 + rng() * 4, true);
     }
   }
-  // Vulkane: der Schlot frisst sich nach oben und speit Lava
+  updateVolcanoes(dt);
+  // Musik reagiert auf das Geschehen: bei Katastrophen kommt Perkussion dazu
+  Sfx.intensity = (game.quakeT > 0 || volcanoes.length) ? 1 : (game.rainT > 0 ? 0.4 : 0);
+  Sfx.loop('rain', game.rainT > 0.2, 0.05);
+  const rumble = volcanoes.reduce((a, v) => Math.max(a, v.phase === 'erupt' ? sfxVol(v.x, v.baseY) : sfxVol(v.x, v.baseY) * 0.5), 0);
+  Sfx.loop('rumble', (game.quakeT > 0 || volcanoes.length > 0) && rumble > 0.05,
+    0.22 * Math.max(rumble, game.quakeT > 0 ? 0.8 : 0));
+}
+
+// ---- Vulkane ----------------------------------------------------------------
+// Anders als früher wächst der Vulkan SICHTBAR aus dem Boden: erst rumort und
+// raucht es, dabei schiebt sich ein Felskegel mit Krater hoch, dann bricht der
+// Schlot auf und die Lava läuft über den Kraterrand die Hänge hinunter.
+const VOLC_GROW = 3.2;      // Sekunden Warnphase (Kegel wächst)
+const VOLC_SPEW = 8;        // Sekunden Ausbruch
+const coneTopY = (v) => v.baseY - v.coneH * clamp(v.built, 0, 1);
+const craterFloorY = (v) => coneTopY(v) + v.craterD * clamp(v.built, 0, 1);
+
+// Kegel bis zum Fortschritt p (0..1) ins Gelände schreiben
+function buildCone(v, p) {
+  const R = v.R;
+  for (let dx = -R; dx <= R; dx++) {
+    const x = (v.x + dx) | 0;
+    const f = 1 - Math.abs(dx) / R;
+    const h = v.coneH * Math.pow(f, 1.35) * p;
+    if (h < 1) continue;
+    const foot = Math.min(surfaceY(x), v.baseY + 8) + 4;    // Fuß im gewachsenen Boden
+    const yTop = Math.round(v.baseY - h);
+    for (let y = yTop; y <= foot; y++) {
+      if (y < 2 || y >= WORLD_H - 2) continue;
+      const m = matAt(x, y);
+      if (isFree(m) || m === MAT.EARTH || m === MAT.SAND || m === MAT.WATER) setMat(x, y, MAT.ROCK);
+    }
+  }
+  // Krater oben ausschälen
+  const cr = v.craterR, depth = v.craterD * p;
+  for (let dx = -cr; dx <= cr; dx++) {
+    const x = (v.x + dx) | 0;
+    const d = depth * (1 - (dx / cr) ** 2);
+    const yTop = Math.round(v.baseY - v.coneH * p);
+    for (let y = yTop; y <= yTop + d; y++) setMat(x, y, bgMat(x, y));
+  }
+  wakeArea((v.x - R - 2) | 0, (v.baseY - v.coneH - 4) | 0, (v.x + R + 2) | 0, (v.baseY + 12) | 0);
+}
+// Schlot öffnen: vom Krater bis tief unter den Boden schmelzen und die Röhre
+// gleich mit Magma füllen – so steht die Lava bis zum Krater an
+function openVent(v) {
+  const from = craterFloorY(v) | 0;
+  const to = Math.min(WORLD_H - 12, from + 150);
+  for (let y = from; y < to; y += 5) carveCircle(v.x, y, 4, true);
+  for (let y = from; y < to; y++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const x = (v.x + dx) | 0;
+      if (isFree(matAt(x, y))) { setMat(x, y, MAT.LAVA); wake(x, y); }
+    }
+  }
+}
+function updateVolcanoes(dt) {
   for (const v of volcanoes) {
     if (v.done) continue;
     v.t += dt;
-    v.riseY -= 60 * dt;
-    const top = surfaceY(v.x | 0) - 6;
-    if (v.riseY <= top) { v.riseY = top; v.spewT = (v.spewT || 0) + dt; }
-    // Schlot schmelzen + mit Lava füllen
-    for (let yy = 0; yy < 4; yy++) {
-      const y = (v.riseY + yy) | 0;
-      for (let xx = -4; xx <= 4; xx++) {
-        const x = (v.x + xx) | 0;
+    if (v.phase === 'warn') {
+      game.shakeT = Math.max(game.shakeT, 0.2); game.shakeA = Math.max(game.shakeA, 2.4);
+      const p = clamp(v.t / VOLC_GROW, 0, 1);
+      if (p >= v.built + 0.07 || (p >= 1 && v.built < 1)) { buildCone(v, p); v.built = p; }
+      // Rauchfahne kündigt den Ausbruch an
+      if (rng() < dt * 24) {
+        parts.push({ x: v.x + rng() * 16 - 8, y: craterFloorY(v), vx: rng() * 24 - 12, vy: -34 - rng() * 30, t: 0, life: 1.5 + rng(), color: 'rgba(120,120,128,0.75)', size: 3 + rng() * 3, grav: -14 });
+      }
+      if (v.t >= VOLC_GROW) {
+        v.phase = 'erupt'; v.t = 0; v.built = 1;
+        openVent(v);
+        sfxAt('volcano', v.x, v.baseY);
+        addFloat(v.x, coneTopY(v) - 16, '🌋 Ausbruch!', '#ff7030');
+      }
+      continue;
+    }
+    // Ausbruch: Lava quillt aus dem Krater und läuft die Hänge hinunter
+    game.shakeT = Math.max(game.shakeT, 0.15); game.shakeA = Math.max(game.shakeA, 3);
+    // Der Krater läuft immer wieder voll, bis der Vorrat erschöpft ist – die
+    // Lava schwappt über den Rand und sucht sich ihren Weg den Hang hinunter
+    const cf = craterFloorY(v) | 0, top = coneTopY(v) | 0, cr = v.craterR;
+    let placed = 0;
+    fill: for (let dx = -(cr - 1) | 0; dx <= cr - 1; dx++) {
+      const x = (v.x + dx) | 0;
+      const d = v.craterD * (1 - (dx / cr) ** 2);
+      for (let y = top - 1; y <= top + d + 3; y++) {
         if (y < 2 || y >= WORLD_H - 9) continue;
         const m = matAt(x, y);
-        if (m !== MAT.BEDROCK) { setMat(x, y, MAT.LAVA); wake(x, y); }
+        if (!isFree(m) && m !== MAT.WATER) continue;
+        setMat(x, y, MAT.LAVA); wake(x, y);
+        if (v.lava-- <= 0) break fill;
+        if (++placed >= 55) break fill;
       }
     }
-    wakeArea((v.x - 7) | 0, (v.riseY - 4) | 0, (v.x + 7) | 0, (v.riseY + 8) | 0);
-    if (rng() < dt * 8) parts.push({ x: v.x + rng() * 8 - 4, y: v.riseY, vx: rng() * 60 - 30, vy: -120 - rng() * 80, t: 0, life: 0.8, color: '#ff7030', size: 2.5, grav: 260 });
-    if (v.spewT > 3.5) v.done = true;
+    wakeArea((v.x - v.R) | 0, top - 6, (v.x + v.R) | 0, cf + 20);
+    // Fontäne + glühende Brocken, die als Lava einschlagen
+    for (let i = 0; i < 3; i++) {
+      if (rng() > dt * 26) continue;
+      parts.push({ x: v.x + rng() * 10 - 5, y: cf - 2, vx: rng() * 90 - 45, vy: -200 - rng() * 150, t: 0, life: 1.1 + rng() * 0.6, color: rng() < 0.6 ? '#ff8a30' : '#ffd166', size: 2 + rng() * 2, grav: 300 });
+    }
+    if (rng() < dt * 2.2) {
+      parts.push({ x: v.x + rng() * 8 - 4, y: cf - 4, vx: rng() * 190 - 95, vy: -230 - rng() * 90, t: 0, life: 3, color: '#ff6a20', size: 3.5, grav: 320, bomb: true });
+    }
+    if (rng() < dt * 12) {
+      parts.push({ x: v.x + rng() * 20 - 10, y: coneTopY(v) - 6, vx: rng() * 30 - 15, vy: -40 - rng() * 40, t: 0, life: 2, color: 'rgba(90,88,94,0.7)', size: 4 + rng() * 4, grav: -12 });
+    }
+    if (v.t > VOLC_SPEW) v.done = true;
   }
   volcanoes = volcanoes.filter((v) => !v.done);
 }
 function doRain() { game.rainT = 14; game.rainBudget = 420; addFloat(homeX(), 60, '🌧 Regen!', '#bcd6ea'); }
-function doQuake() { game.quakeT = 2.6; addFloat(homeX(), 60, '🫨 Erdbeben!', '#e8c37a'); }
+function doQuake() { game.quakeT = 2.6; Sfx.play('quake', 0.9); addFloat(homeX(), 60, '🫨 Erdbeben!', '#e8c37a'); }
 function doMeteor(x) {
   const mx = x !== undefined ? x : homeX() + (rng() - 0.5) * 700;
   projectiles.push({ x: mx, y: -16, vx: rng() * 80 - 40, vy: 160, owner: null, t: 0, spin: 0, meteor: true });
+  sfxAt('meteor', mx, 120);
   addFloat(mx, 60, '☄️ Meteor!', '#ffb054');
 }
 function doVolcano(x) {
-  const vx = x !== undefined ? x : (() => {
+  const vx = Math.round(x !== undefined ? x : (() => {
     let c = homeX() + (rng() - 0.5) * 800;
     for (let i = 0; i < 6 && (Math.abs(c - BASE_X[0]) < 140 || Math.abs(c - BASE_X[1]) < 140); i++) c = homeX() + (rng() - 0.5) * 800;
     return c;
-  })();
-  volcanoes.push({ x: vx, riseY: WORLD_H - 12, t: 0, done: false });
-  addFloat(vx, 60, '🌋 Vulkan!', '#ff7030');
+  })());
+  const v = {
+    x: vx, baseY: surfaceY(vx), phase: 'warn', t: 0, built: 0, done: false,
+    R: 30 + rng() * 16,            // halbe Kegelbreite
+    coneH: 34 + rng() * 24,        // Kegelhöhe über dem Boden
+    craterR: 8 + rng() * 4,        // Kraterweite
+    craterD: 9 + rng() * 5,        // Kratertiefe
+    lava: 1100,                    // Lavavorrat des Ausbruchs (Pixel)
+  };
+  volcanoes.push(v);
+  sfxAt('quake', vx, v.baseY, 0.7);
+  addFloat(vx, v.baseY - 40, '🌋 Es rumort!', '#ff7030');
+  return v;
 }
 
 // ---- Spielstände ------------------------------------------------------------
@@ -2481,11 +2611,27 @@ function endRound(winner) {
   if (game.state === 'over') return;
   game.state = 'over';
   game.winner = winner;
+  Sfx.stopAllLoops();
+  Sfx.play('fanfare', 1);
 }
 function restart() { startGame(); }
-function togglePause() { if (game.state === 'play') game.paused = !game.paused; }
+function togglePause() {
+  if (game.state !== 'play') return;
+  game.paused = !game.paused;
+  if (game.paused) Sfx.stopAllLoops();
+}
 
 // ---- Effekte ----------------------------------------------------------------
+// Ton: was weit weg vom Bildausschnitt passiert, hört man leiser (bzw. gar
+// nicht). sfxAt() ist die Standard-Ausgabe für alles, was in der Welt passiert.
+function sfxVol(x, y) {
+  const S = cam.scale || 0.5;
+  const rx = (CW || 900) / S * 0.6 + 90;
+  const ry = ((CH || 700) - TOP_UI) / S * 0.6 + 90;
+  const d = Math.hypot((x - cam.x) / rx, (y - cam.y) / ry);
+  return clamp(1.3 - d, 0, 1);
+}
+function sfxAt(name, x, y, v = 1) { Sfx.play(name, sfxVol(x, y) * v); }
 function addFloat(x, y, text, color) { floats.push({ x, y, text, color, t: 0 }); }
 function puff(x, y, n, color) {
   for (let i = 0; i < n; i++) {
@@ -2502,6 +2648,17 @@ function updateFx(dt) {
   for (const q of parts) {
     q.t += dt; q.vy += (q.grav || 0) * dt; q.x += q.vx * dt; q.y += q.vy * dt;
     if (q.rain && (solid(q.x, q.y) || matAt(q.x, q.y) === MAT.WATER)) q.t = q.life;
+    // Lavabomben aus dem Vulkan: wo sie einschlagen, bleibt Lava liegen
+    if (q.bomb && q.vy > 0 && (solid(q.x, q.y + 1) || matAt(q.x, q.y) === MAT.WATER)) {
+      q.t = q.life;
+      const bx = Math.round(q.x), by = Math.round(q.y);
+      for (let yy = by - 2; yy <= by + 2; yy++) for (let xx = bx - 2; xx <= bx + 2; xx++) {
+        if (matAt(xx, yy) === MAT.BEDROCK) continue;
+        if (isFree(matAt(xx, yy)) || matAt(xx, yy) === MAT.WATER) { setMat(xx, yy, MAT.LAVA); wake(xx, yy); }
+      }
+      puff(q.x, q.y, 4, '#ff9040');
+      sfxAt('clink', q.x, q.y, 0.6);
+    }
   }
   parts = parts.filter((q) => q.t < q.life);
   for (const f of floats) { f.t += dt; f.y -= 22 * dt; }
@@ -2661,6 +2818,7 @@ function draw(time) {
     }
   }
 
+  for (const v of volcanoes) drawVolcano(v, time);
   drawRails(vx0, vx1);
   for (const p of players) drawHut(p);
   for (const el of elevators) drawElevator(el);
@@ -3082,13 +3240,14 @@ function drawHUD() {
   ctx.font = 'bold 14px system-ui';
   ctx.fillText(sandbox ? '⛏️ ∞' : `⏱ ${mm}:${ss.toString().padStart(2, '0')}`, CW / 2, y0 + 15);
 
-  const wide = CW >= 720;
+  // Platz für die Werkzeugleiste (☰ ⟳ 🔊 ⏸) lassen
+  const wide = CW >= 780;
   if (wide) {
     const w = 260, h = 48;
     for (const p of players) {
       const c = p.controlled;
       const left = p.id === 0;
-      const x0 = left ? 158 : CW - 12 - w;
+      const x0 = left ? 208 : CW - 12 - w;
       ctx.fillStyle = 'rgba(8,25,42,0.72)';
       roundRect(x0, y0, w, h, 10); ctx.fill();
       ctx.textAlign = 'left';
@@ -3111,7 +3270,66 @@ function drawHUD() {
     ctx.textAlign = 'right'; ctx.fillStyle = b.color;
     ctx.fillText(`⭐${b.score}${gl} 💰${b.controlled.carry} 💣${b.controlled.flints} ${b.ai ? '🤖' : '🔵'}`, CW - 10, 50);
   }
+  drawVolcanoMarks();
   ctx.textBaseline = 'alphabetic';
+}
+
+// Vulkan: Krater-Glut, Aschewolke und (beim Ausbruch) Lichtschein am Hang
+function drawVolcano(v, time) {
+  const cf = craterFloorY(v), top = coneTopY(v);
+  const erupt = v.phase === 'erupt';
+  ctx.save();
+  // Aschewolke steigt über dem Krater auf
+  const puffs = erupt ? 7 : 4;
+  for (let i = 0; i < puffs; i++) {
+    const ph = ((v.t * (erupt ? 0.42 : 0.3) + i / puffs) % 1);
+    const r = 9 + ph * (erupt ? 34 : 20);
+    const yy = top - 14 - ph * (erupt ? 130 : 70);
+    ctx.fillStyle = `rgba(${erupt ? '104,98,104' : '128,126,132'},${(1 - ph) * (erupt ? 0.5 : 0.3)})`;
+    ctx.beginPath();
+    ctx.ellipse(v.x + Math.sin(ph * 5.5 + i * 1.7) * 16 * ph, yy, r, r * 0.74, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Glut im Krater
+  const hot = erupt ? 0.85 + Math.sin(time * 9) * 0.1 : 0.3 * clamp(v.built, 0, 1);
+  const g = ctx.createRadialGradient(v.x, cf, 1, v.x, cf, v.craterR * 3);
+  g.addColorStop(0, `rgba(255,214,120,${hot})`);
+  g.addColorStop(0.45, `rgba(255,110,30,${hot * 0.55})`);
+  g.addColorStop(1, 'rgba(255,70,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(v.x, cf, v.craterR * 3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// Pfeil am Bildrand, wenn ein Vulkan außerhalb des Ausschnitts wütet
+function drawVolcanoMarks() {
+  if (!volcanoes.length) return;
+  const S = cam.scale || 0.5;
+  const midY = TOP_UI + (CH - TOP_UI) / 2;
+  for (const v of volcanoes) {
+    const sx = CW / 2 + (v.x - cam.x) * S;
+    const sy = midY + (coneTopY(v) - cam.y) * S;
+    const inside = sx > 24 && sx < CW - 24 && sy > TOP_UI + 24 && sy < CH - 24;
+    if (inside) continue;
+    const px = clamp(sx, 26, CW - 26), py = clamp(sy, TOP_UI + 26, CH - 26);
+    ctx.save();
+    ctx.globalAlpha = 0.55 + 0.45 * Math.abs(Math.sin(v.t * 4));
+    ctx.fillStyle = 'rgba(40,12,6,0.75)';
+    ctx.beginPath(); ctx.arc(px, py, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '16px system-ui';
+    ctx.fillText('🌋', px, py + 1);
+    // kleine Spitze in Richtung Vulkan
+    const a = Math.atan2(sy - py, sx - px);
+    if (sx < 26 || sx > CW - 26 || sy < TOP_UI + 26 || sy > CH - 26) {
+      ctx.fillStyle = '#ff8a3a';
+      ctx.beginPath();
+      ctx.moveTo(px + Math.cos(a) * 22, py + Math.sin(a) * 22);
+      ctx.lineTo(px + Math.cos(a + 2.5) * 15, py + Math.sin(a + 2.5) * 15);
+      ctx.lineTo(px + Math.cos(a - 2.5) * 15, py + Math.sin(a - 2.5) * 15);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 function banner(title, sub) {
   ctx.fillStyle = 'rgba(8,25,42,0.85)';
@@ -3196,7 +3414,7 @@ document.getElementById('shop-close').addEventListener('click', closeShop);
 // ---- Menü / Buttons ---------------------------------------------------------
 const menuEl = document.getElementById('menu');
 const helpEl = document.getElementById('help');
-document.getElementById('btn-menu').addEventListener('click', () => menuEl.classList.remove('hidden'));
+document.getElementById('btn-menu').addEventListener('click', () => { menuEl.classList.remove('hidden'); refreshMenu(); });
 document.getElementById('btn-menu-close').addEventListener('click', () => menuEl.classList.add('hidden'));
 menuEl.addEventListener('click', (e) => { if (e.target === menuEl) menuEl.classList.add('hidden'); });
 document.getElementById('btn-help').addEventListener('click', () => { menuEl.classList.add('hidden'); helpEl.classList.remove('hidden'); });
@@ -3208,6 +3426,24 @@ document.getElementById('btn-pause').addEventListener('click', togglePause);
 document.getElementById('btn-rotate').addEventListener('click', () => { stage.classList.toggle('rot'); resize(); });
 document.getElementById('b-zoomin').addEventListener('click', () => setZoom(cam.zoom * 1.3));
 document.getElementById('b-zoomout').addEventListener('click', () => setZoom(cam.zoom / 1.3));
+
+// ---- Ton --------------------------------------------------------------------
+// Der Browser lässt Klänge erst nach einer Eingabe zu: darum weckt die erste
+// Taste bzw. der erste Fingertipp die Audio-Engine.
+Sfx.load();
+const soundBtn = document.getElementById('btn-sound');
+function refreshSound() {
+  soundBtn.textContent = Sfx.on ? '🔊' : '🔇';
+  soundBtn.classList.toggle('off', !Sfx.on);
+}
+soundBtn.addEventListener('click', () => {
+  Sfx.setSfx(!Sfx.on);
+  if (Sfx.on) { Sfx.unlock(); Sfx.play('pick', 0.8); }
+  refreshSound();
+});
+const wakeAudio = () => Sfx.unlock();
+window.addEventListener('keydown', wakeAudio);
+window.addEventListener('pointerdown', wakeAudio);
 
 // Options-Reihen (statt nativer Selects – die sehen in der gedrehten Bühne
 // unglücklich aus): angewählter Knopf wird hervorgehoben
@@ -3238,8 +3474,11 @@ const menuRefreshers = [
     try { localStorage.setItem('clonk_disasters', game.disasters); } catch { /* egal */ }
     game.disasterT = (game.disasters === 'wild' ? 25 : 55) + rng() * 30;
   }),
+  bindOpts('opt-sfx', () => (Sfx.on ? 1 : 0), (v) => { Sfx.setSfx(v === '1'); Sfx.unlock(); refreshSound(); }),
+  bindOpts('opt-music', () => (Sfx.musicOn ? 1 : 0), (v) => { Sfx.setMusic(v === '1'); Sfx.unlock(); refreshSound(); }),
 ];
-function refreshMenu() { for (const r of menuRefreshers) r(); }
+function refreshMenu() { for (const r of menuRefreshers) r(); refreshSound(); }
+refreshSound();
 
 // Touch-Steuerung: Joysticks + Aktions-Buttons; ohne Touch-Gerät ausgeblendet
 setBtn('b-dig'); setBtn('b-fire'); setBtn('b-buy'); setBtn('b-switch');
@@ -3288,7 +3527,8 @@ window.__clonk = {
   players: () => players, allClonks, items: () => items, projectiles: () => projectiles,
   lores: () => lores, elevators: () => elevators, onElevatorCase,
   goldSpots: () => goldSpots, trees: () => trees, wipfe: () => wipfe,
-  volcanoes: () => volcanoes,
+  volcanoes: () => volcanoes, coneTopY, craterFloorY, buildCone,
+  Sfx, sfxVol, refreshSound,
   groundY: () => surfProxy, birds: () => birds, pressed, buttons, throwFlint, hurt,
   TOUGH, ORE_PER_CHUNK,
 };

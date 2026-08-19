@@ -181,8 +181,22 @@ Docker-Container deployt.
   Benutzen-Taste; darauf rollt die Lore schnell und bleibt im Gleis. Die **Lore** rollt Hänge hinab,
   sammelt Klumpen und kippt an der eigenen Hütte ab. Dazu zuschaltbare
   **Katastrophen** (normal/wild/aus): 🌧 Regen füllt Senken mit Wasser,
-  🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane, die sich mit Lava zur
-  Oberfläche fressen. Die **Kamera** folgt dem Geschehen (solo
+  🫨 Erdbeben und ☄️ Meteore. **🌋 Vulkane sieht man kommen**: erst
+  rumort und raucht es, dabei schiebt sich ein **Felskegel mit Krater**
+  sichtbar aus dem Boden, dann bricht der Schlot auf – Lava quillt über
+  den Kraterrand und läuft die Hänge hinunter, glühende Brocken schlagen
+  als Lava ein, Ascheschwaden steigen auf. Ist der Vulkan gerade nicht
+  im Bild, blinkt am Bildrand ein 🌋-Zeichen in seine Richtung; der Berg
+  bleibt danach als neues Stück Landschaft stehen.
+  **🔊 Ton & Musik** werden live im Browser synthetisiert
+  (`js/sfx.js`, Web Audio – keine Audiodateien): Grabgeräusch,
+  Explosionen, Gold, Kasse, Förderturm-Brummen, Regen, Grollen und
+  Vulkanausbruch, dazu eine ruhige Bergbau-Musik (Bass, gezupftes
+  Arpeggio, Flötenmelodie), die bei Katastrophen Perkussion dazunimmt.
+  Was weit außerhalb des Bildausschnitts passiert, hört man leiser oder
+  gar nicht. Der 🔊-Knopf in der Werkzeugleiste schaltet alles stumm,
+  im ☰-Menü lässt sich die Musik getrennt abschalten – beides wird im
+  Browser gemerkt. Die **Kamera** folgt dem Geschehen (solo
   reingezoomt, zu zweit bleiben beide im Bild, ＋/－ zoomt), 📱 Mobile
   mit **virtuellem Joystick** (bewegen: seitlich laufen, oben
   springen/klettern, unten abtauchen/abseilen/Lift bohren – **gegraben
@@ -378,6 +392,7 @@ public/            statische Spielesammlung
     maze.js        Super Maze (Backtracker-Generator, Nebel, Sterne)
     snake.js       Snake (Grid, Wachstum, Bonus, zwei Modi)
     clonk.js       Klonk (Material-Maske, Graben/Klettern, Feuersteine)
+    sfx.js         Klonk: synthetische Geräusche + Musik (Web Audio)
 Dockerfile
 railway.json
 ```
@@ -397,7 +412,7 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
-- **`test/clonk.test.mjs`** – Klonk (124 Checks) über den Test-Hook
+- **`test/clonk.test.mjs`** – Klonk (149 Checks) über den Test-Hook
   `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/
   Granit/Erz/Grundgestein), Welttiefe, Granit-Sprengfestigkeit,
   alle Produktionsrezepte (Hochofen, Sägewerk, Schienenschmiede,
@@ -408,7 +423,10 @@ railway.json
   Lava-Verbrennung, Lava+Wasser=Stein, rieselnder Sand, Lehmbrücken,
   Lore, Grubenlift (begehbarer Korb, bohren/hochfahren, explosionsfest),
   Chemiefabrik-Rezepte (Kohle/Holz/Gold), Baum→Holz, Wipfe,
-  Katastrophen (Meteor/Vulkan/Erdbeben/Regen), Clonk-Wechsel, Solo-KI,
+  Katastrophen (Meteor/Erdbeben/Regen), Vulkane (Warnphase, wachsender
+  Kegel mit Krater, überlaufende Lava, Ende des Ausbruchs), Ton
+  (Audio-Engine, Effektsounds, Dauergeräusche, Entfernungs-Lautstärke,
+  Musik-Scheduler, 🔇-Schalter samt Merken), Clonk-Wechsel, Solo-KI,
   Touch-Joysticks (beide Teams, 2P-Layout, ⛏️-Taste statt Stick-runter
   zum Graben), Graben aus dem Grubenlift, Hochgrab-Verbot (wie im
   Original), tragfähige Waagerecht-Stollen, Wurf-Inventar (Wechsel,

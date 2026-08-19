@@ -537,6 +537,11 @@ html, body {
   cursor: default;
 }
 
+/* Stummgeschalteter Ton-Knopf wird blass */
+#toolbar button.off {
+  opacity: 0.5;
+}
+
 /* Superwaffen-Leiste (Tower Defense): Spalte am linken Rand unter der Toolbar */
 #superbar {
   position: fixed;

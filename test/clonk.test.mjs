@@ -926,22 +926,55 @@ try {
   r = await page.evaluate(() => ({ left: window.__clonk.projectiles().length, shook: true }));
   check('Meteor schlägt ein und explodiert', r.left === 0);
 
+  // Vulkan: erst wächst der Kegel sichtbar aus dem Boden, dann läuft Lava über
   r = await page.evaluate((x) => {
     const C = window.__clonk, M = C.MAT;
-    let lava = 0;
-    for (let xx = x - 200; xx < x + 200; xx++) for (let y = 200; y < C.WORLD_H; y += 2) if (C.matAt(xx, y) === M.LAVA) lava++;
-    C.doVolcano(x);
-    return { lava0: lava, vents: C.volcanoes().length, x };
+    const base = C.surfaceY(x);
+    let rock = 0, lava = 0;
+    for (let xx = x - 50; xx <= x + 50; xx++) {
+      for (let y = base - 100; y < base; y++) if (C.matAt(xx, y) === M.ROCK) rock++;
+      for (let y = base - 100; y < base + 60; y++) if (C.matAt(xx, y) === M.LAVA) lava++;
+    }
+    const v = C.doVolcano(x);
+    return { rock0: rock, lava0: lava, vents: C.volcanoes().length, x, base, phase: v.phase };
   }, dryC);
-  check('Vulkan bricht aus', r.vents === 1);
-  await tick(3);
-  r = await page.evaluate((prev) => {
+  check('Vulkan kündigt sich mit einer Warnphase an', r.vents === 1 && r.phase === 'warn', JSON.stringify(r));
+  await tick(3.6);
+  let vol = await page.evaluate((p) => {
     const C = window.__clonk, M = C.MAT;
-    let lava = 0;
-    for (let xx = prev.x - 200; xx < prev.x + 200; xx++) for (let y = 200; y < C.WORLD_H; y += 2) if (C.matAt(xx, y) === M.LAVA) lava++;
-    return { grown: lava - prev.lava0 };
+    let rock = 0;
+    for (let xx = p.x - 50; xx <= p.x + 50; xx++) for (let y = p.base - 100; y < p.base; y++) if (C.matAt(xx, y) === M.ROCK) rock++;
+    const v = C.volcanoes()[0];
+    const top = v ? C.coneTopY(v) : 0, floor = v ? C.craterFloorY(v) : 0;
+    let hollow = 0;
+    if (v) for (let xx = p.x - 5; xx <= p.x + 5; xx++) for (let y = Math.round(top); y < Math.round(floor); y++) if (!C.solid(xx, y)) hollow++;
+    return { rock: rock - p.rock0, phase: v && v.phase, top, floor, hollow, base: p.base };
   }, r);
-  check('Der Schlot füllt sich mit aufsteigender Lava', r.grown > 150, 'grown=' + r.grown);
+  check('Der Vulkankegel wächst sichtbar aus dem Boden', vol.rock > 450 && vol.top < vol.base - 25,
+    JSON.stringify(vol));
+  check('Der Kegel hat oben einen Krater', vol.hollow > 20 && vol.floor > vol.top, JSON.stringify(vol));
+  check('Nach der Warnphase bricht der Vulkan aus', vol.phase === 'erupt', String(vol.phase));
+  await tick(3);
+  vol = await page.evaluate((p) => {
+    const C = window.__clonk, M = C.MAT;
+    let lava = 0, minX = 1e9, maxX = -1e9;
+    for (let xx = p.x - 60; xx <= p.x + 60; xx++) for (let y = p.base - 100; y < p.base + 60; y++) {
+      if (C.matAt(xx, y) !== M.LAVA) continue;
+      lava++; if (xx < minX) minX = xx; if (xx > maxX) maxX = xx;
+    }
+    return { grown: lava - p.lava0, spread: maxX - minX };
+  }, r);
+  check('Lava quillt aus dem Krater und läuft die Hänge hinunter',
+    vol.grown > 150 && vol.spread > 12, JSON.stringify(vol));
+  await tick(7);
+  vol = await page.evaluate((p) => {
+    const C = window.__clonk, M = C.MAT;
+    let rock = 0;
+    for (let xx = p.x - 50; xx <= p.x + 50; xx++) for (let y = p.base - 100; y < p.base; y++) if (C.matAt(xx, y) === M.ROCK) rock++;
+    return { left: C.volcanoes().length, rock: rock - p.rock0 };
+  }, r);
+  check('Der Ausbruch endet, der Kegel bleibt als Berg stehen', vol.left === 0 && vol.rock > 300,
+    JSON.stringify(vol));
 
   r = await page.evaluate(() => {
     const C = window.__clonk;
@@ -1485,6 +1518,54 @@ try {
     return { need, ok: need <= innerWidth + 2 };
   });
   check('2P-Zoom hält beide Klonks im Bild', r.ok, JSON.stringify(r));
+
+  // ---- Ton: synthetisierte Geräusche, Musik, Entfernungs-Lautstärke
+  r = await page.evaluate(async () => {
+    const C = window.__clonk, S = C.Sfx;
+    S.setSfx(true);
+    S.init();
+    if (S.ctx.state === 'suspended') { try { await S.ctx.resume(); } catch { /* egal */ } }
+    const state = S.ctx.state;
+    S.play('boom', 1); S.play('dig', 1); S.play('gold', 1);
+    const stamped = S._last.dig !== undefined;
+    S.loop('drill', true, 0.2);
+    const loopOn = !!S.loops.drill;
+    S.loop('drill', false);
+    const loopOff = !S.loops.drill;
+    return { state, ready: S.ready, stamped, loopOn, loopOff, buf: S.noise && S.noise.length > 0 };
+  });
+  check('Audio-Engine startet mit synthetischem Rauschpuffer', r.ready && r.buf && r.state === 'running', JSON.stringify(r));
+  check('Effektsounds (💥 Explosion, ⛏️ Graben, 💰) lassen sich abspielen', r.stamped, JSON.stringify(r));
+  check('Dauergeräusche (Förderturm) lassen sich an- und ausschalten', r.loopOn && r.loopOff, JSON.stringify(r));
+
+  r = await page.evaluate(async () => {
+    const C = window.__clonk, S = C.Sfx;
+    const near = C.sfxVol(C.cam.x, C.cam.y);
+    const far = C.sfxVol(C.cam.x + 6000, C.cam.y);
+    S.setMusic(true);
+    const step0 = S._step;
+    await new Promise((res) => setTimeout(res, 400));   // Scheduler ein paar Takte laufen lassen
+    return {
+      near, far, playing: S.musicPlaying, grew: S._step > step0,
+      ahead: S._next > S.ctx.currentTime,
+    };
+  });
+  check('Weit entfernte Geräusche sind leise, nahe laut', r.near > 0.8 && r.far === 0, JSON.stringify(r));
+  check('Musik läuft und plant Noten voraus', r.playing && r.grew && r.ahead, JSON.stringify(r));
+
+  // 🔊-Knopf schaltet alles stumm und merkt sich das
+  await page.click('#btn-sound');
+  r = await page.evaluate(() => ({
+    on: window.__clonk.Sfx.on, music: window.__clonk.Sfx.musicPlaying,
+    stored: localStorage.getItem('sfx_on'), icon: document.getElementById('btn-sound').textContent,
+    loops: Object.keys(window.__clonk.Sfx.loops).length,
+  }));
+  check('🔇 schaltet Ton, Musik und Dauergeräusche ab',
+    r.on === false && r.music === false && r.loops === 0, JSON.stringify(r));
+  check('Stummschaltung wird gemerkt und angezeigt', r.stored === '0' && r.icon === '🔇', JSON.stringify(r));
+  await page.click('#btn-sound');
+  r = await page.evaluate(() => ({ on: window.__clonk.Sfx.on, stored: localStorage.getItem('sfx_on') }));
+  check('🔊 schaltet den Ton wieder an', r.on === true && r.stored === '1', JSON.stringify(r));
 
   // ---- Querformat-Drehung
   await page.click('#btn-rotate');

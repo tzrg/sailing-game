@@ -15,6 +15,7 @@
   <div id="toolbar">
     <button id="btn-menu">☰</button>
     <button id="btn-rotate" title="Querformat">⟳</button>
+    <button id="btn-sound" title="Ton an/aus">🔊</button>
     <button id="btn-pause" title="Pause">⏸</button>
   </div>
 
@@ -113,6 +114,18 @@
         </div>
       </div>
 
+      <div class="menu-group">
+        <div class="group-title">Ton</div>
+        <div class="opt-row" id="opt-sfx">
+          <button data-v="1">🔊 Geräusche an</button>
+          <button data-v="0">🔇 aus</button>
+        </div>
+        <div class="opt-row" id="opt-music">
+          <button data-v="1">🎵 Musik an</button>
+          <button data-v="0">🚫 aus</button>
+        </div>
+      </div>
+
       <button class="menu-btn" id="btn-save">💾 Spielstand speichern</button>
       <button class="menu-btn" id="btn-load">📂 Spielstand laden</button>
       <button class="menu-btn" id="btn-restart">🔄 Neue Runde</button>
@@ -202,9 +215,17 @@
         <li><b>🔄 Mannschaft:</b> zwei Clonks pro Team – Wechsel-Taste schaltet um, der andere
           wartet. Wer k. o. geht, verliert sein Gold und startet nach kurzer Zeit neu an der Hütte.</li>
         <li><b>Katastrophen</b> (im Menü einstellbar): 🌧 Regen füllt Senken mit Wasser,
-          🫨 Erdbeben, ☄️ Meteore und 🌋 Vulkane mischen die Karte auf. Dazu buddeln
+          🫨 Erdbeben und ☄️ Meteore mischen die Karte auf. Dazu buddeln
           <b>Wipfe</b> durchs Erdreich, ziehen <b>Vögel</b> ihre Kreise und schwimmen
           <b>🐟 Fische</b> im See.</li>
+        <li><b>🌋 Vulkane sieht man kommen:</b> erst rumort und raucht es, dabei schiebt sich
+          ein <b>Felskegel mit Krater</b> aus dem Boden. Dann bricht der Schlot auf: Lava quillt
+          über den Kraterrand und läuft die Hänge hinunter, glühende Brocken fliegen durch die
+          Luft. Ist der Vulkan gerade nicht im Bild, blinkt am Bildrand ein 🌋-Zeichen in seine
+          Richtung. Der Berg bleibt danach stehen – ein neues Stück Landschaft.</li>
+        <li><b>🔊 Ton:</b> Geräusche (Graben, Explosionen, Gold, Förderturm …) und eine ruhige
+          Bergbau-Musik werden live im Browser erzeugt. Der 🔊-Knopf oben schaltet alles stumm,
+          im ☰-Menü lässt sich die Musik getrennt abschalten.</li>
         <li><b>💾 Spielstand:</b> über das ☰-Menü speichern und laden – eingeloggt liegt der
           Stand auf dem Server (geräteübergreifend), sonst lokal im Browser.</li>
         <li><b>Leertaste</b> Pause · nach Rundenende <b>R</b> für die Revanche.</li>
