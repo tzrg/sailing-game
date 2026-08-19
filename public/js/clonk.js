@@ -697,6 +697,7 @@ function makeClonk(id, name, color, keys, baseX) {
     breath: 1, burnT: 0, goldPix: 0, coalPix: 0, rem: 0, bridgeT: 0,
     respawnT: 0, tumbleT: 0, throwCd: 0, hurtT: 0, throwSel: 0,
     walkPhase: 0, prevThrow: false, prevUse: false, prevSwitch: false, prevCycle: false,
+    grab: null,                       // angefasste Lore (wie im Original)
     ai: false, buddy: null, lead: null, controlled: null,
     virt: { left: false, right: false, jump: false, dig: false, throw: false, use: false, switch: false },
     aiS: { thinkT: 0, target: null, lastX: 0, lastY: 0, stuckT: 0, phase: 'seek', backoffT: 0, backDir: 0, throwAfter: false, waitT: 0, throwNow: false },
@@ -751,8 +752,9 @@ function startGame(seed) {
   });
   rails = new Map();
   for (const p of players) {
-    const from = p.id === 0 ? p.base.x + 20 : p.base.x - 56;
-    for (let x = from; x < from + 36; x++) rails.set(x, surfaceY(x) - 1);
+    // Anschlussgleis vor der Hütte – endet vor dem breiten Aufzugsschacht
+    const from = p.id === 0 ? p.base.x + 20 : p.base.x - 51;
+    for (let x = from; x < from + 31; x++) rails.set(x, surfaceY(x) - 1);
   }
   elevators = players.map((p) => {
     const ex = p.base.x + (p.id === 0 ? 66 : -66);
@@ -1102,9 +1104,21 @@ function updateClonk(c, dt) {
   c.prevCycle = CY;
   const U = cIn(c, 'use');
   const nearBase = Math.abs(c.x - cap.base.x) < 46 && Math.abs(c.y - cap.base.y) < 54;
-  if (U && !c.prevUse && nearBase) buyFlint(c);
+  // Benutzen am Wagen = anfassen/loslassen (wie im Original), sonst Hütte/Bauen
+  if (U && !c.prevUse) {
+    if (c.grab) releaseLore(c);
+    else {
+      const lo = cap.ai ? null : loreNear(c);
+      if (lo && !lo.holder) grabLore(c, lo);
+      else if (nearBase) buyFlint(c);
+    }
+  }
   c.prevUse = U;
-  if (U && !nearBase) buildSelected(c, dt, J);
+  if (U && !nearBase && !c.grab) buildSelected(c, dt, J);
+  // Griff lösen, wenn der Clonk etwas anderes tut oder wegkommt
+  if (c.grab && (c.state === 'dead' || c.state === 'tumble' || c.state === 'swim'
+    || c.state === 'scale' || c.state === 'hangle' || c.state === 'dig'
+    || Math.abs(c.grab.x - c.x) > 24 || Math.abs(c.grab.y - c.y) > 22)) releaseLore(c);
   const SW = down(cap, 'switch');
   if (SW && !cap.prevSwitch) switchClonk(cap);
   cap.prevSwitch = SW;
@@ -1114,16 +1128,24 @@ function updateClonk(c, dt) {
       c.coyote = 0.12;   // kurze Gnadenfrist zum Springen nach der Kante
       // auf dem Aufzugskorb: Grabtaste ohne Richtung bohrt (der Lift übernimmt),
       // MIT Richtung/Sprungtaste gräbt man sich normal seitlich/schräg heraus
-      if (D && !(onElevatorCase(c) && dirIn === 0)) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
+      const onCase = onElevatorCase(c), lift = onCase ? caseIntent(c) : 0;
+      if (D && !(onCase && lift !== 0)) { c.state = 'dig'; c.rem = 0; digStep(c, dt); break; }
       // auf dem Aufzugskorb: ⤒ ohne Richtung fährt hoch statt zu springen
-      if (J && !U && !(dirIn === 0 && onElevatorCase(c))) { doJump(c, dirIn); break; }
-      if (dirIn) {
-        c.walkPhase += dt * 11;
-        c.rem += WALK * dt;
+      if (J && !U && !(onCase && lift === -1)) { doJump(c, dirIn); break; }
+      // Wer den Lift bedient, bleibt im Korb stehen (sonst läuft man mit einem
+      // leicht schrägen Joystick sofort von der Plattform)
+      const walkDir = (onCase && lift !== 0) ? 0 : dirIn;
+      if (walkDir) {
+        // Mit der Lore am Haken (oder sie vor sich her schiebend) geht es
+        // gemächlicher – volle Lore bremst zusätzlich
+        const lo = loreMoved(c, walkDir);
+        const spd = lo ? loreSpeed(lo) : WALK;
+        c.walkPhase += dt * (lo ? 8 : 11);
+        c.rem += spd * dt;
         let n = c.rem | 0; c.rem -= n;
         while (n-- > 0) {
-          const r = stepWalk(c, dirIn);
-          if (r === 'fall') { c.state = 'air'; c.vx = dirIn * WALK * 0.8; c.vy = 40; break; }
+          const r = stepWalk(c, walkDir);
+          if (r === 'fall') { c.state = 'air'; c.vx = walkDir * spd * 0.8; c.vy = 40; break; }
           if (r === 'wall') break;
         }
       } else { c.rem = 0; }
@@ -1731,6 +1753,7 @@ function explode(x, y, src) {
     const f = 1 - d / (R + 28);
     lo.vx += Math.sign(lo.x - x || 1) * 220 * f;
     lo.vy = -120 * f; lo.y -= 2;
+    if (lo.holder) releaseLore(lo.holder);
     for (const [key, n] of Object.entries(lo.load || {})) {
       for (let k = 0; k < n; k++) items.push({ type: key, x: lo.x, y: lo.y - 8, vx: rng() * 140 - 70, vy: -90 - rng() * 80 });
     }
@@ -1787,6 +1810,7 @@ function hurt(c, dmg, src) {
 }
 
 function respawn(c) {
+  releaseLore(c);
   c.state = 'air'; c.hp = 100; c.flints = 1; c.loam = 1; c.carry = 0; c.goldPix = 0;
   c.coal = 0; c.ore = 0; c.metal = 0; c.plank = 0; c.wood = 0; c.rail = 0;
   c.vx = 0; c.vy = 0; c.tumbleT = 0; c.breath = 1; c.burnT = 0;
@@ -1907,9 +1931,27 @@ function aiControl(cap, dt) {
 // stehen ganz normal darauf. Auf dem Korb: ⛏️/↓ bohrt nach unten (durch Fels
 // nur langsam, Granit stoppt), ⤒ fährt hoch. Erbohrtes Gold/Kohle fällt als
 // Brocken auf den Korb.
-const CASE_HW = 8;                    // halbe Korbbreite
+// Der Korb ist breit genug, dass die Lore bequem mit hineinrollt.
+const CASE_HW = 12;                   // halbe Korbbreite
 function onElevatorCase(c) {
   return elevators.some((el) => Math.abs(c.x - el.x) <= CASE_HW + 2 && Math.abs((c.y + 1) - el.y) <= 2);
+}
+// Wunsch des Fahrgastes: 1 = runter bohren, -1 = hoch, 0 = nichts.
+// Am Joystick zählt die überwiegende Richtung – senkrecht schlägt seitlich,
+// damit der Lift auch mit dem Daumen sicher zu bedienen ist. Auf der Tastatur
+// bleibt es wie gehabt: Grabtaste/⤒ ohne Richtung.
+function caseIntent(c) {
+  const js = joyOf(c);
+  if (js && (Math.abs(js.dx) > 0.15 || Math.abs(js.dy) > 0.15)) {
+    if (Math.abs(js.dy) < Math.abs(js.dx) * 1.2) return 0;    // klar seitlich
+    if (js.dy > JOY_Y * 0.7) return 1;
+    if (js.dy < -JOY_Y * 0.7) return -1;
+    return 0;
+  }
+  if (cIn(c, 'left') || cIn(c, 'right')) return 0;
+  if (cIn(c, 'dig') || cIn(c, 'down')) return 1;
+  if (cIn(c, 'jump')) return -1;
+  return 0;
 }
 function eraseCase(el) {
   for (let y = el.y; y < el.y + 3; y++) for (let x = el.x - CASE_HW; x <= el.x + CASE_HW; x++) {
@@ -2001,11 +2043,10 @@ function updateElevators(dt) {
     let move = 0, rockBelow = false;
     for (const c of allClonks()) {
       if (c.state === 'dead' || !onElevatorCase(c) || Math.abs(c.x - el.x) > CASE_HW + 2) continue;
-      // Runter (Joystick/Grabtaste) OHNE Richtung bohrt; mit Richtung
-      // gräbt sich der Clonk selbst aus dem Korb
-      if (cIn(c, 'down') && !cIn(c, 'dig') && !cIn(c, 'left') && !cIn(c, 'right') && !cIn(c, 'jump')) move = 1;
-      else if (cIn(c, 'dig') && !cIn(c, 'left') && !cIn(c, 'right') && !cIn(c, 'jump')) move = 1;
-      else if (cIn(c, 'jump') && !cIn(c, 'left') && !cIn(c, 'right')) move = -1;
+      // Runter (Grabtaste/Joystick) bohrt, ⤒ fährt hoch – klar seitliche
+      // Eingaben lassen den Clonk stattdessen selbst aus dem Korb graben
+      const want = caseIntent(c);
+      if (want) move = want;
     }
     if (move === 1) {
       for (let xx = el.x - CASE_HW; xx <= el.x + CASE_HW; xx++) {
@@ -2047,13 +2088,15 @@ function updateLores(dt) {
     lo.onRail = rail >= 0 && Math.abs(lo.y - rail) < 7;
     if (lo.onRail) {
       lo.y = rail; lo.vy = 0;
-      pushLore(lo, dt);
+      const want = pushLore(lo, dt);
       const rl = railAt(lo.x - 6), rr = railAt(lo.x + 6);
       if (rl >= 0 && rr >= 0) lo.vx += (rr - rl) * 26 * dt;     // Gefälle zieht an
-      lo.vx *= Math.exp(-0.35 * dt);                            // kaum Rollwiderstand
+      lo.vx *= Math.exp(-(lo.holder ? 6 : 0.35) * dt);          // festgehalten: kein Rollen
       if (Math.abs(lo.vx) < 0.6) lo.vx = 0;
+      lo.vx = clamp(lo.vx, -150, 150);
       // dem Gleis folgen; endet es, rollt die Lore normal weiter
-      let m = Math.abs(lo.vx * dt), dir = Math.sign(lo.vx);
+      let m = want !== null ? Math.abs(want) : Math.abs(lo.vx * dt);
+      let dir = want !== null ? Math.sign(want) : Math.sign(lo.vx);
       while (m > 0) {
         const step = Math.min(1, m); m -= step;
         const nx = lo.x + dir * step;
@@ -2061,6 +2104,7 @@ function updateLores(dt) {
         if (ny < 0 || Math.abs(ny - lo.y) > 6) { lo.onRail = false; break; }
         lo.x = nx; lo.y = ny;
       }
+      holdHolder(lo);
       loreWork(lo, dt);
       continue;
     }
@@ -2076,18 +2120,21 @@ function updateLores(dt) {
         const home = players[lo.team];
         lo.x = home.base.x + (lo.team === 0 ? 44 : -44); lo.y = home.base.y - 1;
         lo.vx = 0; lo.vy = 0; lo.load = {};
+        if (lo.holder) releaseLore(lo.holder);
       }
     } else {
       const yl = probeDown(lo.x - 5, lo.y - 4), yr = probeDown(lo.x + 5, lo.y - 4);
       if (yl !== null && yr !== null) lo.vx += (yr - yl) * 30 * dt;
-      lo.vx *= Math.exp(-1.7 * dt);
+      lo.vx *= Math.exp(-(lo.holder ? 8 : 3) * dt);   // ohne Schiene bremst sie zügig
       if (Math.abs(lo.vx) < 1) lo.vx = 0;
+      lo.vx = clamp(lo.vx, -90, 90);                  // im Gelände rollt sie gemächlich
     }
 
-    pushLore(lo, dt);
+    const want = pushLore(lo, dt);
 
-    if (lo.vx) {
-      let m = Math.abs(lo.vx * dt), dir = Math.sign(lo.vx);
+    if (want !== null || lo.vx) {
+      let m = want !== null ? Math.abs(want) : Math.abs(lo.vx * dt);
+      let dir = want !== null ? Math.sign(want) : Math.sign(lo.vx);
       while (m > 0) {
         const step = Math.min(1, m); m -= step;
         const nx = lo.x + dir * step;
@@ -2104,6 +2151,7 @@ function updateLores(dt) {
         if (d > 0 && d <= 5) lo.y += d;
       }
     }
+    holdHolder(lo);
 
     loreWork(lo, dt);
   }
@@ -2114,23 +2162,85 @@ function loreAdd(lo, key, n = 1) {
   lo.load = lo.load || {};
   lo.load[key] = (lo.load[key] || 0) + n;
 }
-// Anschieben durch Clonks + Zeug aus der Hand einladen
+// ---- Anfassen & Schieben (wie im Original) ---------------------------------
+// Im Clonk-Objektpaket ist die Lore ein Fahrzeug, das man ANFASST und dann im
+// eigenen Lauftempo schiebt oder zieht – sie wird nicht angestoßen und saust
+// davon. Genau so hier: Benutzen-Taste am Wagen greift zu (✋), die Lore hängt
+// dann starr am Clonk. Wer einfach dagegenläuft, schiebt sie ebenfalls – nur
+// eben gemächlich und nicht schneller, als er selbst laufen kann.
+const PUSH_WALK = 0.5;    // Schiebetempo (Anteil vom Lauftempo) im Gelände
+const PUSH_RAIL = 0.78;   // auf Schienen läuft sie leichter
+function loreSpeed(lo) {
+  const load = clamp(loreCount(lo) / LORE_MAX, 0, 1);
+  return WALK * (lo.onRail ? PUSH_RAIL : PUSH_WALK) * (1 - 0.3 * load);
+}
+// Lore in Griffweite (zum Anfassen bzw. zum Anschieben in Laufrichtung)
+function loreNear(c, dir) {
+  for (const lo of lores) {
+    if (Math.abs(lo.x - c.x) > 15 || Math.abs(lo.y - c.y) > 16) continue;
+    if (dir && Math.sign(lo.x - c.x || dir) !== dir) continue;
+    return lo;
+  }
+  return null;
+}
+// die Lore, die dieser Clonk gerade bewegt (angefasst oder angeschoben)
+function loreMoved(c, dirIn) {
+  if (c.grab) return c.grab;
+  return dirIn ? loreNear(c, dirIn) : null;
+}
+function grabLore(c, lo) {
+  if (lo.holder && lo.holder !== c) return false;
+  c.grab = lo; lo.holder = c; lo.grabOff = lo.x - c.x;
+  addFloat(c.x, c.y - PH - 8, '✋ Lore', '#ffd166');
+  sfxAt('lore', lo.x, lo.y, 0.7);
+  return true;
+}
+function releaseLore(c) {
+  if (!c.grab) return;
+  if (c.grab.holder === c) c.grab.holder = null;
+  c.grab = null;
+}
+// Angefasste Lore: der Clonk bleibt am Wagen kleben (blockiert der Wagen,
+// kommt auch der Clonk nicht weiter)
+function holdHolder(lo) {
+  const h = lo.holder;
+  if (!h) return;
+  const want = lo.x - lo.grabOff;
+  if (Math.abs(want - h.x) < 0.5) return;
+  if (bodyBlocked(Math.round(want), Math.round(h.y))) return;
+  h.x = want;
+}
+// Rückgabe: gewünschter Weg in Pixeln (angefasst) oder null (freies Rollen)
 function pushLore(lo, dt) {
+  let want = null;
   for (const c of allClonks()) {
     if (c.state === 'dead') continue;
     const dx = lo.x - c.x;
-    if (Math.abs(dx) < 17 && Math.abs(lo.y - c.y) < 16) {
-      const dirIn = (cIn(c, 'right') ? 1 : 0) - (cIn(c, 'left') ? 1 : 0);
-      if (dirIn && Math.sign(dx) === dirIn) lo.vx = dirIn * (lo.onRail ? 96 : 62);
-      // Alles aus der Hand wandert in die Lore (Feuersteine behält der Clonk)
-      let moved = 0;
-      for (const g of GOODS) {
-        if (g.key === 'flint' || g.key === 'loam' || g.key === 'rail') continue;
-        while (c[g.field] > 0 && loreCount(lo) < LORE_MAX) { c[g.field]--; loreAdd(lo, g.key); moved++; }
-      }
-      if (moved) addFloat(lo.x, lo.y - 16, `+${moved} 🛒`, '#ffd166');
+    const holding = lo.holder === c;
+    if (!holding && (Math.abs(dx) >= 17 || Math.abs(lo.y - c.y) >= 16)) continue;
+    const dirIn = (cIn(c, 'right') ? 1 : 0) - (cIn(c, 'left') ? 1 : 0);
+    const spd = loreSpeed(lo);
+    const carry = dirIn * spd * (lo.onRail ? 0.8 : 0.2);   // Schwung beim Loslassen
+    if (holding) {
+      // starr am Clonk: schieben UND ziehen, gehalten bleibt gehalten
+      want = clamp((c.x + lo.grabOff) - lo.x, -spd * dt, spd * dt);
+      lo.vx = carry;
+    } else if (dirIn && Math.sign(dx) === dirIn) {
+      // Anschieben: der Wagen läuft genau im Tempo des Clonks vor ihm her –
+      // er rutscht nicht zurück und saust auch nicht davon
+      const w = clamp((c.x + dirIn * 12) - lo.x, -spd * dt, spd * dt);
+      want = Math.sign(w) === dirIn ? w : 0;               // nur schieben, nicht ziehen
+      lo.vx = carry;
     }
+    // Alles aus der Hand wandert in die Lore (Feuersteine behält der Clonk)
+    let moved = 0;
+    for (const g of GOODS) {
+      if (g.key === 'flint' || g.key === 'loam' || g.key === 'rail') continue;
+      while (c[g.field] > 0 && loreCount(lo) < LORE_MAX) { c[g.field]--; loreAdd(lo, g.key); moved++; }
+    }
+    if (moved) addFloat(lo.x, lo.y - 16, `+${moved} 🛒`, '#ffd166');
   }
+  return want;
 }
 // Herumliegendes einsammeln + an der eigenen Hütte abkippen
 function loreWork(lo, dt) {
@@ -2577,6 +2687,7 @@ function applyLoad(s) {
   });
   rails = new Map(s.rails || []);
   items = (s.items || []).map((i) => ({ type: i.t, x: i.x, y: i.y, vx: 0, vy: 0, buried: !!i.bu }));
+  for (const c of allClonks()) c.grab = null;
   lores = (s.lores || []).map((l, i) => ({ team: l.team ?? (i < 2 ? i : 0), x: l.x, y: l.y, vx: 0, vy: 0, load: l.load || {} }));
   if (!lores.length) players.forEach((p) => addLore(p));
   (s.elevators || []).forEach((e, i) => { if (elevators[i]) Object.assign(elevators[i], { x: e.x, y: e.y, topY: e.topY, acc: 0 }); });
@@ -3024,10 +3135,10 @@ function drawElevator(el) {
   // Förderturm: Beine, Streben, Seilrad
   ctx.strokeStyle = '#5a4632'; ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(-11, 0); ctx.lineTo(0, -34);
-  ctx.moveTo(11, 0); ctx.lineTo(0, -34);
-  ctx.moveTo(-7.5, -11); ctx.lineTo(7.5, -11);
-  ctx.moveTo(-4.5, -21); ctx.lineTo(4.5, -21);
+  ctx.moveTo(-CASE_HW - 2, 0); ctx.lineTo(0, -34);
+  ctx.moveTo(CASE_HW + 2, 0); ctx.lineTo(0, -34);
+  ctx.moveTo(-9.5, -11); ctx.lineTo(9.5, -11);
+  ctx.moveTo(-5.5, -21); ctx.lineTo(5.5, -21);
   ctx.stroke();
   ctx.fillStyle = '#39424b';
   ctx.beginPath(); ctx.arc(0, -35, 4.4, 0, Math.PI * 2); ctx.fill();
@@ -3042,8 +3153,10 @@ function drawElevator(el) {
   // Korb-Geländer (die Plattform selbst liegt als Material in der Maske)
   ctx.strokeStyle = '#4c4c56'; ctx.lineWidth = 1.6;
   ctx.beginPath();
-  ctx.moveTo(el.x - CASE_HW, el.y + 1); ctx.lineTo(el.x - CASE_HW, el.y - 9);
-  ctx.moveTo(el.x + CASE_HW, el.y + 1); ctx.lineTo(el.x + CASE_HW, el.y - 9);
+  ctx.moveTo(el.x - CASE_HW, el.y + 1); ctx.lineTo(el.x - CASE_HW, el.y - 11);
+  ctx.moveTo(el.x + CASE_HW, el.y + 1); ctx.lineTo(el.x + CASE_HW, el.y - 11);
+  ctx.moveTo(el.x - CASE_HW, el.y - 11); ctx.lineTo(el.x - CASE_HW + 4, el.y - 11);
+  ctx.moveTo(el.x + CASE_HW, el.y - 11); ctx.lineTo(el.x + CASE_HW - 4, el.y - 11);
   ctx.stroke();
 }
 
@@ -3549,6 +3662,7 @@ window.__clonk = {
   GOODS, SLOTS, invCount, invFree, have, takeRes, giveRes, stockTake, stockPutAll,
   loreCount, loreAdd,
   railAt, addLore, fish: () => fish, rails: () => rails, setMat, surfaceY, chunks: () => chunks,
+  grabLore, releaseLore, loreNear, loreSpeed, caseIntent, CASE_HW, WALK,
   CHK, spawnFauna, tendWorld, get worldSeed() { return worldSeed; },
   players: () => players, allClonks, items: () => items, projectiles: () => projectiles,
   lores: () => lores, elevators: () => elevators, onElevatorCase,

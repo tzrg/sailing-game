@@ -694,6 +694,48 @@ try {
   check('Lore kippt ab: Gold in die Kasse, Rest ins Lager',
     r.cargo === 0 && r.score === 3 && r.stockCoal >= 3, JSON.stringify(r));
 
+  // ---- Schiebetempo: die Lore läuft im Lauftempo des Clonks vor ihm her
+  // (früher schoss sie davon und man musste hinterherrennen)
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42); C.game.paused = true;
+    const lo = C.lores()[0], p = C.players()[0];
+    lo.x = x; lo.y = C.groundY()[x] - 1; lo.vx = 0; lo.load = {};
+    p.x = x - 10; p.y = C.groundY()[x - 10] - 1; p.state = 'walk';
+    C.pressed.add('d');
+    let maxGap = 0;
+    const x0 = lo.x;
+    for (let i = 0; i < 90; i++) { C.update(0.016); maxGap = Math.max(maxGap, Math.abs(lo.x - p.x)); }
+    C.pressed.delete('d');
+    const speed = (lo.x - x0) / (90 * 0.016 * C.GAME_SPEED);
+    return { speed, maxGap, walk: C.WALK, loreSpeed: C.loreSpeed(lo) };
+  }, dryA);
+  check('Die Lore rollt gemächlich statt davonzuschießen',
+    r.speed > 8 && r.speed <= r.walk * 0.62, JSON.stringify(r));
+  check('Der Clonk bleibt beim Schieben am Wagen', r.maxGap < 18, JSON.stringify(r));
+
+  // ---- Anfassen wie im Original: Benutzen-Taste greift zu, man kann ziehen
+  r = await page.evaluate((x) => {
+    const C = window.__clonk;
+    C.startGame(42); C.game.paused = true;
+    const lo = C.lores()[0], p = C.players()[0];
+    lo.x = x; lo.y = C.groundY()[x] - 1; lo.vx = 0;
+    p.x = x - 10; p.y = C.groundY()[x - 10] - 1; p.state = 'walk';
+    C.pressed.add('e'); C.update(0.016); C.pressed.delete('e');
+    const grabbed = p.grab === lo && lo.holder === p;
+    const x0 = lo.x;
+    C.pressed.add('a');
+    for (let i = 0; i < 60; i++) C.update(0.016);
+    C.pressed.delete('a');
+    const pulled = lo.x - x0, gap = lo.x - p.x;
+    C.pressed.add('e'); C.update(0.016); C.pressed.delete('e');
+    return { grabbed, pulled, gap, released: !p.grab && !lo.holder };
+  }, dryB);
+  check('✋ Benutzen-Taste fasst die Lore an', r.grabbed, JSON.stringify(r));
+  check('Angefasst lässt sich die Lore auch ziehen', r.pulled < -6 && Math.abs(r.gap - 10) < 4,
+    JSON.stringify(r));
+  check('Benutzen-Taste lässt die Lore wieder los', r.released, JSON.stringify(r));
+
   // ---- Grubenlift: Korb ist begehbar, bohrt nach unten, fährt wieder hoch
   r = await page.evaluate(() => {
     const C = window.__clonk, M = C.MAT;
@@ -1154,6 +1196,43 @@ try {
     return { drilled: C.elevators()[0].y - y0 };
   }, r.y0);
   check('Joystick nach unten bohrt auf dem Aufzugskorb', r.drilled > 15, JSON.stringify(r));
+
+  // Schräg nach unten am Joystick zählt für den Lift auch als "runter"
+  // (mit dem Daumen trifft man selten senkrecht)
+  r = await page.evaluate(() => {
+    const C = window.__clonk;
+    C.startGame(42); C.game.paused = true;
+    const el = C.elevators()[0], p = C.players()[0];
+    p.x = el.x; p.y = el.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    C.joys[0].dx = 0.4; C.joys[0].dy = 1;          // Daumen leicht seitlich
+    const intent = C.caseIntent(p);
+    const y0 = el.y, px0 = p.x;
+    for (let i = 0; i < 120; i++) C.update(0.016);
+    C.joys[0].dx = 0; C.joys[0].dy = 0;
+    return { intent, drilled: el.y - y0, drift: Math.abs(p.x - px0), riding: C.onElevatorCase(p) };
+  });
+  check('Leicht schräger Joystick bohrt trotzdem mit dem Lift',
+    r.intent === 1 && r.drilled > 10, JSON.stringify(r));
+  check('Beim Liftbedienen bleibt der Clonk im Korb', r.drift < 3 && r.riding, JSON.stringify(r));
+
+  // ---- Der Korb ist breit genug für die Lore und nimmt sie mit
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42); C.game.paused = true;
+    const el = C.elevators()[0], lo = C.lores()[0], p = C.players()[0];
+    lo.x = el.x; lo.y = el.y - 1; lo.vx = 0;
+    p.x = el.x - 5; p.y = el.y - 1; p.state = 'walk'; p.vx = 0; p.vy = 0;
+    // Korbbreite: links und rechts der Lore liegt Plattform
+    const wide = C.matAt(el.x - 6, el.y) === M.PLATFORM && C.matAt(el.x + 6, el.y) === M.PLATFORM;
+    const y0 = el.y, ly0 = lo.y;
+    C.pressed.add('s');
+    for (let i = 0; i < 150; i++) C.update(0.016);
+    C.pressed.delete('s');
+    return { hw: C.CASE_HW, wide, drilled: el.y - y0, loreDown: lo.y - ly0, onCase: Math.abs(lo.y - el.y) <= 2 };
+  });
+  check('Der Aufzugskorb ist breit genug für die Lore', r.hw >= 11 && r.wide, JSON.stringify(r));
+  check('Die Lore fährt auf dem Korb mit in die Tiefe',
+    r.drilled > 40 && r.loreDown >= r.drilled - 2 && r.onCase, JSON.stringify(r));
 
   // ---- Nach oben graben geht NICHT (wie im Original – nur Brücke/Klettern/Lift)
   r = await page.evaluate((x) => {

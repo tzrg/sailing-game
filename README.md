@@ -168,7 +168,13 @@ Docker-Container deployt.
   ihre Kreise und **🐟 Fische** schwimmen im See (und weichen Clonks
   aus). Wie im Original trägt ein Clonk nur **4 Stücke** – ist die Hand
   voll, bleibt alles Weitere **liegen**. Die **🛒 Lore** (24 Plätze, alle
-  Güterarten) ist das Transportmittel: anschieben, Liegengebliebenes
+  Güterarten) ist das Transportmittel und wie im Original ein **Fahrzeug
+  zum Anfassen**: die Benutzen-Taste am Wagen greift zu (✋), dann hängt
+  die Lore starr am Clonk und lässt sich **schieben und ziehen** (auch
+  bergauf), nochmal drücken lässt los. Dagegenlaufen schiebt sie
+  ebenfalls – in beiden Fällen läuft sie **im Lauftempo des Clonks** vor
+  ihm her (volle Lore bremst, auf Schienen rollt sie leichter), statt
+  wie früher davonzuschießen. Dazu Liegengebliebenes
   aufsammeln lassen, Zeug hineinwerfen oder von oben hineinfallen
   lassen; an der Hütte kippt sie ab – Gold in die Kasse, der Rest ins
   **📦 Basis-Lager**, aus dem Werke und Handel schöpfen (und aus dem man
@@ -219,11 +225,14 @@ Docker-Container deployt.
   bringt es heim, sprengt Felsadern frei, kauft nach und wirft auch mal
   einen Feuerstein.
   Jedes Team hat außerdem einen **🏗 Grubenlift** (Förderturm wie im
-  Clonk-Objektpaket): der Stahlkorb ist begehbare Plattform (auch für
-  die Lore), **bohrt** auf ⛏️/↓ den Schacht nach unten (durch Fels nur
+  Clonk-Objektpaket): der **breite Stahlkorb** (25 px) ist begehbare
+  Plattform und nimmt die Lore bequem mit, **bohrt** auf ⛏️/↓ den Schacht
+  nach unten (durch Fels nur
   langsam, Granit stoppt ihn), fährt auf ⤒ zurück nach oben und schaufelt
   dabei nachgerieselten Sand beiseite; erbohrtes Gold und Kohle fällt
-  direkt in den Korb. Wer zuerst das Spielziel erreicht (5/8/12 Gold)
+  direkt in den Korb. Am Joystick genügt *ungefähr* hoch/runter
+  (senkrecht schlägt seitlich), und wer den Lift bedient, bleibt dabei im
+  Korb stehen statt von der Plattform zu laufen. Wer zuerst das Spielziel erreicht (5/8/12 Gold)
   oder nach 5 Minuten vorne liegt, gewinnt.
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
@@ -416,7 +425,7 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
-- **`test/clonk.test.mjs`** – Klonk (151 Checks) über den Test-Hook
+- **`test/clonk.test.mjs`** – Klonk (160 Checks) über den Test-Hook
   `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/
   Granit/Erz/Grundgestein), Welttiefe, Granit-Sprengfestigkeit,
   alle Produktionsrezepte (Hochofen, Sägewerk, Schienenschmiede,
@@ -425,7 +434,9 @@ railway.json
   Gold frei, Einsammeln/Abliefern/Sieg, K. o./Respawn samt
   Mannschafts-Übergabe, Klettern, Hangeln, Schwimmen/Atem,
   Lava-Verbrennung, Lava+Wasser=Stein, rieselnder Sand, Lehmbrücken,
-  Lore, Grubenlift (begehbarer Korb, bohren/hochfahren, explosionsfest),
+  Lore (Schiebetempo, Anfassen/Ziehen/Loslassen), Grubenlift (begehbarer
+  Korb, bohren/hochfahren, explosionsfest, breit genug für die Lore,
+  Joystick-Schrägbedienung),
   Chemiefabrik-Rezepte (Kohle/Holz/Gold), Baum→Holz, Wipfe,
   Katastrophen (Meteor/Erdbeben/Regen), Vulkane (Warnphase, wachsender
   Kegel mit Krater, überlaufende Lava, Ende des Ausbruchs), Ton
