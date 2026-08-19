@@ -46,7 +46,7 @@ function chunkOf(cx, cy) {
   const key = ckey(cx, cy);
   if (key === _lastKey && _lastChunk) return _lastChunk;
   let ch = chunks.get(key);
-  if (!ch) { ch = genChunk(cx, cy); chunks.set(key, ch); }
+  if (!ch) { ch = genChunk(cx, cy); chunks.set(key, ch); settleChunk(ch); }
   _lastKey = key; _lastChunk = ch;
   return ch;
 }
@@ -135,9 +135,11 @@ function surfaceY(x) {
     + (noise1(x, 520, 1) - 0.5) * 200
     + (noise1(x, 170, 2) - 0.5) * 90
     + (noise1(x, 48, 3) - 0.5) * 26;
-  // Heimatregion: eine Senke in der Mitte (der Teich mit den Fischen)
+  // Heimatregion: eine Senke in der Mitte (der Teich mit den Fischen) –
+  // mit leicht erhöhtem Ufer ringsum, damit das Becken sicher dicht ist
   const dPond = Math.abs(x - WORLD_W / 2);
   if (dPond < 110) { const t = 1 - (dPond / 110) ** 2; h += 52 * t * t; }
+  else if (dPond < 160) h -= 18 * Math.sin(((dPond - 110) / 50) * Math.PI);
   // Heimatregion: Plateaus für die beiden Hütten
   for (const bx of BASE_X) {
     const d = Math.abs(x - bx);
@@ -312,6 +314,23 @@ function genChunk(cx, cy) {
   });
   return ch;
 }
+// Sicherheitsnetz: frisch erzeugte Chunks bekommen ihre losen Flüssigkeits-
+// und Sandzellen geweckt (alles, was Luft unter oder neben sich hat). Ein
+// ordentlich gefüllter See rührt sich dabei nicht – aber nichts bleibt in der
+// Luft stehen. Es werden nur Nachbarn IM Chunk geprüft, damit das Erzeugen
+// eines Chunks nicht die Nachbarchunks nach sich zieht.
+function settleChunk(ch) {
+  const m = ch.mat, bx = ch.cx * CHK, by = ch.cy * CHK;
+  for (let ly = 0; ly < CHK - 1; ly++) {
+    for (let lx = 1; lx < CHK - 1; lx++) {
+      const v = m[(ly << 7) | lx];
+      if (!isGrain(v)) continue;
+      const below = m[((ly + 1) << 7) | lx];
+      const l = m[(ly << 7) | (lx - 1)], r = m[(ly << 7) | (lx + 1)];
+      if (isFree(below) || (v !== MAT.SAND && (isFree(l) || isFree(r)))) wake(bx + lx, by + ly);
+    }
+  }
+}
 // Seen-Definition für einen x-Bereich (deterministisch, ohne Chunk-Grenzen)
 function lakesNear(xa, xb, cb) {
   const s0 = Math.floor(xa / 512) - 1, s1 = Math.floor(xb / 512) + 1;
@@ -327,11 +346,18 @@ function lakesNear(xa, xb, cb) {
       const y = surfaceY(Math.round(x));
       if (y > bestY) { bestY = y; bestX = Math.round(x); }
     }
-    const level = bestY - 24 - r() * 26;
-    // Ufer: so weit, wie das Gelände unter dem Spiegel liegt
-    let x0 = bestX, x1 = bestX;
-    while (x0 > bestX - 200 && surfaceY(x0 - 1) > level) x0--;
-    while (x1 < bestX + 200 && surfaceY(x1 + 1) > level) x1++;
+    // Wasserspiegel so tief legen, dass das Becken beidseits geschlossen ist –
+    // sonst stünde am Uferende eine Wand aus Wasser in der Luft
+    const REACH = 300;              // so weit darf ein Ufer höchstens weg sein
+    let level = bestY - 24 - r() * 26;
+    let x0 = bestX, x1 = bestX, closed = false;
+    for (let tries = 0; tries < 16 && !closed; tries++, level += 4) {
+      x0 = bestX; x1 = bestX;
+      while (x0 > bestX - REACH && surfaceY(x0 - 1) > level) x0--;
+      while (x1 < bestX + REACH && surfaceY(x1 + 1) > level) x1++;
+      closed = surfaceY(x0 - 1) <= level && surfaceY(x1 + 1) <= level;
+    }
+    if (!closed) continue;          // offenes Gelände: hier hält kein See
     if (x1 - x0 < 40) continue;
     // die Heimatregion mit den Hütten bleibt trocken
     if (BASE_X.some((bx) => x1 > bx - 130 && x0 < bx + 130)) continue;

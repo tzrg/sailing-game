@@ -809,6 +809,41 @@ try {
   check('Wasser läuft zu einem ebenen Spiegel aus (keine Hügel)',
     r.n >= 15 && r.spread <= 2, JSON.stringify(r));
 
+  // ---- Erzeugte Seen liegen in geschlossenen Becken (kein Wasser in der Luft)
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    const bad = [];
+    let seen = 0;
+    for (const seed of [42, 7, 1234]) {
+      C.startGame(seed); C.game.paused = true;
+      for (let x = -2500; x < 2500; x++) {
+        const surf = C.surfaceY(x);
+        for (let y = surf - 140; y < surf + 30; y++) {
+          if (C.matAt(x, y) !== M.WATER) continue;
+          seen++;
+          const below = C.matAt(x, y + 1);
+          const l = C.matAt(x - 1, y), r2 = C.matAt(x + 1, y);
+          if (below === M.SKY || below === M.TUNNEL || l === M.SKY || r2 === M.SKY) {
+            if (bad.length < 5) bad.push({ seed, x, y });
+          }
+        }
+      }
+    }
+    return { bad, seen };
+  });
+  check('Seen stehen nicht in der Luft (Ufer sind geschlossen)',
+    r.seen > 3000 && r.bad.length === 0, JSON.stringify(r));
+
+  // In der Heimatregion gibt es weiter den Teich mit den Fischen
+  r = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    C.startGame(42); C.game.paused = true;
+    let px = 0;
+    for (let x = 0; x < C.WORLD_W; x++) for (let y = 100; y < 600; y++) if (C.matAt(x, y) === M.WATER) px++;
+    return { px };
+  });
+  check('Die Heimatregion behält ihren Teich', r.px > 800, JSON.stringify(r));
+
   // ---- Chemiefabrik-Rezepte: Kohle > Holz > Gold
   r = await page.evaluate(() => {
     const C = window.__clonk;

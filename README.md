@@ -141,7 +141,11 @@ Docker-Container deployt.
   Adern** (mäandernde Flöze mit Seitenarmen) und werden **nach unten
   immer fetter** – von kleinen Nestern dicht unter der Grasnarbe bis zu
   riesigen Mutterlagern im Granit. Dazu **⚫ Kohleflöze**, **🪨 Eisenerz**
-  (nur sprengbar), Sandtaschen, ein See, weite **Kavernen** als Baugrund
+  (nur sprengbar), Sandtaschen, **Seen** in echten Mulden (der Spiegel
+  wird beim Erzeugen so weit gesenkt, bis das Becken beidseits
+  geschlossen ist – sonst stünde am Ufer eine Wand aus Wasser in der
+  Luft; frisch erzeugte Chunks wecken außerdem alles, was Luft unter
+  oder neben sich hat), weite **Kavernen** als Baugrund
   für Stollen- und Lorenanlagen und **Lavaseen**; Wasser & Lava
   **fließen** (Zellautomat), Sand rieselt nach, und
   **Lava + Wasser = Stein**. Die Kamera zeigt die volle Kartenbreite und
@@ -412,7 +416,7 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
-- **`test/clonk.test.mjs`** – Klonk (149 Checks) über den Test-Hook
+- **`test/clonk.test.mjs`** – Klonk (151 Checks) über den Test-Hook
   `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/
   Granit/Erz/Grundgestein), Welttiefe, Granit-Sprengfestigkeit,
   alle Produktionsrezepte (Hochofen, Sägewerk, Schienenschmiede,
