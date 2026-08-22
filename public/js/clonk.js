@@ -1,6 +1,6 @@
 // Klonk · Goldrausch – Hommage an Clonk 4 / Clonk Planet (eigenständig umgesetzt).
 // Der volle Standard-Clonk-Baukasten: zerstörbares Pixel-Gelände mit Erde,
-// Fels, Granit, Gold, Kohle, Sand (rieselt), Wasser und Lava (fließen, Lava +
+// Fels, Gold, Kohle, Erz, Sand (rieselt), Wasser und Lava (fließen, Lava +
 // Wasser = Stein), Schwimmen/Tauchen mit Atem, Klettern, Hangeln an Decken,
 // Lehmbrücken, Bäume (fällbar/brennbar, geben Holz), Wipfe, Loren,
 // Chemiefabrik mit Rezepten, zwei Clonks pro Team mit Wechsel-Taste und
@@ -11,11 +11,13 @@
 import { Sfx } from './sfx.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-// Die Welt ist waagerecht UNENDLICH und wird in Chunks prozedural erzeugt;
-// senkrecht reicht sie von Himmel bis Grundgestein.
+// Die Welt ist in ALLE Richtungen unendlich und wird in Chunks prozedural
+// erzeugt: waagerecht endlos, nach unten ohne Boden – es gibt weder eine
+// Granitsohle noch Grundgestein, man kann also immer weiter in die Tiefe.
 const CHK = 128;                     // Chunk-Kantenlänge (Pixel)
-const WORLD_H = 2048;                // Welttiefe
-const CH_ROWS = WORLD_H / CHK;        // Chunk-Zeilen
+const WORLD_H = 2048;                // Bezugstiefe (Himmel, Kamera, Fauna) – KEIN Boden
+const MAX_Y = 1 << 20;               // technische Notbremse (~1 Mio. px tief)
+const DEEP_REF = 2600;               // ab dieser Tiefe sind Adern/Höhlen maximal fett
 const WORLD_W = 960;                 // Breite der "Heimatregion" (Hütten, Startgebiet)
 
 // ---- Materialien (Pixel-Maske) ---------------------------------------------
@@ -39,7 +41,9 @@ const isGrain = (m) => m === MAT.WATER || m === MAT.LAVA || m === MAT.SAND;
 let chunks = new Map();
 let worldSeed = 1;
 let goldSpots = [];          // bekannte Adern in der Nähe (für die KI)
-const ckey = (cx, cy) => cx * 64 + cy;
+// Chunk-Schlüssel: cy darf beliebig tief gehen (die Welt hat keinen Boden)
+const CKEY_ROWS = 65536;
+const ckey = (cx, cy) => cx * CKEY_ROWS + cy;
 
 let _lastKey = NaN, _lastChunk = null;
 function chunkOf(cx, cy) {
@@ -53,12 +57,12 @@ function chunkOf(cx, cy) {
 function matAt(x, y) {
   x |= 0; y |= 0;
   if (y < 0) return MAT.SKY;
-  if (y >= WORLD_H) return MAT.BEDROCK;
+  if (y >= MAX_Y) return MAT.BEDROCK;      // Notbremse, praktisch unerreichbar
   return chunkOf(x >> 7, y >> 7).mat[((y & 127) << 7) | (x & 127)];
 }
 function setMat(x, y, m) {
   x |= 0; y |= 0;
-  if (y < 0 || y >= WORLD_H) return;
+  if (y < 0 || y >= MAX_Y) return;
   const ch = chunkOf(x >> 7, y >> 7);
   ch.mat[((y & 127) << 7) | (x & 127)] = m;
   ch.dirty = true; ch.edited = true;
@@ -111,7 +115,6 @@ function homeX() {
   const p = players && players[0] && players[0].controlled;
   return p ? p.x : WORLD_W / 2;
 }
-const GRANIT_TOP = WORLD_H - 620;    // ab hier Granitbänder
 let trees = [];
 let wipfe = [];
 let birds = [];
@@ -155,7 +158,16 @@ function surfaceY(x) {
   return v;
 }
 const earthBottom = (x) => surfaceY(x) + 380 + (noise1(x, 260, 7) - 0.5) * 140;
-const granitTopAt = (x) => GRANIT_TOP + (noise1(x, 340, 8) - 0.5) * 70;
+// Unter der Erdzone wechseln sich Fels und Erdbänder ab: nach unten wird der
+// Fels dichter, aber es bleiben IMMER Bänder zum Weiterbuddeln – und ein Ende
+// gibt es nicht mehr (kein Granitboden, kein Grundgestein).
+const bandPhase = (x) => Math.sin(x * 0.011) * 0.35 + noise1(x, 620, 9) * 0.5;
+function deepBand(y, phase) {
+  const t = (y * 0.0051 + phase) % 1;
+  const u = t < 0 ? t + 1 : t;
+  return u < 0.5 ? u * 2 : 2 - u * 2;             // Dreieckswelle: weiche Schichten
+}
+const rockShare = (depth) => clamp(0.62 + depth / 16000, 0.62, 0.8);
 
 // Adern & Höhlen entstehen pro 128er-Region deterministisch; beim Füllen eines
 // Chunks werden auch die Nachbarregionen abgeklopft, damit nichts abreißt.
@@ -182,23 +194,24 @@ function veinsOfRegion(rx, ry, out) {
   for (let i = 0; i < n; i++) {
     const x = x0 + r() * VEIN_R, y = y0 + r() * VEIN_R;
     const depth = y - surfaceY(Math.round(x));
-    if (y >= WORLD_H - 40 || depth < 30) continue;
-    const deep = y > granitTopAt(x);
+    if (depth < 30) continue;
     const inRock = y > earthBottom(x);
     // Materialwahl: Gold überall, Kohle/Erz je nach Tiefe
     const pick = r();
     let mat, only;
-    if (pick < 0.45) { mat = MAT.GOLD; only = deep ? [MAT.ROCK, MAT.GRANIT] : inRock ? [MAT.ROCK, MAT.EARTH] : [MAT.EARTH]; }
-    else if (pick < 0.75) { mat = MAT.COAL; only = inRock ? [MAT.ROCK] : [MAT.EARTH]; }
-    else if (inRock) { mat = MAT.ORE; only = deep ? [MAT.ROCK, MAT.GRANIT] : [MAT.ROCK]; }
+    if (pick < 0.45) { mat = MAT.GOLD; only = inRock ? [MAT.ROCK, MAT.EARTH] : [MAT.EARTH]; }
+    else if (pick < 0.75) { mat = MAT.COAL; only = inRock ? [MAT.ROCK, MAT.EARTH] : [MAT.EARTH]; }
+    else if (inRock) { mat = MAT.ORE; only = [MAT.ROCK]; }
     else { mat = MAT.SAND; only = [MAT.EARTH]; }
-    // je tiefer, desto fetter
-    const t = clamp(depth / (WORLD_H - 200), 0, 1);
-    const len = 24 + t * 90 + r() * 40;
-    const thick = 3 + t * 10 + r() * 3;
+    // je tiefer, desto fetter – aber gedeckelt, sonst wäre die Tiefe eine
+    // reine Erzsuppe und der Berg zwischen den Adern verschwände
+    const t = clamp(depth / DEEP_REF, 0, 1);
+    if (t > 0.5 && r() < 0.35) continue;      // tief liegen die Adern weiter auseinander
+    const len = 30 + t * 45 + r() * 35;
+    const thick = 3.2 + t * 6 + r() * 3;
     out.push({
       x, y, mat, only, seed: r() * 1e9, len, thick,
-      branches: mat === MAT.SAND ? 0 : 1 + ((t * 3 + r()) | 0),
+      branches: mat === MAT.SAND ? 0 : 1 + ((t * 2 + r()) | 0),
       reach: len * 2.3 + thick + 6,           // maximaler Aktionsradius
     });
   }
@@ -208,10 +221,10 @@ function cavesOfRegion(rx, ry, out) {
   if (r() > 0.55) return;
   const x = rx * VEIN_R + r() * VEIN_R, y = ry * VEIN_R + r() * VEIN_R;
   const depth = y - surfaceY(Math.round(x));
-  if (depth < 60 || y >= WORLD_H - 30) return;
-  const t = clamp(depth / (WORLD_H - 200), 0, 1);
-  out.push({ x, y, r: 10 + t * 16 + r() * 8, wide: r() < 0.5, seed: r() * 1e9,
-    lava: y > GRANIT_TOP + 120 && r() < 0.5 });
+  if (depth < 60) return;
+  const t = clamp(depth / DEEP_REF, 0, 1);
+  out.push({ x, y, r: 10 + t * 9 + r() * 8, wide: r() < 0.5, seed: r() * 1e9,
+    lava: depth > 950 && r() < 0.5 });
 }
 
 // Ein Chunk erzeugen: Schichten, dann Adern/Höhlen der Umgebung einstanzen
@@ -220,16 +233,13 @@ function genChunk(cx, cy) {
   const bx = cx * CHK, by = cy * CHK;
   for (let lx = 0; lx < CHK; lx++) {
     const x = bx + lx;
-    const surf = surfaceY(x), eb = earthBottom(x), gt = granitTopAt(x);
+    const surf = surfaceY(x), eb = earthBottom(x), ph = bandPhase(x);
     for (let ly = 0; ly < CHK; ly++) {
       const y = by + ly;
       let m;
       if (y < surf) m = MAT.SKY;
-      else if (y >= WORLD_H - 6) m = MAT.BEDROCK;
-      else if (y >= gt) {
-        const band = Math.sin(y * 0.06 + Math.sin(x * 0.02) * 1.6);
-        m = band > -0.35 ? MAT.GRANIT : MAT.ROCK;
-      } else m = y >= eb ? MAT.ROCK : MAT.EARTH;
+      else if (y < eb) m = MAT.EARTH;                 // Erdzone: reines Schaufelrevier
+      else m = deepBand(y, ph) < rockShare(y - surf) ? MAT.ROCK : MAT.EARTH;
       mat[(ly << 7) | lx] = m;
     }
   }
@@ -239,7 +249,7 @@ function genChunk(cx, cy) {
   const put = (x, y, m, only) => {
     const lx = x - bx, ly = y - by;
     if (lx < 0 || lx >= CHK || ly < 0 || ly >= CHK) return;
-    if (y >= WORLD_H - 6) return;
+    if (y >= MAX_Y) return;
     const i = (ly << 7) | lx;
     if (only && !only.includes(mat[i])) return;
     mat[i] = m;
@@ -262,7 +272,7 @@ function genChunk(cx, cy) {
       a += (r() - 0.5) * 0.55;
       a = Math.atan2(Math.sin(a) * 0.72, Math.cos(a));   // eher waagerecht
       x += Math.cos(a) * 2.2; y += Math.sin(a) * 1.5;
-      if (y < 40 || y > WORLD_H - 20) break;
+      if (y < 40 || y > MAX_Y - 20) break;
       const t = i / v.len;
       const rad = Math.max(2, v.thick * (0.55 + Math.sin(t * Math.PI) * 0.9) * (0.75 + r() * 0.5));
       if (x > bx - rad - 1 && x < bx + CHK + rad + 1 && y > by - rad - 1 && y < by + CHK + rad + 1) {
@@ -278,7 +288,7 @@ function genChunk(cx, cy) {
       for (let i = 0; i < len2; i++) {
         a2 += (r() - 0.5) * 0.6;
         x2 += Math.cos(a2) * 2.2; y2 += Math.sin(a2) * 1.5;
-        if (y2 < 40 || y2 > WORLD_H - 20) break;
+        if (y2 < 40 || y2 > MAX_Y - 20) break;
         const rad2 = Math.max(2, v.thick * 0.7 * (0.6 + r() * 0.6));
         if (x2 > bx - rad2 - 1 && x2 < bx + CHK + rad2 + 1 && y2 > by - rad2 - 1 && y2 < by + CHK + rad2 + 1) {
           blob(x2, y2, rad2, v.mat, v.only);
@@ -467,7 +477,7 @@ function paintDirty(x, y) {
 function applyRegion(x, y, w, h) {
   for (let cy = (y - 2) >> 7; cy <= (y + h + 2) >> 7; cy++) {
     for (let cx = (x - 2) >> 7; cx <= (x + w + 2) >> 7; cx++) {
-      if (cy < 0 || cy >= CH_ROWS) continue;
+      if (cy < 0) continue;
       chunkOf(cx, cy).dirty = true;
     }
   }
@@ -475,7 +485,7 @@ function applyRegion(x, y, w, h) {
 // setzt Material in ein Rechteck (Lehmbrücke) – nur in freie/flüssige Zellen
 function fillMat(x0, y0, w, h, mat) {
   for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
-    if (y < 1 || y >= WORLD_H - 1) continue;
+    if (y < 1 || y >= MAX_Y - 1) continue;
     const m = matAt(x, y);
     if (isFree(m) || m === MAT.WATER) setMat(x, y, mat);
   }
@@ -491,7 +501,7 @@ function carveCircle(cx, cy, r, breakRock) {
   let gold = 0, coal = 0, ore = 0;
   const r2 = r * r;
   for (let y = cy - r; y <= cy + r; y++) {
-    if (y < 0 || y >= WORLD_H) continue;
+    if (y < 0 || y >= MAX_Y) continue;
     for (let x = cx - r; x <= cx + r; x++) {
       if ((x - cx) ** 2 + (y - cy) ** 2 > r2) continue;
       const m = matAt(x, y);
@@ -524,13 +534,15 @@ let active = [];
 let activeSet = new Set();
 let simTick = 0;
 const SPREAD = 8;   // Reichweite des Druckausgleichs für Flüssigkeiten
-const pack = (x, y) => x * 4096 + y;
-const unpackX = (k) => Math.floor(k / 4096);
-const unpackY = (k) => k - Math.floor(k / 4096) * 4096;
+// Schlüssel für aktive Zellen – y darf beliebig tief liegen
+const PACK_Y = 1 << 21;
+const pack = (x, y) => x * PACK_Y + y;
+const unpackX = (k) => Math.floor(k / PACK_Y);
+const unpackY = (k) => k - Math.floor(k / PACK_Y) * PACK_Y;
 
 function wake(x, y) {
   x |= 0; y |= 0;
-  if (y < 0 || y >= WORLD_H) return;
+  if (y < 0 || y >= MAX_Y) return;
   if (!isGrain(matAt(x, y))) return;
   const k = pack(x, y);
   if (activeSet.has(k)) return;
@@ -551,7 +563,7 @@ function tryFlow(x, y, m) {
   if (liquid) moves.push([par, 0], [-par, 0]);
   for (const [ox, oy] of moves) {
     const jx = x + ox, jy = y + oy;
-    if (jy >= WORLD_H) continue;
+    if (jy >= MAX_Y) continue;
     const mj = matAt(jx, jy);
     if (opposing !== -1 && mj === opposing) { quench(jx, jy); setMat(x, y, bgMat(x, y)); return true; }
     if (!isFree(mj)) continue;
@@ -831,8 +843,9 @@ function tendWorld() {
   // Speicher zügeln: Chunk-Bilder weit weg freigeben, unveränderte Chunks
   // ganz verwerfen (sie wachsen aus dem Seed identisch nach)
   const keepCx = Math.floor(hx / CHK);
+  const keepCy = Math.floor(cam.y / CHK);      // in der Tiefe genauso aufräumen
   for (const [key, ch] of chunks) {
-    const d = Math.abs(ch.cx - keepCx);
+    const d = Math.max(Math.abs(ch.cx - keepCx), Math.abs(ch.cy - keepCy));
     if (d > 8 && ch.canvas) { ch.canvas = null; ch.ctx = null; ch.img = null; ch.dirty = true; }
     if (d > 16 && !ch.edited) {
       chunks.delete(key);
@@ -1316,7 +1329,7 @@ function moveAir(p, dt) {
       if (sy < 0 && rowCount(Math.round(p.x), Math.round(ny) - PH + 1 + HEAD_CLEAR) >= SUPPORT_MIN) p.vy = 0;
       else p.y = ny;
     }
-    if (p.y > WORLD_H + 20) { hurt(p, 999, null); return; }
+    if (p.y > MAX_Y - 40) { hurt(p, 999, null); return; }
   }
 }
 function moveSwim(p, dt) {
@@ -1712,7 +1725,7 @@ function updateProjectiles(dt) {
         if (dx * dx + dy * dy < 10 * 10) { boom(f); break; }
       }
     }
-    if (f.y > WORLD_H + 10) f.dead = true;
+    if (f.y > MAX_Y - 40) f.dead = true;
   }
   projectiles = projectiles.filter((f) => !f.dead);
 }
@@ -1969,17 +1982,23 @@ function writeCase(el) {
 }
 function moveCase(el, dir) {
   if (dir > 0) {
-    // Zeile unter dem Korb wegbohren (Granit blockiert)
+    // Zeile unter dem Korb wegbohren – der Bohrer schafft alles, was der
+    // Berg hergibt (nur uralter Granit aus alten Ständen stoppt ihn)
     let gold = 0, coal = 0;
     let ore = 0;
     for (let xx = el.x - CASE_HW - 1; xx <= el.x + CASE_HW + 1; xx++) {
       const m = matAt(xx, el.y + 3);
-      if (m === MAT.GRANIT || m === MAT.BEDROCK || m === MAT.ORE) return false;   // zu hart für den Bohrer
+      if (m === MAT.GRANIT || m === MAT.BEDROCK) return false;   // zu hart für den Bohrer
       if (m === MAT.GOLD) gold++;
       if (m === MAT.COAL) coal++;
+      if (m === MAT.ORE) ore++;
       if (!isFree(m) && m !== MAT.PLATFORM) setMat(xx, el.y + 3, bgMat(xx, el.y + 3));
     }
-    el.goldPix += gold; el.coalPix += coal;
+    el.goldPix += gold; el.coalPix += coal; el.orePix = (el.orePix || 0) + ore;
+    while (el.orePix >= ORE_PER_CHUNK) {
+      el.orePix -= ORE_PER_CHUNK;
+      items.push({ type: 'ore', x: el.x + rng() * 10 - 5, y: el.y - 3, vx: 0, vy: -20 });
+    }
     while (el.goldPix >= GOLD_PER_NUGGET) {
       el.goldPix -= GOLD_PER_NUGGET;
       items.push({ type: 'nugget', x: el.x + rng() * 10 - 5, y: el.y - 3, vx: 0, vy: -20 });
@@ -2050,9 +2069,9 @@ function updateElevators(dt) {
     }
     if (move === 1) {
       for (let xx = el.x - CASE_HW; xx <= el.x + CASE_HW; xx++) {
-        if (matAt(xx, el.y + 3) === MAT.ROCK) { rockBelow = true; break; }
+        const mb = matAt(xx, el.y + 3);
+        if (mb === MAT.ROCK || mb === MAT.ORE) { rockBelow = true; break; }   // hartes Zeug: langsam
       }
-      if (el.y + 6 >= WORLD_H - 8) move = 0;                 // Grundgestein erreicht
     }
     if (!move) { el.acc = 0; continue; }
     running++; near = Math.max(near, sfxVol(el.x, el.y));
@@ -2116,7 +2135,7 @@ function updateLores(dt) {
         while (solid(lo.x - 5, lo.y) || solid(lo.x + 5, lo.y)) lo.y--;
         lo.vy = 0;
       }
-      if (lo.y > WORLD_H + 30) {
+      if (lo.y > MAX_Y - 40) {
         const home = players[lo.team];
         lo.x = home.base.x + (lo.team === 0 ? 44 : -44); lo.y = home.base.y - 1;
         lo.vx = 0; lo.vy = 0; lo.load = {};
@@ -2314,7 +2333,7 @@ function updateFish(dt) {
       // an Land gelandet: zurück ins Wasser zappeln
       f.vy = Math.min(200, (f.vy || 0) + 300 * dt);
       f.y += f.vy * dt;
-      if (matAt(f.x, f.y) === MAT.LAVA || f.y > WORLD_H) { f.dead = true; }
+      if (matAt(f.x, f.y) === MAT.LAVA || f.y > MAX_Y - 40) { f.dead = true; }
       if (matAt(f.x, f.y) === MAT.WATER) f.vy = 0;
       continue;
     }
@@ -2408,7 +2427,7 @@ function updateItems(dt) {
       while (solid(it.x, it.y + 1)) it.y--;
       it.vx = 0; it.vy = 0; it.rest = true; it.chute = false;
     }
-    if (it.y > WORLD_H + 10) it.dead = true;
+    if (it.y > MAX_Y - 40) it.dead = true;
   }
   items = items.filter((it) => !it.dead);
 }
@@ -2495,7 +2514,7 @@ function buildCone(v, p) {
     const foot = Math.min(surfaceY(x), v.baseY + 8) + 4;    // Fuß im gewachsenen Boden
     const yTop = Math.round(v.baseY - h);
     for (let y = yTop; y <= foot; y++) {
-      if (y < 2 || y >= WORLD_H - 2) continue;
+      if (y < 2 || y >= MAX_Y - 2) continue;
       const m = matAt(x, y);
       if (isFree(m) || m === MAT.EARTH || m === MAT.SAND || m === MAT.WATER) setMat(x, y, MAT.ROCK);
     }
@@ -2514,7 +2533,7 @@ function buildCone(v, p) {
 // gleich mit Magma füllen – so steht die Lava bis zum Krater an
 function openVent(v) {
   const from = craterFloorY(v) | 0;
-  const to = Math.min(WORLD_H - 12, from + 150);
+  const to = from + 150;
   for (let y = from; y < to; y += 5) carveCircle(v.x, y, 4, true);
   for (let y = from; y < to; y++) {
     for (let dx = -4; dx <= 4; dx++) {
@@ -2553,7 +2572,7 @@ function updateVolcanoes(dt) {
       const x = (v.x + dx) | 0;
       const d = v.craterD * (1 - (dx / cr) ** 2);
       for (let y = top - 1; y <= top + d + 3; y++) {
-        if (y < 2 || y >= WORLD_H - 9) continue;
+        if (y < 2 || y >= MAX_Y - 9) continue;
         const m = matAt(x, y);
         if (!isFree(m) && m !== MAT.WATER) continue;
         setMat(x, y, MAT.LAVA); wake(x, y);
@@ -2641,7 +2660,7 @@ function serialize() {
   const edited = [];
   for (const [key, ch] of chunks) if (ch.edited) edited.push({ k: key, d: packChunk(ch.mat) });
   return {
-    v: 4, ts: Date.now(), seed: worldSeed,
+    v: 5, ts: Date.now(), seed: worldSeed,
     mode: game.mode, goal: game.goal, disasters: game.disasters, t: Math.round(game.t),
     chunks: edited,
     teams: players.map((p) => ({
@@ -2659,12 +2678,12 @@ function serialize() {
 
 function applyLoad(s) {
   // ältere Stände stammen aus früheren Weltversionen und passen nicht mehr
-  if (!s || s.v !== 4 || !Array.isArray(s.teams)) return false;
+  if (!s || s.v !== 5 || !Array.isArray(s.teams)) return false;
   game.mode = MODES.includes(s.mode) ? s.mode : 'sandbox';
   startGame(s.seed);                   // gleiche Saat -> gleiche Grundwelt
   for (const c of s.chunks || []) {    // veränderte Chunks zurückspielen
     const key = c.k;
-    const cy = ((key % 64) + 64) % 64, cx = Math.round((key - cy) / 64);
+    const cy = ((key % CKEY_ROWS) + CKEY_ROWS) % CKEY_ROWS, cx = Math.round((key - cy) / CKEY_ROWS);
     chunks.set(key, { mat: unpackChunk(c.d), hp: null, canvas: null, dirty: true, edited: true, cx, cy });
   }
   _lastKey = NaN; _lastChunk = null;
@@ -2867,7 +2886,7 @@ function computeCam(dt) {
   cam.scale += (targetScale - cam.scale) * k;
   const vw = CW / cam.scale, vh = (CH - TOP_UI) / cam.scale;
   // waagerecht wird nicht begrenzt – die Welt geht endlos weiter
-  ty = vh >= WORLD_H ? WORLD_H / 2 : clamp(ty, vh / 2, WORLD_H - vh / 2);
+  ty = Math.max(ty, vh / 2);          // nach unten ist die Welt offen
   cam.x += (tx - cam.x) * k;
   cam.y += (ty - cam.y) * k;
 }
@@ -2947,7 +2966,7 @@ function draw(time) {
   const vx0 = cam.x - vw / 2 - 8, vx1 = cam.x + vw / 2 + 8;
   const vy0 = cam.y - vh / 2 - 8, vy1 = cam.y + vh / 2 + 8;
   let painted = 0;
-  for (let cy = Math.max(0, Math.floor(vy0 / CHK)); cy <= Math.min(CH_ROWS - 1, Math.floor(vy1 / CHK)); cy++) {
+  for (let cy = Math.max(0, Math.floor(vy0 / CHK)); cy <= Math.floor(vy1 / CHK); cy++) {
     for (let cx = Math.floor(vx0 / CHK); cx <= Math.floor(vx1 / CHK); cx++) {
       const ch = chunkOf(cx, cy);
       if (ch.dirty && painted < 30) { paintChunk(ch); painted++; }

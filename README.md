@@ -130,17 +130,22 @@ Docker-Container deployt.
   🎯-Taste, die Wurf-Taste zeigt die Auswahl. Freigelegte Zellen werden
   über der ursprünglichen Oberfläche Himmel, darunter Stollen – keine
   dunklen Flecken mehr im See nach Sprengungen. Die Welt ist
-  **prozedural erzeugt und waagerecht unendlich**: sie besteht aus
+  **prozedural erzeugt und in alle Richtungen unendlich**: sie besteht aus
   128×128-Chunks, die beim Weiterlaufen aus der Weltsaat nachwachsen
   (in beide Richtungen, auch ins Negative) und weit hinter dem Spieler
-  wieder freigegeben werden; 2048 px tief mit Schichtaufbau: eine **dicke
-  Erdzone** (~380 px reines Schaufelrevier), darunter eine breite
-  **Felszone** (nur Feuerstein), erst ganz unten **Granitbänder** (halten
-  drei Sprengungen aus und bröckeln dann weg) und **Grundgestein**, das
-  allem standhält. Die Bodenschätze wachsen als **organisch verzweigte
+  wieder freigegeben werden. **Nach unten hat sie keinen Boden mehr**:
+  ganz oben eine **dicke Erdzone** (~380 px reines Schaufelrevier),
+  darunter wechseln sich **Felsschichten und Erdbänder** ab – nach unten
+  wird der Fels dichter (bis ~80 %), aber es bleiben immer Bänder zum
+  Weiterbuddeln. **Granitsohle und Grundgestein gibt es nicht mehr**, man
+  kann also endlos in die Tiefe (der Grubenlift bohrt sich ohne Ende
+  hinunter, durch Fels und Erz nur langsamer). Die Bodenschätze wachsen
+  als **organisch verzweigte
   Adern** (mäandernde Flöze mit Seitenarmen) und werden **nach unten
   immer fetter** – von kleinen Nestern dicht unter der Grasnarbe bis zu
-  riesigen Mutterlagern im Granit. Dazu **⚫ Kohleflöze**, **🪨 Eisenerz**
+  riesigen Mutterlagern in der Tiefe (ab ~2600 px Tiefe bleibt es bei
+  dieser Fettstufe, damit der Berg zwischen den Adern nicht verschwindet).
+  Dazu **⚫ Kohleflöze**, **🪨 Eisenerz**
   (nur sprengbar), Sandtaschen, **Seen** in echten Mulden (der Spiegel
   wird beim Erzeugen so weit gesenkt, bis das Becken beidseits
   geschlossen ist – sonst stünde am Ufer eine Wand aus Wasser in der
@@ -160,7 +165,7 @@ Docker-Container deployt.
   laufen, springen, **klettern**, an Decken **hangeln**,
   **schwimmen & tauchen** mit Atem-Anzeige (Ertrinken inklusive),
   in Lava verbrennt man (Wasser löscht). **Graben** in alle Richtungen
-  (Fels sprengt nur der 💣 Feuerstein, Granit hält allem stand),
+  (Fels sprengt nur der 💣 Feuerstein),
   **🧱 Lehmbrücken** aus vergrabenen Lehmklumpen (Benutzen-Taste
   unterwegs, mit Sprungtaste als Rampe, trägt auch übers Wasser).
   **Bäume** lassen sich sprengen oder fackeln ab (Feuer springt über)
@@ -227,9 +232,9 @@ Docker-Container deployt.
   Jedes Team hat außerdem einen **🏗 Grubenlift** (Förderturm wie im
   Clonk-Objektpaket): der **breite Stahlkorb** (25 px) ist begehbare
   Plattform und nimmt die Lore bequem mit, **bohrt** auf ⛏️/↓ den Schacht
-  nach unten (durch Fels nur
-  langsam, Granit stoppt ihn), fährt auf ⤒ zurück nach oben und schaufelt
-  dabei nachgerieselten Sand beiseite; erbohrtes Gold und Kohle fällt
+  nach unten – **ohne Ende** und
+  durch Fels und Erz nur langsamer –, fährt auf ⤒ zurück nach oben und schaufelt
+  dabei nachgerieselten Sand beiseite; erbohrtes Gold, Kohle und Erz fällt
   direkt in den Korb. Am Joystick genügt *ungefähr* hoch/runter
   (senkrecht schlägt seitlich), und wer den Lift bedient, bleibt dabei im
   Korb stehen statt von der Plattform zu laufen. Wer zuerst das Spielziel erreicht (5/8/12 Gold)
@@ -425,9 +430,10 @@ railway.json
   Resistenzen, Railgun/Hypnose, Fernsehturm, Kids-Modus,
   Abschuss-/Schadenszähler, Statistik, Spiel-Historie und der
   Spielstand-Roundtrip über einen Seiten-Reload.
-- **`test/clonk.test.mjs`** – Klonk (160 Checks) über den Test-Hook
-  `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/
-  Granit/Erz/Grundgestein), Welttiefe, Granit-Sprengfestigkeit,
+- **`test/clonk.test.mjs`** – Klonk (163 Checks) über den Test-Hook
+  `window.__clonk`: alle Materialien (inkl. Wasser/Lava/Sand/Kohle/Erz),
+  bodenlose Tiefe (Gelände und Erdbänder noch 60 000 px tief, nirgends
+  Granit/Grundgestein), Granit-Sprengfestigkeit als Materialregel,
   alle Produktionsrezepte (Hochofen, Sägewerk, Schienenschmiede,
   Chemiefabrik), Kaufen/Verkaufen und Windrad-Strom, Schienenbau +
   Lorenfahrt, Fische, Graben inkl. Fels-Stopp, Sprengungen legen

@@ -59,29 +59,51 @@ try {
     const C = window.__clonk, M = C.MAT, counts = {};
     for (let x = 0; x < C.WORLD_W; x++) for (let y = 0; y < C.WORLD_H; y++) counts[C.matAt(x, y)] = (counts[C.matAt(x, y)] || 0) + 1;
     const [a, b] = C.players();
-    // wie tief liegt der tiefste Granit/Bedrock? (Weltdicke prüfen)
-    let deepest = 0;
-    for (let y = C.WORLD_H - 1; y > 0; y--) {
-      if (C.matAt(480, y) === M.GRANIT) { deepest = y; break; }
-    }
     return {
       counts, n: C.players().length, crew: C.allClonks().length,
       ax: a.x, bx: b.x, baseA: a.base.x, baseB: b.base.x,
       trees: C.trees().length, wipfe: C.wipfe().filter((w) => !w.dead).length,
-      birds: C.birds().length, worldH: C.WORLD_H, deepest,
+      birds: C.birds().length, worldH: C.WORLD_H,
       M,
     };
   });
   const cnt = (m) => r.counts[m] || 0;
   check('Gelände: Himmel, Erde, Fels, Gold, Höhlen', cnt(r.M.SKY) > 10000 && cnt(r.M.EARTH) > 10000 && cnt(r.M.ROCK) > 10000 && cnt(r.M.GOLD) > 500 && cnt(r.M.TUNNEL) > 100, JSON.stringify(r.counts));
-  check('Materialien: Wasser, Lava, Sand, Kohle, Granit, Erz, Grundgestein',
+  check('Materialien: Wasser, Lava, Sand, Kohle, Erz',
     cnt(r.M.WATER) > 400 && cnt(r.M.LAVA) > 120 && cnt(r.M.SAND) > 150 && cnt(r.M.COAL) > 150
-    && cnt(r.M.GRANIT) > 20000 && cnt(r.M.ORE) > 500 && cnt(r.M.BEDROCK) > 3000, JSON.stringify(r.counts));
-  check('Die Welt geht tief (Granitzone unter dem Fels)', r.worldH >= 1000 && r.deepest > 700,
-    `H=${r.worldH} tiefste Oberfläche=${r.deepest}`);
+    && cnt(r.M.ORE) > 500, JSON.stringify(r.counts));
+  check('Kein Granit und kein Grundgestein mehr im Boden',
+    cnt(r.M.GRANIT) === 0 && cnt(r.M.BEDROCK) === 0, JSON.stringify(r.counts));
+
   check('Zwei Teams à zwei Clonks an ihren Hütten', r.n === 2 && r.crew === 4 && Math.abs(r.ax - r.baseA) < 40 && Math.abs(r.bx - r.baseB) < 40);
   check('Bäume wachsen, Wipfe buddeln, Vögel ziehen ihre Kreise',
     r.trees >= 3 && r.wipfe === 3 && r.birds === 5, `trees=${r.trees} wipfe=${r.wipfe} birds=${r.birds}`);
+
+  // ---- Die Welt hat keinen Boden: auch sehr tief unten wächst Gelände nach,
+  // es gibt überall Erdbänder zum Weiterbuddeln und nirgends Granit/Grundgestein
+  const deep = await page.evaluate(() => {
+    const C = window.__clonk, M = C.MAT;
+    const out = [];
+    for (const y0 of [2000, 6000, 20000, 60000]) {
+      let earth = 0, solid = 0, hard = 0, n = 0;
+      for (let y = y0; y < y0 + 240; y += 3) {
+        for (let x = 300; x < 460; x += 3) {
+          const m = C.matAt(x, y); n++;
+          if (m === M.EARTH) earth++;
+          if (m === M.GRANIT || m === M.BEDROCK) hard++;
+          if (m !== M.SKY && m !== M.TUNNEL) solid++;
+        }
+      }
+      out.push({ y0, earth, solid, hard, n });
+    }
+    return out;
+  });
+  check('Auch 60 000 px tief gibt es noch Gelände (die Welt hat keinen Boden)',
+    deep.every((d) => d.solid > d.n * 0.4), JSON.stringify(deep));
+  check('Ganz unten steht kein Granit/Grundgestein im Weg',
+    deep.every((d) => d.hard === 0), JSON.stringify(deep));
+  check('In jeder Tiefe gibt es Erdbänder zum Buddeln',
+    deep.every((d) => d.earth > d.n * 0.02), JSON.stringify(deep));
 
   // ---- Unendliche, prozedurale Welt
   r = await page.evaluate(() => {
@@ -159,17 +181,16 @@ try {
     const rockBefore = C.solid(x, rockTop + 5);
     C.carveCircle(x, rockTop + 5, 9, false);
     const rockAfter = C.solid(x, rockTop + 5);
-    // Grundgestein am Rand: hält allem stand
-    const bedBefore = C.matAt(2, C.WORLD_H - 3) === M.BEDROCK;
-    for (let i = 0; i < 6; i++) C.carveCircle(2, C.WORLD_H - 3, 9, true);
-    const bedAfter = C.matAt(2, C.WORLD_H - 3) === M.BEDROCK;
+    // Grundgestein/Granit wachsen nicht mehr im Boden – als Material gibt es
+    // sie weiter (alte Spielstände, Sonderfälle), also hier selbst setzen
+    const bx = x + 60, by = g + 300;
+    for (let yy = by - 4; yy <= by + 4; yy++) for (let xx = bx - 4; xx <= bx + 4; xx++) C.setMat(xx, yy, M.BEDROCK);
+    const bedBefore = C.matAt(bx, by) === M.BEDROCK;
+    for (let i = 0; i < 6; i++) C.carveCircle(bx, by, 9, true);
+    const bedAfter = C.matAt(bx, by) === M.BEDROCK;
     // Granit: erst nach mehreren Sprengungen weg (TOUGH-Treffer)
-    let gx = -1, gy = -1;
-    outer: for (let y = C.WORLD_H - 40; y > 400; y--) {
-      for (let xx = 40; xx < C.WORLD_W - 40; xx++) {
-        if (C.matAt(xx, y) === M.GRANIT) { gx = xx; gy = y; break outer; }
-      }
-    }
+    const gx = x - 60, gy = g + 300;
+    for (let yy = gy - 6; yy <= gy + 6; yy++) for (let xx = gx - 6; xx <= gx + 6; xx++) C.setMat(xx, yy, M.GRANIT);
     C.carveCircle(gx, gy, 9, true);
     const afterOne = C.matAt(gx, gy) === M.GRANIT;
     for (let i = 0; i < C.TOUGH[M.GRANIT]; i++) C.carveCircle(gx, gy, 9, true);
