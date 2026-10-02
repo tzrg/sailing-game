@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Kart-Rennen</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🏁%3C/text%3E%3C/svg%3E">
+</head>
+<body class="kart">
+ <div id="stage">
+  <canvas id="game"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+    <button id="btn-rotate" title="Querformat">⟳</button>
+    <button id="btn-sound" title="Ton an/aus">🔊</button>
+  </div>
+
+  <!-- Touch-Steuerung: links lenken, rechts Gas/Bremse/Drift/Item -->
+  <div id="wctrl-left">
+    <button id="k-left" title="links">◀</button>
+    <button id="k-right" title="rechts">▶</button>
+  </div>
+  <div id="wctrl-right">
+    <button id="k-item" title="Item einsetzen">🎁</button>
+    <button id="k-drift" title="Driften (gedrückt halten)">↩</button>
+    <button id="k-brake" title="Bremse">🛑</button>
+    <button id="k-gas" title="Gas">🚀</button>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>🏁 Kart-Rennen</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link" href="index.html">🏠</a>
+          <a class="game-link" href="sail.html">⛵</a>
+          <a class="game-link" href="auto.html">🏎</a>
+          <a class="game-link" href="mtb.html">🚵</a>
+          <a class="game-link" href="wurm.html">🐛</a>
+          <a class="game-link" href="lemminge.html">🐭</a>
+          <a class="game-link" href="gorilla.html">🦍</a>
+          <a class="game-link" href="mampf.html">🟡</a>
+          <a class="game-link" href="maze.html">🧩</a>
+          <a class="game-link" href="snake.html">🐍</a>
+          <a class="game-link" href="td.html">🏰</a>
+          <a class="game-link" href="clonk.html">⛏️</a>
+          <a class="game-link active" href="kart.html">🏁</a>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Fahrer</div>
+        <div class="opt-row" id="opt-driver"></div>
+        <p class="muted small" style="margin:6px 0 0">Jeder Fahrer fährt sich anders –
+          Topspeed, Beschleunigung und Kurvenlage unterscheiden sich.</p>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Gegner</div>
+        <div class="opt-row" id="opt-cpu">
+          <button data-v="0">Allein</button>
+          <button data-v="2">2 🤖</button>
+          <button data-v="3">3 🤖</button>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Runden</div>
+        <div class="opt-row" id="opt-laps">
+          <button data-v="1">1</button>
+          <button data-v="3">3</button>
+          <button data-v="5">5</button>
+        </div>
+      </div>
+
+      <button class="menu-btn" id="btn-restart">🔄 Neues Rennen</button>
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>🏁 Kart-Rennen</h1>
+      <p>Ein Rennen im Stil der großen Kart-Vorbilder: Mode-7-Strecke, Drift mit
+        Mini-Turbo, Item-Boxen und Bananen auf der Fahrbahn.</p>
+      <div class="group-title">Fahrer wählen</div>
+      <div class="kart-picks" id="pick-driver"></div>
+      <ul>
+        <li><b>Tastatur:</b> <b>↑ / W</b> Gas · <b>↓ / S</b> Bremse &amp; Rückwärts ·
+          <b>← →</b> lenken · <b>Leertaste</b> Item · <b>Shift</b> driften</li>
+        <li><b>📱 Touch:</b> links <b>◀ ▶</b> lenken, rechts <b>🚀</b> Gas, <b>🛑</b> Bremse,
+          <b>↩</b> driften, <b>🎁</b> Item. ⟳ dreht ins Querformat.</li>
+        <li><b>↩ Drift:</b> in der Kurve halten – die Funken werden erst blau, dann orange.
+          Loslassen gibt den <b>Mini-Turbo</b>.</li>
+        <li><b>❓ Item-Boxen</b> einsammeln: 🍌 Banane (fällt nach hinten), 🐢 Panzer
+          (fliegt nach vorn), 🍄 Pilz (Turbo), ⚡ Blitz (bremst alle anderen aus).
+          Wer hinten liegt, zieht die besseren Items.</li>
+        <li><b>Gras und Sand</b> bremsen kräftig – bleib auf dem Asphalt und nimm die
+          <b>⏩ Boost-Felder</b> mit.</li>
+      </ul>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+ </div>
+
+  <script type="module" src="js/kart.js"></script>
+</body>
+</html>

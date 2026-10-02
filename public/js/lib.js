@@ -146,6 +146,7 @@ const CAR_NAMES = {
 const AUTO_TRACKS = { city: 'City', drift: 'Drift-Parcours' };
 const BIKE_NAMES = { fully: 'Fully-MTB', bmx: 'BMX', kinder: 'Kinderrad' };
 const MTB_TRACKS = { wald: 'Waldstrecke', halle: 'Jumphalle' };
+const KART_NAMES = { fuchs: 'Flitzfuchs', baer: 'Brummbär', frosch: 'Hüpfer' };
 
 function fmtTime(s) {
   if (!Number.isFinite(s)) return '–';
@@ -166,6 +167,8 @@ function parseKey(key, raw) {
   if (m) return { game: 'mtb', variant: `score_${m[1]}_${m[2]}`, label: BIKE_NAMES[m[2]] || m[2], sub: (MTB_TRACKS[m[1]] || m[1]) + ' · Score', value: raw, better: 'high' };
   m = key.match(/^mtb_([^_]+)_(.+)$/);
   if (m) return { game: 'mtb', variant: `time_${m[1]}_${m[2]}`, label: BIKE_NAMES[m[2]] || m[2], sub: (MTB_TRACKS[m[1]] || m[1]) + ' · Zeit', value: raw, better: 'low' };
+  m = key.match(/^kart_(fuchs|baer|frosch)$/);
+  if (m) return { game: 'kart', variant: m[1], label: KART_NAMES[m[1]], sub: 'Beste Runde', value: raw, better: 'low' };
   if (key === 'mampf_best') return { game: 'mampf', variant: 'best', label: 'Highscore', sub: 'Arcade', value: raw, better: 'high' };
   if (key === 'snake_best') return { game: 'snake', variant: 'best', label: 'Highscore', sub: 'Arcade', value: raw, better: 'high' };
   if (key === 'maze_best') return { game: 'maze', variant: 'best', label: 'Highscore', sub: 'Labyrinth', value: raw, better: 'high' };
@@ -175,7 +178,7 @@ function parseKey(key, raw) {
   return null;
 }
 
-const GAME_TITLES = { sail: '⛵ Segeln', auto: '🏎 Autorennen', mtb: '🚵 Mountainbike', mampf: '🟡 Mampf', lem: '🐭 Lemminge', maze: '🧩 Super Maze', snake: '🐍 Snake', td: '🏰 Tower Defense' };
+const GAME_TITLES = { sail: '⛵ Segeln', auto: '🏎 Autorennen', mtb: '🚵 Mountainbike', mampf: '🟡 Mampf', lem: '🐭 Lemminge', maze: '🧩 Super Maze', snake: '🐍 Snake', td: '🏰 Tower Defense', kart: '🏁 Kart-Rennen' };
 
 export const Scores = {
   // Alle lokalen Bestwerte als flache Liste.

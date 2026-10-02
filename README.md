@@ -240,6 +240,31 @@ Docker-Container deployt.
   Korb stehen statt von der Plattform zu laufen. Wer zuerst das Spielziel erreicht (5/8/12 Gold)
   oder nach 5 Minuten vorne liegt, gewinnt.
 
+- **`kart.html` – 🏁 Kart-Rennen**: ein 3D-Rennen im Stil der großen
+  Kart-Vorbilder (eigenständig gebaut, ohne Fremdbibliotheken). Die
+  Strecke ist eine echte 1024×1024-Karte mit Oberflächen-Info, die per
+  **Mode-7-Projektion** zeilenweise in Perspektive gezeichnet wird – wie
+  beim SNES-Urahn; darüber liegen **Billboard-Sprites** (Karts, Bananen,
+  Panzer, Item-Boxen, Bäume, Schilder), die mit derselben Projektion
+  einsortiert werden, dazu Himmelsverlauf, parallaxe Hügelkette und
+  Distanznebel. **Drei Fahrer** mit eigenen Fahrwerten: 🦊 **Flitzfuchs**
+  (ausgewogen), 🐻 **Brummbär** (schwer, höchster Topspeed, schiebt
+  andere beiseite) und 🐸 **Hüpfer** (leicht, beschleunigt stark, beste
+  Kurvenlage). **Drift mit Mini-Turbo**: Drifttaste in der Kurve halten,
+  die Funken werden blau und dann orange, Loslassen gibt den Schub.
+  **Item-Boxen** verteilen 🍌 Banane (fällt nach hinten, wer reinfährt
+  dreht sich aus), 🐢 grünen Panzer (fliegt nach vorn), 🍄 Pilz (Turbo)
+  und ⚡ Blitz (bremst alle anderen aus) – wer hinten liegt, zieht die
+  besseren Items. Dazu **Boost-Felder**, Gras und Sand als Bremse,
+  Randsteine, ein **Raketenstart** bei perfektem Gasgeben, Rempeln nach
+  Gewicht, **KI-Gegner** mit Gummiband, Platzierung, Runden- und
+  Bestzeit (zählt für die Bestenliste), Minimap, Countdown und
+  Zielwertung. Eingestellt werden Fahrer, Gegnerzahl (0–3) und Runden
+  (1/3/5). Steuerung: Pfeiltasten/WASD, Leertaste = Item, Shift =
+  Drift; 📱 Touch mit ◀ ▶ links und 🚀 🛑 ↩ 🎁 rechts plus
+  Querformat-Drehung. Motorsound und Effekte werden live im Browser
+  synthetisiert (🔊-Knopf schaltet stumm).
+
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
 (🏠 führt zurück zur Landing-Page). Neue Spiele lassen sich analog ergänzen.
@@ -390,6 +415,7 @@ public/            statische Spielesammlung
   maze.html        🧩 Super Maze (prozedurale Labyrinthe)
   snake.html       🐍 Snake (Klassiker)
   clonk.html       ⛏️ Klonk · Goldrausch (Clonk-Hommage, 2 Spieler)
+  kart.html        🏁 Kart-Rennen (Mode-7-Rennspiel mit Items)
   style.css
   js/
     lib.js         Auth + Scores (Server mit localStorage-Fallback)
@@ -411,6 +437,7 @@ public/            statische Spielesammlung
     snake.js       Snake (Grid, Wachstum, Bonus, zwei Modi)
     clonk.js       Klonk (Material-Maske, Graben/Klettern, Feuersteine)
     sfx.js         Klonk: synthetische Geräusche + Musik (Web Audio)
+    kart.js        Kart-Rennen (Mode-7-Renderer, Fahrphysik, Items, KI)
 Dockerfile
 railway.json
 ```
@@ -455,6 +482,16 @@ railway.json
   Buddel-Modus (Standard, offen, Koop-Kamera), Menü-Button-Reihen,
   Spielstand-Roundtrip (RLE-Maske, localStorage), Kamera/Zoom und die
   Querformat-Drehung.
+- **`test/kart.test.mjs`** – Kart-Rennen (46 Checks) über den Test-Hook
+  `window.__kart`: Streckenaufbau (Asphalt/Gras/Randstein/Boost/Sand,
+  Startaufstellung), Countdown, Gas/Bremse/Lenken, Gras als Bremse,
+  Boost-Felder, Drift mit Mini-Turbo, Item-Boxen samt Nachschub,
+  alle vier Items (Banane, Panzer, Pilz, Blitz) und ihre Wirkung,
+  gewichtsabhängiges Rempeln, Streckenposten beim Verlassen der Karte,
+  Rundenzählung inklusive Falschfahrer-Regel, Platzierung, Zieleinlauf
+  mit Bestzeit im Speicher, KI-Rennen über eine Minute (Rundenzeiten,
+  Streckentreue), Fahrerwahl, Menü-Optionen, Touch-Tasten, Tonschalter,
+  Querformat und die Mode-7-Darstellung selbst.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
 zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird
