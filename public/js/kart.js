@@ -654,7 +654,8 @@ function update(dt) {
 const pressed = new Set();
 const buttons = {};
 // Analoges Lenkfeld: x ist der aktuelle Einschlag (-1 .. 1)
-const steerPad = { x: 0, active: false };
+const STEER_RANGE = 74;      // Pixel vom Aufsetzpunkt bis zum vollen Einschlag
+const steerPad = { x: 0, active: false, range: STEER_RANGE };
 
 function input() {
   const btn = (id) => !!(buttons[id] && buttons[id].held);
@@ -675,10 +676,9 @@ function input() {
 function setupSteer(id) {
   const el = document.getElementById(id);
   const knob = el.querySelector('.knob');
-  const RANGE = 62;            // Pixel bis zum vollen Einschlag
   let pid = null, ox = 0, oy = 0;
   const show = () => {
-    knob.style.transform = `translateX(${steerPad.x * 56}px)`;
+    knob.style.transform = `translateX(${steerPad.x * 86}px)`;
     el.classList.toggle('held', steerPad.active);
   };
   const move = (e) => {
@@ -687,7 +687,7 @@ function setupSteer(id) {
     // In der gedrehten Bühne ist Spiel-X die Bildschirm-Y-Achse
     const rot = stage.classList.contains('rot');
     const d = rot ? (e.clientY - oy) : (e.clientX - ox);
-    steerPad.x = clamp(d / RANGE, -1, 1);
+    steerPad.x = clamp(d / STEER_RANGE, -1, 1);
     show();
   };
   el.addEventListener('pointerdown', (e) => {

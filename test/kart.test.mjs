@@ -390,16 +390,17 @@ try {
     }));
     send('pointerdown', cx);
     const atRest = K.steerPad.x;
-    send('pointermove', cx + 31);          // halber Weg (RANGE = 62)
-    const half = K.steerPad.x;
+    const half = K.steerPad.range / 2;
+    send('pointermove', cx + half);        // halber Weg = halber Einschlag
+    const atHalf = K.steerPad.x;
     const halfInput = K.input().steer;
     send('pointermove', cx + 200);         // weit über den Rand hinaus
     const full = K.steerPad.x;
-    send('pointermove', cx - 62);          // nach links
+    send('pointermove', cx - K.steerPad.range);   // nach links
     const leftFull = K.steerPad.x;
     const knob = pad.querySelector('.knob').style.transform;
-    send('pointerup', cx - 62);
-    return { atRest, half, halfInput, full, leftFull, after: K.steerPad.x, active: K.steerPad.active, knob };
+    send('pointerup', cx - K.steerPad.range);
+    return { atRest, half: atHalf, halfInput, full, leftFull, after: K.steerPad.x, active: K.steerPad.active, knob };
   });
   check('Das Lenkfeld lenkt stufenlos statt mit Vollausschlag',
     r.atRest === 0 && Math.abs(r.half - 0.5) < 0.06 && Math.abs(r.halfInput - r.half) < 0.001,
@@ -511,15 +512,16 @@ try {
     const send = (type, x, y) => pad.dispatchEvent(new PointerEvent(type, {
       bubbles: true, pointerId: 2, clientX: x, clientY: y,
     }));
+    const half = K.steerPad.range / 2;
     send('pointerdown', cx, cy);
-    send('pointermove', cx + 31, cy);
+    send('pointermove', cx + half, cy);
     const flat = K.steerPad.x;
-    send('pointerup', cx + 31, cy);
+    send('pointerup', cx + half, cy);
     document.getElementById('stage').classList.add('rot');
     send('pointerdown', cx, cy);
-    send('pointermove', cx, cy + 31);      // gedreht: Spiel-X ist die Y-Achse
+    send('pointermove', cx, cy + half);    // gedreht: Spiel-X ist die Y-Achse
     const rot = K.steerPad.x;
-    send('pointerup', cx, cy + 31);
+    send('pointerup', cx, cy + half);
     document.getElementById('stage').classList.remove('rot');
     return { flat, rot };
   });

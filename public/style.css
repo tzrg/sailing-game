@@ -1341,9 +1341,9 @@ body.kart #k-item { background: #c9962b; border-color: #fff; }
    stufenlos (kein Vollausschlag wie bei Pfeiltasten). */
 .steerpad {
   position: relative;
-  width: 210px;
-  height: 78px;
-  border-radius: 39px;
+  width: 264px;
+  height: 80px;
+  border-radius: 40px;
   background: rgba(8, 25, 42, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.3);
   touch-action: none;
@@ -1387,7 +1387,7 @@ body.kart #k-item { background: #c9962b; border-color: #fff; }
 }
 @media (max-width: 560px) {
   body.kart #k-gas, body.kart #k-item { width: 56px; height: 56px; font-size: 20px; }
-  .steerpad { width: 168px; height: 66px; border-radius: 33px; }
+  .steerpad { width: 214px; height: 68px; border-radius: 34px; }
   .steerpad .knob { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
   .kart-picks { gap: 5px; }
   .kp-note { display: none; }
