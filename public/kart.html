@@ -18,16 +18,27 @@
     <button id="btn-sound" title="Ton an/aus">🔊</button>
   </div>
 
-  <!-- Touch-Steuerung: links lenken, rechts Gas/Bremse/Drift/Item -->
+  <!-- Touch-Steuerung: links das analoge Lenkfeld (Daumen ziehen – je weiter,
+       desto stärker der Einschlag), rechts Gas/Bremse/Drift/Item.
+       Die rechte Gruppe sitzt bewusst höher, damit Androids Dreh-Knopf in der
+       Bildschirmecke nicht auf dem Gashebel liegt. -->
   <div id="wctrl-left">
-    <button id="k-left" title="links">◀</button>
-    <button id="k-right" title="rechts">▶</button>
+    <div id="k-steer" class="steerpad" title="Lenken: Daumen nach links/rechts ziehen">
+      <div class="sp-track"></div>
+      <div class="sp-mid"></div>
+      <div class="knob"></div>
+      <span class="sp-hint">◀ lenken ▶</span>
+    </div>
   </div>
   <div id="wctrl-right">
-    <button id="k-item" title="Item einsetzen">🎁</button>
-    <button id="k-drift" title="Driften (gedrückt halten)">↩</button>
-    <button id="k-brake" title="Bremse">🛑</button>
-    <button id="k-gas" title="Gas">🚀</button>
+    <div class="krow">
+      <button id="k-item" title="Item einsetzen">🎁</button>
+      <button id="k-drift" title="Driften (gedrückt halten)">↩</button>
+    </div>
+    <div class="krow">
+      <button id="k-brake" title="Bremse">🛑</button>
+      <button id="k-gas" title="Gas">🚀</button>
+    </div>
   </div>
 
   <div id="menu" class="hidden">
@@ -96,7 +107,9 @@
       <ul>
         <li><b>Tastatur:</b> <b>↑ / W</b> Gas · <b>↓ / S</b> Bremse &amp; Rückwärts ·
           <b>← →</b> lenken · <b>Leertaste</b> Item · <b>Shift</b> driften</li>
-        <li><b>📱 Touch:</b> links <b>◀ ▶</b> lenken, rechts <b>🚀</b> Gas, <b>🛑</b> Bremse,
+        <li><b>📱 Touch:</b> links auf das <b>Lenkfeld</b> tippen und den Daumen nach
+          links/rechts ziehen – der Einschlag folgt <b>stufenlos</b> der Bewegung
+          (wo du aufsetzt, ist geradeaus). Rechts <b>🚀</b> Gas, <b>🛑</b> Bremse,
           <b>↩</b> driften, <b>🎁</b> Item. ⟳ dreht ins Querformat.</li>
         <li><b>↩ Drift:</b> in der Kurve halten – die Funken werden erst blau, dann orange.
           Loslassen gibt den <b>Mini-Turbo</b>.</li>

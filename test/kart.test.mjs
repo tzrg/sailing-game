@@ -360,7 +360,7 @@ try {
   check('Die Fahrerwahl wirkt sofort und wird gemerkt',
     r.after.key === 'baer' && r.after.top > 200 && r.after.stored === 'baer', JSON.stringify(r.after));
 
-  // ---- Touch-Steuerung
+  // ---- Touch-Steuerung: Gashebel + analoges Lenkfeld
   r = await page.evaluate(() => {
     const K = window.__kart;
     K.startRace(3); K.game.state = 'race'; K.game.count = 0;
@@ -369,13 +369,52 @@ try {
     for (let i = 0; i < 60; i++) K.update(0.016);
     const v = K.karts()[0].speed;
     const a0 = K.karts()[0].ang;
-    K.buttons['k-right'].held = true;
+    K.steerPad.active = true; K.steerPad.x = 1;
     for (let i = 0; i < 40; i++) K.update(0.016);
     const turned = K.karts()[0].ang - a0;
-    K.buttons['k-gas'].held = false; K.buttons['k-right'].held = false;
+    K.steerPad.active = false; K.steerPad.x = 0;
+    K.buttons['k-gas'].held = false;
     return { v, turned };
   });
-  check('Touch: 🚀 gibt Gas und ▶ lenkt', r.v > 30 && r.turned > 0.2, JSON.stringify(r));
+  check('Touch: 🚀 gibt Gas und das Lenkfeld lenkt', r.v > 30 && r.turned > 0.2, JSON.stringify(r));
+
+  // Lenkfeld: Daumen aufsetzen, ziehen – halber Weg = halber Einschlag
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    K.startRace(3); K.game.state = 'race'; K.game.count = 0;
+    const pad = document.getElementById('k-steer');
+    const r0 = pad.getBoundingClientRect();
+    const cx = r0.left + r0.width / 2, cy = r0.top + r0.height / 2;
+    const send = (type, x) => pad.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 1, clientX: x, clientY: cy,
+    }));
+    send('pointerdown', cx);
+    const atRest = K.steerPad.x;
+    send('pointermove', cx + 31);          // halber Weg (RANGE = 62)
+    const half = K.steerPad.x;
+    const halfInput = K.input().steer;
+    send('pointermove', cx + 200);         // weit über den Rand hinaus
+    const full = K.steerPad.x;
+    send('pointermove', cx - 62);          // nach links
+    const leftFull = K.steerPad.x;
+    const knob = pad.querySelector('.knob').style.transform;
+    send('pointerup', cx - 62);
+    return { atRest, half, halfInput, full, leftFull, after: K.steerPad.x, active: K.steerPad.active, knob };
+  });
+  check('Das Lenkfeld lenkt stufenlos statt mit Vollausschlag',
+    r.atRest === 0 && Math.abs(r.half - 0.5) < 0.06 && Math.abs(r.halfInput - r.half) < 0.001,
+    JSON.stringify(r));
+  check('Weiter ziehen heißt voller Einschlag – auch nach links',
+    r.full === 1 && r.leftFull === -1 && r.knob.includes('translateX'), JSON.stringify(r));
+  check('Loslassen stellt die Räder wieder gerade',
+    r.after === 0 && r.active === false, JSON.stringify(r));
+
+  // Am Rechner stören die Touch-Elemente nicht
+  r = await page.evaluate(() => ({
+    left: document.getElementById('wctrl-left').classList.contains('hidden'),
+    right: document.getElementById('wctrl-right').classList.contains('hidden'),
+  }));
+  check('Ohne Touch-Gerät bleiben die Bildschirmtasten ausgeblendet', r.left && r.right, JSON.stringify(r));
 
   r = await page.evaluate(async () => {
     const K = window.__kart;
@@ -435,6 +474,59 @@ try {
     r.dark > 100 && r.light > 100, JSON.stringify({ dark: r.dark, light: r.light }));
   check('Das eigene Kart wird unten in der Bildmitte projiziert',
     r.proj && Math.abs(r.proj.x - 600) < 120 && r.proj.y > 400, JSON.stringify(r.proj));
+  // ---- Handy quer: Bedienelemente sichtbar, aber nicht in der unteren Ecke
+  // (dort liegt auf Android der Dreh-Knopf über der Navigationsleiste)
+  const phone = await browser.newPage({
+    viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true,
+  });
+  phone.on('pageerror', (e) => check('Handy-Seite ohne JS-Fehler', false, e.message));
+  await phone.goto(srv.url + '/kart.html');
+  await phone.waitForFunction(() => window.__kart);
+  r = await phone.evaluate(() => {
+    const gas = document.getElementById('k-gas').getBoundingClientRect();
+    const steer = document.getElementById('k-steer').getBoundingClientRect();
+    const item = document.getElementById('k-item').getBoundingClientRect();
+    return {
+      visible: gas.width > 30 && steer.width > 100,
+      gasBottom: Math.round(innerHeight - gas.bottom),
+      gasRight: Math.round(innerWidth - gas.right),
+      steerBottom: Math.round(innerHeight - steer.bottom),
+      steerLeft: Math.round(steer.left),
+      itemAbove: item.bottom < gas.top + 1,
+    };
+  });
+  check('Auf dem Handy sind Lenkfeld und Gashebel da', r.visible, JSON.stringify(r));
+  check('Der Gashebel hält Abstand zur unteren Bildschirmecke',
+    r.gasBottom >= 60 && r.gasRight >= 12, JSON.stringify(r));
+  check('Das Lenkfeld sitzt links über dem unteren Rand',
+    r.steerBottom >= 36 && r.steerLeft >= 10, JSON.stringify(r));
+  check('🎁 und ↩ liegen über Bremse und Gas (zwei Reihen)', r.itemAbove, JSON.stringify(r));
+
+  // Ziehen auf dem Lenkfeld lenkt stufenlos – auch in der gedrehten Bühne
+  r = await phone.evaluate(() => {
+    const K = window.__kart;
+    const pad = document.getElementById('k-steer');
+    const rect = pad.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    const send = (type, x, y) => pad.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 2, clientX: x, clientY: y,
+    }));
+    send('pointerdown', cx, cy);
+    send('pointermove', cx + 31, cy);
+    const flat = K.steerPad.x;
+    send('pointerup', cx + 31, cy);
+    document.getElementById('stage').classList.add('rot');
+    send('pointerdown', cx, cy);
+    send('pointermove', cx, cy + 31);      // gedreht: Spiel-X ist die Y-Achse
+    const rot = K.steerPad.x;
+    send('pointerup', cx, cy + 31);
+    document.getElementById('stage').classList.remove('rot');
+    return { flat, rot };
+  });
+  check('Ziehen auf dem Lenkfeld lenkt anteilig', Math.abs(r.flat - 0.5) < 0.06, JSON.stringify(r));
+  check('Auch in der gedrehten Bühne stimmt die Lenkrichtung',
+    Math.abs(r.rot - 0.5) < 0.06, JSON.stringify(r));
+  await phone.close();
 } finally {
   await browser.close();
   srv.stop();

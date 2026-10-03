@@ -365,7 +365,7 @@ function updateKart(k, dt, input) {
     k.ang += input.steer * grip * v * dt * Math.sign(k.speed || 1);
   }
   // Drift: Fahrtrichtung hinkt der Blickrichtung hinterher und lädt den Turbo
-  if (canDrive && input.drift && k.speed > 70 && input.steer) {
+  if (canDrive && input.drift && k.speed > 70 && Math.abs(input.steer) > 0.25) {
     if (!k.drift) { k.drift = 1; k.driftDir = Math.sign(input.steer); k.hopT = 0.22; Sfx.play('hop'); }
     if (Math.sign(input.steer) === k.driftDir) k.driftCharge += dt;
   } else if (k.drift) {
@@ -653,17 +653,61 @@ function update(dt) {
 
 const pressed = new Set();
 const buttons = {};
+// Analoges Lenkfeld: x ist der aktuelle Einschlag (-1 .. 1)
+const steerPad = { x: 0, active: false };
 
 function input() {
   const btn = (id) => !!(buttons[id] && buttons[id].held);
-  const left = pressed.has('arrowleft') || pressed.has('a') || btn('k-left');
-  const right = pressed.has('arrowright') || pressed.has('d') || btn('k-right');
+  const left = pressed.has('arrowleft') || pressed.has('a');
+  const right = pressed.has('arrowright') || pressed.has('d');
+  const keys = (right ? 1 : 0) - (left ? 1 : 0);
   return {
     gas: pressed.has('arrowup') || pressed.has('w') || btn('k-gas') ? 1 : 0,
     brake: pressed.has('arrowdown') || pressed.has('s') || btn('k-brake') ? 1 : 0,
-    steer: (right ? 1 : 0) - (left ? 1 : 0),
+    // Tastatur = voller Einschlag, Lenkfeld = stufenlos
+    steer: keys || steerPad.x,
     drift: pressed.has('shift') || btn('k-drift'),
   };
+}
+
+// Lenkfeld: Daumen aufsetzen (die Stelle ist die Mitte) und nach links/rechts
+// ziehen – je weiter, desto stärker der Einschlag. Loslassen stellt gerade.
+function setupSteer(id) {
+  const el = document.getElementById(id);
+  const knob = el.querySelector('.knob');
+  const RANGE = 62;            // Pixel bis zum vollen Einschlag
+  let pid = null, ox = 0, oy = 0;
+  const show = () => {
+    knob.style.transform = `translateX(${steerPad.x * 56}px)`;
+    el.classList.toggle('held', steerPad.active);
+  };
+  const move = (e) => {
+    if (pid === null || e.pointerId !== pid) return;
+    e.preventDefault();
+    // In der gedrehten Bühne ist Spiel-X die Bildschirm-Y-Achse
+    const rot = stage.classList.contains('rot');
+    const d = rot ? (e.clientY - oy) : (e.clientX - ox);
+    steerPad.x = clamp(d / RANGE, -1, 1);
+    show();
+  };
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { el.setPointerCapture(e.pointerId); } catch { /* egal */ }
+    pid = e.pointerId;
+    ox = e.clientX; oy = e.clientY;      // Aufsetzpunkt = Geradeaus
+    steerPad.active = true; steerPad.x = 0;
+    Sfx.unlock();
+    show();
+  });
+  el.addEventListener('pointermove', move);
+  const up = (e) => {
+    if (pid !== null && e.pointerId !== pid) return;
+    pid = null; steerPad.active = false; steerPad.x = 0;
+    show();
+  };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('pointerleave', (e) => { if (pid !== null && e.pointerId === pid) move(e); });
 }
 
 window.addEventListener('keydown', (e) => {
@@ -1066,18 +1110,19 @@ function drawHUD(time) {
 
   // Tacho unten rechts
   const sp = Math.round(Math.abs(me.speed) * 1.25);
+  const tx = CW / 2 - 57;
   ctx.fillStyle = 'rgba(8,25,42,0.72)';
-  roundRect(CW - 126, CH - 56, 114, 44, 12); ctx.fill();
+  roundRect(tx, CH - 54, 114, 44, 12); ctx.fill();
   ctx.fillStyle = me.boostT > 0 ? '#ffd166' : '#eaf3fa';
   ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'right';
-  ctx.fillText(String(sp), CW - 52, CH - 24);
+  ctx.fillText(String(sp), tx + 74, CH - 22);
   ctx.font = '12px system-ui'; ctx.fillStyle = '#bcd6ea'; ctx.textAlign = 'left';
-  ctx.fillText('km/h', CW - 48, CH - 24);
+  ctx.fillText('km/h', tx + 78, CH - 22);
   // Drift-Ladebalken
   if (me.driftCharge > 0) {
     const w = 114 * clamp(me.driftCharge / 1.7, 0, 1);
     ctx.fillStyle = me.driftCharge > 1.7 ? '#ff8d2e' : me.driftCharge > 0.85 ? '#6fd0ff' : '#dddddd';
-    ctx.fillRect(CW - 126, CH - 60, w, 4);
+    ctx.fillRect(tx, CH - 58, w, 4);
   }
 
   drawMinimap();
@@ -1272,7 +1317,8 @@ const refreshers = [
 ];
 function refreshMenu() { for (const r of refreshers) r(); refreshSound(); refreshPicks(); }
 
-setBtn('k-left'); setBtn('k-right'); setBtn('k-gas'); setBtn('k-brake'); setBtn('k-drift');
+setBtn('k-gas'); setBtn('k-brake'); setBtn('k-drift');
+setupSteer('k-steer');
 setBtn('k-item', () => { if (karts[0]) useItem(karts[0]); });
 
 // gespeicherte Einstellungen
@@ -1320,5 +1366,5 @@ window.__kart = {
   boxes: () => boxes, trees: () => trees, puffs: () => puffs,
   surfAt, nodeAt, sidePoint, project, update, updateCam, startRace, useItem,
   spinOut, rollItem, nearestNode, progress, input, pressed, buttons,
-  setDriver, driverOf, resize, Sfx, isSlow, finishLap, updatePlaces,
+  setDriver, driverOf, resize, Sfx, isSlow, finishLap, updatePlaces, steerPad,
 };
