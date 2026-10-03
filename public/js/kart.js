@@ -291,7 +291,7 @@ function startRace(seed) {
   }
   game.state = 'count'; game.count = 3.2; game.t = 0; game.flash = null;
   game.best = loadBest(d.key);
-  Sfx.engine(false);
+  Sfx.engine(false); Sfx.stopMusic(); Sfx.intensity = 0;
 }
 
 // einfacher deterministischer Zufall (für ruckelfreie Tests)
@@ -416,7 +416,7 @@ function finishLap(k) {
     k.finished = true; k.finishT = game.t;
     if (k.human) {
       game.state = 'done';
-      Sfx.engine(false); Sfx.play('fanfare');
+      Sfx.engine(false); Sfx.stopMusic(); Sfx.play('fanfare');
     }
   } else if (k.human && k.lap === game.laps) flash('🏁 Letzte Runde!');
 }
@@ -624,6 +624,8 @@ function update(dt) {
         me.boostT = 1.2; flash('🚀 Raketenstart!'); Sfx.play('boost');
       }
       Sfx.engine(true);
+      Sfx.intensity = 0;
+      Sfx.startMusic();
     }
   }
   if (game.state !== 'done') game.t += dt;
@@ -647,6 +649,9 @@ function update(dt) {
   // KI fährt nach dem Zieleinlauf des Spielers noch zu Ende
   for (const k of karts) if (!k.finished && k.lap > game.laps) { k.finished = true; k.finishT = game.t; }
   Sfx.rev(karts[0] ? karts[0].speed / Math.max(1, karts[0].d.top) : 0, game.state === 'race');
+  // In der letzten Runde wird die Musik schneller und schärfer
+  const me = karts[0];
+  Sfx.intensity = (me && game.state === 'race' && me.lap >= game.laps) ? 1 : 0;
 }
 
 /* ------------------------------------------------------------- Eingabe ---- */
@@ -741,9 +746,22 @@ function setBtn(id, onDown) {
 /* ----------------------------------------------------------------- Ton ---- */
 // Kleine Web-Audio-Werkstatt: Motor als Dauerton, Effekte synthetisiert.
 const Sfx = {
-  ctx: null, master: null, osc: null, oscGain: null, on: true, running: false,
-  load() { try { this.on = localStorage.getItem('kart_sound') !== '0'; } catch { /* egal */ } return this; },
-  save() { try { localStorage.setItem('kart_sound', this.on ? '1' : '0'); } catch { /* egal */ } },
+  ctx: null, master: null, musBus: null, noise: null,
+  osc: null, oscGain: null, on: true, musicOn: true, running: false,
+  playing: false, step: 0, next: 0, timer: null, intensity: 0,
+  load() {
+    try {
+      this.on = localStorage.getItem('kart_sound') !== '0';
+      this.musicOn = localStorage.getItem('kart_music') !== '0';
+    } catch { /* egal */ }
+    return this;
+  },
+  save() {
+    try {
+      localStorage.setItem('kart_sound', this.on ? '1' : '0');
+      localStorage.setItem('kart_music', this.musicOn ? '1' : '0');
+    } catch { /* egal */ }
+  },
   init() {
     if (this.ctx) return true;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -752,6 +770,14 @@ const Sfx = {
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.7;
     this.master.connect(this.ctx.destination);
+    this.musBus = this.ctx.createGain();
+    this.musBus.gain.value = 0.5;
+    this.musBus.connect(this.master);
+    // Rauschpuffer für Snare und Hi-Hat
+    const n = Math.floor(this.ctx.sampleRate * 0.7);
+    this.noise = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+    const d = this.noise.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     return true;
   },
   unlock() {
@@ -761,7 +787,13 @@ const Sfx = {
   toggle(v) {
     this.on = v === undefined ? !this.on : !!v;
     this.save();
-    if (!this.on) this.engine(false); else this.unlock();
+    if (!this.on) { this.engine(false); this.stopMusic(); } else this.unlock();
+  },
+  setMusic(v) {
+    this.musicOn = v === undefined ? !this.musicOn : !!v;
+    this.save();
+    if (!this.musicOn) this.stopMusic();
+    else if (this.on && game.state === 'race') { this.unlock(); this.startMusic(); }
   },
   engine(on) {
     if (!this.on || !this.init() || this.ctx.state === 'suspended') { this.running = false; return; }
@@ -818,7 +850,120 @@ const Sfx = {
       default: break;
     }
   },
+
+  /* ------------------------------------------------------------- Musik ---- */
+  // Hetziger Renn-Beat, komplett synthetisiert: stampfender Viervierteltakt,
+  // laufender Bass in Sechzehnteln, Offbeat-Stabs und eine nervöse Melodie
+  // über d-Moll – B♭ – F – C. In der letzten Runde zieht das Tempo an.
+  startMusic() {
+    if (!this.on || !this.musicOn) return;
+    if (!this.init() || this.ctx.state === 'suspended' || this.playing) return;
+    this.playing = true;
+    this.step = 0;
+    this.next = this.ctx.currentTime + 0.08;
+    if (this.timer) clearInterval(this.timer);
+    this.timer = setInterval(() => this.schedule(), 55);
+  },
+  stopMusic() {
+    this.playing = false;
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  },
+  // Sechzehntel-Dauer: Grundtempo 152 bpm, bei voller Hektik ~10 % schneller
+  stepDur() { return 60 / (152 + this.intensity * 16) / 4; },
+  schedule() {
+    if (!this.playing || !this.ctx) return;
+    if (this.ctx.state === 'suspended') return;
+    let guard = 0;
+    while (this.next < this.ctx.currentTime + 0.25 && guard++ < 64) {
+      this.beat(this.next, this.step);
+      this.next += this.stepDur();
+      this.step++;
+    }
+  },
+  // Stimme mit Hüllkurve (für Bass, Stabs und Melodie)
+  voice(t, freq, dur, type, peak, cutoff, bend) {
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (bend) o.frequency.exponentialRampToValueAtTime(Math.max(25, freq * bend), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let last = o;
+    if (cutoff) {
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.value = cutoff; f.Q.value = 6;
+      o.connect(f); last = f;
+    }
+    last.connect(g); g.connect(this.musBus);
+    o.start(t); o.stop(t + dur + 0.03);
+  },
+  // Schlagzeug aus Rauschen bzw. fallender Sinuswelle
+  drum(t, kind, peak) {
+    if (kind === 'kick') {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(160, t);
+      o.frequency.exponentialRampToValueAtTime(44, t + 0.11);
+      g.gain.setValueAtTime(peak, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.connect(g); g.connect(this.musBus);
+      o.start(t); o.stop(t + 0.2);
+      return;
+    }
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter();
+    const g = this.ctx.createGain();
+    const dur = kind === 'snare' ? 0.13 : 0.035;
+    if (kind === 'snare') { f.type = 'bandpass'; f.frequency.value = 1900; f.Q.value = 0.8; }
+    else { f.type = 'highpass'; f.frequency.value = 7200; }
+    g.gain.setValueAtTime(peak, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(this.musBus);
+    src.start(t, Math.random() * 0.4); src.stop(t + dur + 0.02);
+  },
+  beat(t, step) {
+    const s = step & 15;                    // Sechzehntel im Takt
+    const bar = (step >> 4) % 4;            // vier Takte im Kreis
+    const ch = MUSIC[bar];
+    const hot = this.intensity > 0.5;
+    const semi = (n) => Math.pow(2, n / 12);
+
+    // Beat: Viervierteltakt, Snare auf 2 und 4, Hi-Hats dazwischen
+    if (s % 4 === 0) this.drum(t, 'kick', 0.5);
+    if (s === 4 || s === 12) this.drum(t, 'snare', 0.22);
+    if (s % 2 === 1) this.drum(t, 'hat', s % 4 === 3 ? 0.11 : 0.06);
+    if (hot && (s === 7 || s === 15)) this.drum(t, 'snare', 0.16);
+
+    // Bass: treibendes Sechzehntel-Muster auf dem Grundton
+    const BASS = [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1];
+    if (BASS[s]) {
+      const oct = (s === 6 || s === 14) ? 2 : 1;
+      this.voice(t, ch.root * oct, 0.11, 'sawtooth', 0.2, 420 + this.intensity * 260);
+    }
+    // Offbeat-Stabs (zwei Akkordtöne kurz angerissen)
+    if (s === 2 || s === 6 || s === 10 || s === 14) {
+      for (const n of [ch.notes[1], ch.notes[2]]) {
+        this.voice(t, ch.root * 2 * semi(n), 0.09, 'square', 0.055, 2600);
+      }
+    }
+    // Melodie: nervöse Sechzehntel-Figur, in der letzten Runde eine Oktave höher
+    const LEAD = [0, -1, 2, -1, 1, -1, 3, 2, -1, 1, 4, -1, 2, 3, -1, 1];
+    const li = LEAD[s];
+    if (li >= 0) {
+      const n = ch.notes[li % ch.notes.length];
+      this.voice(t, ch.root * (hot ? 8 : 4) * semi(n), 0.085, 'square', hot ? 0.05 : 0.04, 3200);
+    }
+  },
 };
+// Akkordfolge d-Moll – B♭ – F – C (Grundton in Hz, Töne als Halbtonabstand)
+const MUSIC = [
+  { root: 73.42, notes: [0, 3, 7, 10, 12] },    // Dm
+  { root: 58.27, notes: [0, 4, 7, 11, 12] },    // B♭
+  { root: 87.31, notes: [0, 4, 7, 11, 12] },    // F
+  { root: 65.41, notes: [0, 4, 7, 10, 12] },    // C
+];
 
 /* --------------------------------------------------------------- Optik ---- */
 
@@ -1259,7 +1404,10 @@ document.getElementById('btn-rotate').addEventListener('click', () => {
 const soundBtn = document.getElementById('btn-sound');
 soundBtn.addEventListener('click', () => {
   Sfx.toggle();
-  if (Sfx.on) { Sfx.unlock(); Sfx.play('pickup'); if (game.state === 'race') Sfx.engine(true); }
+  if (Sfx.on) {
+    Sfx.unlock(); Sfx.play('pickup');
+    if (game.state === 'race') { Sfx.engine(true); Sfx.startMusic(); }
+  }
   refreshSound();
 });
 function refreshSound() {
@@ -1314,6 +1462,12 @@ const refreshers = [
     try { localStorage.setItem('kart_laps', String(game.laps)); } catch { /* egal */ }
     startRace();
   }),
+  bindOpts('opt-sfx', () => (Sfx.on ? 1 : 0), (v) => {
+    Sfx.toggle(v === '1');
+    if (Sfx.on) { Sfx.unlock(); if (game.state === 'race') { Sfx.engine(true); Sfx.startMusic(); } }
+    refreshSound();
+  }),
+  bindOpts('opt-music', () => (Sfx.musicOn ? 1 : 0), (v) => { Sfx.unlock(); Sfx.setMusic(v === '1'); }),
 ];
 function refreshMenu() { for (const r of refreshers) r(); refreshSound(); refreshPicks(); }
 

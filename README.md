@@ -264,8 +264,12 @@ Docker-Container deployt.
   Drift; 📱 Touch mit einem **analogen Lenkfeld** links (Daumen aufsetzen und
   ziehen – der Einschlag folgt stufenlos, der Aufsetzpunkt ist geradeaus) und
   🚀 🛑 ↩ 🎁 rechts, beide Gruppen über dem unteren Rand, damit Androids
-  Dreh-Knopf nicht auf dem Gashebel liegt, plus Querformat-Drehung. Motorsound und Effekte werden live im Browser
-  synthetisiert (🔊-Knopf schaltet stumm).
+  Dreh-Knopf nicht auf dem Gashebel liegt, plus Querformat-Drehung. Motorsound, Effekte **und Musik** werden live im
+  Browser synthetisiert: ein treibender Renn-Beat (152 bpm, stampfender
+  Viervierteltakt, laufender Bass, Offbeat-Stabs und eine nervöse Melodie
+  über d-Moll–B♭–F–C), der in der **letzten Runde** auf 168 bpm anzieht
+  und eine Oktave höher spielt. Der 🔊-Knopf schaltet alles stumm, im
+  ☰-Menü lässt sich die Musik getrennt abstellen (beides wird gemerkt).
 
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
@@ -484,7 +488,7 @@ railway.json
   Buddel-Modus (Standard, offen, Koop-Kamera), Menü-Button-Reihen,
   Spielstand-Roundtrip (RLE-Maske, localStorage), Kamera/Zoom und die
   Querformat-Drehung.
-- **`test/kart.test.mjs`** – Kart-Rennen (56 Checks) über den Test-Hook
+- **`test/kart.test.mjs`** – Kart-Rennen (63 Checks) über den Test-Hook
   `window.__kart`: Streckenaufbau (Asphalt/Gras/Randstein/Boost/Sand,
   Startaufstellung), Countdown, Gas/Bremse/Lenken, Gras als Bremse,
   Boost-Felder, Drift mit Mini-Turbo, Item-Boxen samt Nachschub,
@@ -492,7 +496,9 @@ railway.json
   gewichtsabhängiges Rempeln, Streckenposten beim Verlassen der Karte,
   Rundenzählung inklusive Falschfahrer-Regel, Platzierung, Zieleinlauf
   mit Bestzeit im Speicher, KI-Rennen über eine Minute (Rundenzeiten,
-  Streckentreue), Fahrerwahl, Menü-Optionen, Tonschalter, Querformat, die
+  Streckentreue), Fahrerwahl, Menü-Optionen, Ton- und Musikschalter
+  (Musik startet erst beim Rennstart, zieht in der letzten Runde an und
+  verstummt im Ziel), Querformat, die
   Mode-7-Darstellung selbst sowie das Handy-Layout: analoges Lenkfeld
   (anteiliger Einschlag, Rückstellung, richtige Achse in der gedrehten
   Bühne) und genug Abstand von Gashebel und Lenkfeld zur unteren

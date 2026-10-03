@@ -442,6 +442,64 @@ try {
   check('Die Gegnerzahl lässt sich einstellen', r.cpu.n === 3 && r.cpu.stored === '2', JSON.stringify(r.cpu));
   check('Die Rundenzahl lässt sich einstellen', r.laps.laps === 5 && r.laps.stored === '5', JSON.stringify(r.laps));
 
+  // ---- Musik: startet beim Rennstart, zieht in der letzten Runde an
+  r = await page.evaluate(async () => {
+    const K = window.__kart, S = K.Sfx;
+    S.toggle(true); S.setMusic(true);
+    S.init();
+    if (S.ctx.state === 'suspended') { try { await S.ctx.resume(); } catch { /* egal */ } }
+    K.game.cpu = 1; K.game.laps = 2;
+    K.startRace(3);
+    const atStart = S.playing;                       // im Countdown noch still
+    for (let i = 0; i < 4 / 0.016; i++) K.update(0.016);
+    const racing = { playing: S.playing, step: S.step, tempo: S.stepDur() };
+    await new Promise((res) => setTimeout(res, 350));  // der Scheduler legt Noten vor
+    const advanced = S.step > racing.step;
+    K.karts()[0].lap = K.game.laps;                  // letzte Runde
+    K.update(0.016);
+    const hot = { intensity: S.intensity, tempo: S.stepDur() };
+    return { ctx: S.ctx.state, atStart, racing, advanced, hot };
+  });
+  check('Die Musik schweigt im Countdown und läuft ab dem Start',
+    r.ctx === 'running' && r.atStart === false && r.racing.playing, JSON.stringify(r));
+  check('Der Musik-Scheduler legt laufend Noten vor', r.advanced, JSON.stringify(r));
+  check('In der letzten Runde wird die Musik schneller',
+    r.hot.intensity === 1 && r.hot.tempo < r.racing.tempo * 0.96, JSON.stringify(r));
+
+  r = await page.evaluate(() => {
+    const K = window.__kart, S = K.Sfx;
+    // Zieleinlauf beendet die Musik
+    const me = K.karts()[0];
+    me.lap = K.game.laps; K.finishLap(me);
+    const afterFinish = S.playing;
+    // getrennt abschaltbar
+    K.startRace(3); K.game.state = 'race'; K.game.count = 0; S.startMusic();
+    S.setMusic(false);
+    const off = { playing: S.playing, stored: localStorage.getItem('kart_music') };
+    S.setMusic(true);
+    const on = { playing: S.playing, stored: localStorage.getItem('kart_music') };
+    S.toggle(false);                       // Hauptschalter nimmt die Musik mit
+    const muted = S.playing;
+    S.toggle(true); S.setMusic(true);
+    return { afterFinish, off, on, muted };
+  });
+  check('Im Ziel verstummt die Musik für die Fanfare', r.afterFinish === false, JSON.stringify(r));
+  check('🎵 Musik lässt sich getrennt abschalten und wird gemerkt',
+    r.off.playing === false && r.off.stored === '0' && r.on.playing && r.on.stored === '1', JSON.stringify(r));
+  check('🔇 schaltet auch die Musik stumm', r.muted === false, JSON.stringify(r));
+
+  // Menü-Reihen für Ton und Musik
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    document.querySelector('#opt-music button[data-v="0"]').click();
+    const off = { on: K.Sfx.musicOn, stored: localStorage.getItem('kart_music') };
+    document.querySelector('#opt-music button[data-v="1"]').click();
+    const on = { on: K.Sfx.musicOn, sel: document.querySelector('#opt-music button[data-v="1"]').classList.contains('sel') };
+    return { off, on };
+  });
+  check('Die Musik-Reihe im Menü schaltet und zeigt die Wahl',
+    r.off.on === false && r.off.stored === '0' && r.on.on && r.on.sel, JSON.stringify(r));
+
   // ---- Ton an/aus wird gemerkt
   await page.click('#btn-sound');
   r = await page.evaluate(() => ({ on: window.__kart.Sfx.on, stored: localStorage.getItem('kart_sound'), icon: document.getElementById('btn-sound').textContent }));
