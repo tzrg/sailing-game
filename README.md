@@ -252,10 +252,18 @@ Docker-Container deployt.
   andere beiseite) und 🐸 **Hüpfer** (leicht, beschleunigt stark, beste
   Kurvenlage). **Drift mit Mini-Turbo**: Drifttaste in der Kurve halten,
   die Funken werden blau und dann orange, Loslassen gibt den Schub.
-  **Item-Boxen** verteilen 🍌 Banane (fällt nach hinten, wer reinfährt
-  dreht sich aus), 🐢 grünen Panzer (fliegt nach vorn), 🍄 Pilz (Turbo)
-  und ⚡ Blitz (bremst alle anderen aus) – wer hinten liegt, zieht die
-  besseren Items. Dazu **Boost-Felder**, Gras und Sand als Bremse,
+  **Item-Boxen** verteilen acht Gadgets: 🍌 Banane (fällt nach hinten),
+  🛢️ Öllache (das Kart verliert die Haftung und schlittert), 🐢 grünen
+  Panzer, 🚀 **Lenkrakete** (sucht sich den Vordermann und zieht ihm
+  hinterher), 🎳 **Rollkugel** (schwer, prallt von den Banden ab, walzt
+  alles um – auch den eigenen Werfer), 🍄 Pilz (Turbo), 🧪 **Schrumpfer**
+  (alle anderen werden klein, langsam und lassen sich überrollen) und
+  ⚡ Blitz – wer hinten liegt, zieht die besseren Items.
+  **Zwei Strecken**: der grüne 🌳 Wiesenring und die kurvige 🌵 Wüstenpiste
+  (eigenes Thema mit Sand, Kakteen, Felsen und orangem Himmel), beide
+  komplett von **Banden** gesäumt: man schrammt an ihnen entlang und
+  verliert Tempo, von der Strecke fliegt aber niemand mehr.
+  Dazu **Boost-Felder**, Gras und Sand als Bremse,
   Randsteine, ein **Raketenstart** bei perfektem Gasgeben, Rempeln nach
   Gewicht, **KI-Gegner** mit Gummiband, Platzierung, Runden- und
   Bestzeit (zählt für die Bestenliste), Minimap, Countdown und
@@ -488,11 +496,14 @@ railway.json
   Buddel-Modus (Standard, offen, Koop-Kamera), Menü-Button-Reihen,
   Spielstand-Roundtrip (RLE-Maske, localStorage), Kamera/Zoom und die
   Querformat-Drehung.
-- **`test/kart.test.mjs`** – Kart-Rennen (63 Checks) über den Test-Hook
+- **`test/kart.test.mjs`** – Kart-Rennen (83 Checks) über den Test-Hook
   `window.__kart`: Streckenaufbau (Asphalt/Gras/Randstein/Boost/Sand,
   Startaufstellung), Countdown, Gas/Bremse/Lenken, Gras als Bremse,
-  Boost-Felder, Drift mit Mini-Turbo, Item-Boxen samt Nachschub,
-  alle vier Items (Banane, Panzer, Pilz, Blitz) und ihre Wirkung,
+  Boost-Felder, Drift mit Mini-Turbo, Banden (niemand fährt hindurch),
+  zweite Strecke (eigene Linienführung, Thema, Deko, KI-Runden),
+  Item-Boxen samt Nachschub, alle acht Gadgets (Banane, Öl, Panzer,
+  Lenkrakete mit Zielsuche, Rollkugel mit Abprall, Pilz, Schrumpfer,
+  Blitz) und ihre Wirkung,
   gewichtsabhängiges Rempeln, Streckenposten beim Verlassen der Karte,
   Rundenzählung inklusive Falschfahrer-Regel, Platzierung, Zieleinlauf
   mit Bestzeit im Speicher, KI-Rennen über eine Minute (Rundenzeiten,

@@ -24,40 +24,80 @@ function norm(a) {
 
 const MAP = 1024;              // Kantenlänge der Streckenkarte (Welteinheiten)
 const ROAD_HW = 40;            // halbe Fahrbahnbreite
-const SURF = { GRASS: 0, ROAD: 1, CURB: 2, BOOST: 3, SAND: 4 };
-// Stützpunkte der Mittellinie (geschlossener Kurs, im Uhrzeigersinn gefahren)
-const CTRL = [
-  [250, 858], [560, 886], [800, 820], [892, 640], [800, 492],
-  [862, 318], [700, 170], [452, 182], [330, 300], [432, 452],
-  [318, 598], [168, 690],
-];
+const WALL_OFF = 74;           // Abstand der Bande von der Mittellinie
+const SURF = { GRASS: 0, ROAD: 1, CURB: 2, BOOST: 3, SAND: 4, WALL: 5 };
 const NODES = 480;             // so fein wird die Mittellinie abgetastet
-const PATH = [];               // { x, y, ang } – Fahrlinie
-const BOOSTS = [40, 190, 300]; // Knoten mit Boost-Feldern
+
+// Zwei Strecken, jede mit eigenen Stützpunkten, Farben und Deko. Rings um die
+// Fahrbahn läuft eine Bande (SURF.WALL) – wer dagegen fährt, rutscht an ihr
+// entlang und verliert Tempo, kann die Strecke aber nicht mehr verlassen.
+const TRACKS = [
+  {
+    key: 'wiese', name: '🌳 Wiesenring',
+    ctrl: [
+      [250, 858], [560, 886], [800, 820], [892, 640], [800, 492],
+      [862, 318], [700, 170], [452, 182], [330, 300], [432, 452],
+      [318, 598], [168, 690],
+    ],
+    boosts: [40, 190, 300],
+    patches: [[150, 420, 90, 60], [690, 300, 70, 110], [560, 700, 120, 70], [880, 880, 110, 80]],
+    deco: ['tree', 'tree', 'tree', 'tree', 'sign'],
+    theme: {
+      ground: '#4f8f3f', patch: '#d8c488', patchSurf: 'SAND',
+      road: '#59595f', wall: '#cfd6dc', wallTop: '#9aa6b2',
+      sky: [[96, 174, 232], [198, 228, 244]], hills: [126, 158, 178], hillsNear: [104, 142, 96],
+      outside: [62, 104, 58],
+    },
+  },
+  {
+    key: 'wueste', name: '🌵 Wüstenpiste',
+    ctrl: [
+      [210, 760], [430, 840], [640, 870], [860, 760], [880, 560],
+      [700, 470], [520, 520], [420, 400], [530, 250], [760, 190],
+      [600, 120], [330, 170], [150, 330], [120, 560],
+    ],
+    boosts: [60, 215, 330, 430],
+    patches: [[260, 620, 110, 80], [760, 640, 90, 70], [300, 290, 80, 60], [900, 900, 120, 90]],
+    deco: ['cactus', 'rock', 'cactus', 'sign', 'rock'],
+    theme: {
+      ground: '#d9b26a', patch: '#8c7a4e', patchSurf: 'GRASS',
+      road: '#6b6158', wall: '#a86a3c', wallTop: '#6b4222',
+      sky: [[224, 158, 92], [246, 214, 164]], hills: [186, 150, 118], hillsNear: [160, 124, 84],
+      outside: [150, 112, 66],
+    },
+  },
+];
+const trackOf = (key) => TRACKS.find((t) => t.key === key) || TRACKS[0];
+
+let PATH = [];                 // { x, y, ang } – Fahrlinie der aktuellen Strecke
+let N = 0;
+let BOOSTS = [];
+let theme = TRACKS[0].theme;
+let decoKinds = TRACKS[0].deco;
 
 function catmull(p0, p1, p2, p3, t) {
   const t2 = t * t, t3 = t2 * t;
   return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
     + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
 }
-function buildPath() {
-  const n = CTRL.length;
+function buildPath(ctrl) {
+  const n = ctrl.length;
   const raw = [];
   const per = Math.ceil(NODES / n);
   for (let i = 0; i < n; i++) {
-    const p0 = CTRL[(i - 1 + n) % n], p1 = CTRL[i], p2 = CTRL[(i + 1) % n], p3 = CTRL[(i + 2) % n];
+    const p0 = ctrl[(i - 1 + n) % n], p1 = ctrl[i], p2 = ctrl[(i + 1) % n], p3 = ctrl[(i + 2) % n];
     for (let s = 0; s < per; s++) {
       const t = s / per;
       raw.push({ x: catmull(p0[0], p1[0], p2[0], p3[0], t), y: catmull(p0[1], p1[1], p2[1], p3[1], t) });
     }
   }
+  const out = [];
   for (let i = 0; i < raw.length; i++) {
     const a = raw[i], b = raw[(i + 1) % raw.length];
-    PATH.push({ x: a.x, y: a.y, ang: Math.atan2(b.y - a.y, b.x - a.x) });
+    out.push({ x: a.x, y: a.y, ang: Math.atan2(b.y - a.y, b.x - a.x) });
   }
+  return out;
 }
-buildPath();
-const N = PATH.length;
 const nodeAt = (i) => { const j = Math.round(i); return PATH[((j % N) + N) % N]; };
 // Punkt seitlich neben der Mittellinie (off = Querversatz)
 function sidePoint(i, off) {
@@ -65,33 +105,39 @@ function sidePoint(i, off) {
   return { x: p.x + Math.cos(p.ang + Math.PI / 2) * off, y: p.y + Math.sin(p.ang + Math.PI / 2) * off };
 }
 
-// Die Strecke wird einmal in zwei Leinwände gemalt: eine fürs Auge, eine mit
-// flachen Kennfarben für die Oberflächen-Abfrage (Asphalt, Gras, Randstein …).
+// Jede Strecke wird einmal in zwei Leinwände gemalt: eine fürs Auge, eine mit
+// flachen Kennfarben für die Oberflächen-Abfrage (Asphalt, Gras, Bande …).
 let texData = null;            // Pixel der Optik-Textur
 let surf = null;               // Uint8Array mit SURF-Werten
 let texCanvas = null;
+const trackCache = new Map();  // gebaute Strecken (Umschalten ohne Wartezeit)
 
 function makeCanvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   return c;
 }
-function buildTrack() {
+function buildTrack(key) {
+  const tr = trackOf(key);
+  PATH = buildPath(tr.ctrl); N = PATH.length;
+  BOOSTS = tr.boosts; theme = tr.theme; decoKinds = tr.deco;
+  const cached = trackCache.get(tr.key);
+  if (cached) { texData = cached.texData; surf = cached.surf; texCanvas = cached.canvas; return; }
+
   texCanvas = makeCanvas(MAP, MAP);
   const vc = texCanvas.getContext('2d');
   const ic = makeCanvas(MAP, MAP).getContext('2d');
   const both = (fn) => { fn(vc, false); fn(ic, true); };
-  const id = (s) => `rgb(${s},0,0)`;
+  const id = (su) => `rgb(${su},0,0)`;
 
-  // Wiese
-  vc.fillStyle = '#4f8f3f'; vc.fillRect(0, 0, MAP, MAP);
-  ic.fillStyle = id(SURF.GRASS); ic.fillRect(0, 0, MAP, MAP);
+  // Untergrund (Wiese bzw. Wüstensand)
+  vc.fillStyle = tr.theme.ground; vc.fillRect(0, 0, MAP, MAP);
+  ic.fillStyle = id(SURF[tr.theme.patchSurf === 'SAND' ? 'GRASS' : 'SAND']); ic.fillRect(0, 0, MAP, MAP);
 
-  // Sandflächen neben der Strecke (bremsen, sehen aber hübsch aus)
-  const sand = [[150, 420, 90, 60], [690, 300, 70, 110], [560, 700, 120, 70], [880, 880, 110, 80]];
+  // Flecken daneben (anderer langsamer Untergrund – reine Optik mit Bremswirkung)
   both((c, isId) => {
-    c.fillStyle = isId ? id(SURF.SAND) : '#d8c488';
-    for (const [x, y, rx, ry] of sand) {
+    c.fillStyle = isId ? id(SURF[tr.theme.patchSurf]) : tr.theme.patch;
+    for (const [x, y, rx, ry] of tr.patches) {
       c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, TAU); c.fill();
     }
   });
@@ -105,9 +151,24 @@ function buildTrack() {
     c.closePath();
   };
 
+  // Bande: durchgehender Streifen links und rechts der Strecke
+  for (const side of [-1, 1]) {
+    both((c, isId) => {
+      c.lineJoin = 'round'; c.lineCap = 'round';
+      c.lineWidth = 12;
+      c.strokeStyle = isId ? id(SURF.WALL) : tr.theme.wall;
+      trace(c, side * WALL_OFF); c.stroke();
+      if (!isId) {                      // dunkle Kante gibt der Bande Höhe
+        c.lineWidth = 4;
+        c.strokeStyle = tr.theme.wallTop;
+        trace(c, side * (WALL_OFF + 4)); c.stroke();
+      }
+    });
+  }
+
   // Fahrbahn
   both((c, isId) => {
-    c.strokeStyle = isId ? id(SURF.ROAD) : '#59595f';
+    c.strokeStyle = isId ? id(SURF.ROAD) : tr.theme.road;
     c.lineWidth = ROAD_HW * 2;
     c.lineJoin = 'round'; c.lineCap = 'round';
     trace(c, 0); c.stroke();
@@ -153,7 +214,7 @@ function buildTrack() {
   }
   vc.restore();
 
-  // Asphalt-Körnung und Gras-Flecken: kleine Pixelstörung über alles
+  // Körnung: kleine Pixelstörung über alles
   const img = vc.getImageData(0, 0, MAP, MAP);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
@@ -171,14 +232,16 @@ function buildTrack() {
   const idData = ic.getImageData(0, 0, MAP, MAP).data;
   surf = new Uint8Array(MAP * MAP);
   for (let i = 0, j = 0; i < idData.length; i += 4, j++) surf[j] = idData[i];
+  trackCache.set(tr.key, { texData, surf, canvas: texCanvas });
 }
 
-// Oberfläche an einer Weltposition (außerhalb der Karte: Wiese)
+// Oberfläche an einer Weltposition (außerhalb der Karte: Bande)
 function surfAt(x, y) {
   const u = x | 0, v = y | 0;
-  if (u < 0 || v < 0 || u >= MAP || v >= MAP) return SURF.GRASS;
+  if (u < 0 || v < 0 || u >= MAP || v >= MAP) return SURF.WALL;
   return surf[(v << 10) + u];
 }
+const wallAt = (x, y) => surfAt(x, y) === SURF.WALL;
 const isSlow = (s) => s === SURF.GRASS || s === SURF.SAND;
 
 /* ------------------------------------------------------------- Fahrer ----- */
@@ -207,8 +270,12 @@ const CPU_NAMES = [{ emoji: '🤖', name: 'Robo' }, { emoji: '🐧', name: 'Ping
 
 const ITEMS = {
   banana: { emoji: '🍌', name: 'Banane' },
+  oil: { emoji: '🛢️', name: 'Öllache' },
   shell: { emoji: '🐢', name: 'Panzer' },
+  rocket: { emoji: '🚀', name: 'Lenkrakete' },
+  ball: { emoji: '🎳', name: 'Rollkugel' },
   mushroom: { emoji: '🍄', name: 'Pilz' },
+  shrink: { emoji: '🧪', name: 'Schrumpfer' },
   bolt: { emoji: '⚡', name: 'Blitz' },
 };
 
@@ -219,6 +286,7 @@ const game = {
   laps: 3,
   cpu: 3,
   driver: 'fuchs',
+  track: 'wiese',
   paused: false,
   autoPilot: false,      // true: das eigene Kart fährt von allein (Vorführung/Tests)
   best: 0,               // Bestzeit einer Runde (Fahrer-abhängig, aus localStorage)
@@ -226,7 +294,8 @@ const game = {
 };
 let karts = [];
 let bananas = [];        // { x, y, t }
-let shells = [];         // { x, y, ang, v, owner, life }
+let oils = [];           // Öllachen { x, y, t }
+let shells = [];         // Panzer/Raketen/Kugeln { x, y, ang, v, owner, life, kind }
 let boxes = [];          // { x, y, t } – t > 0: eingesammelt, zählt runter
 let puffs = [];          // Partikel { x, y, vx, vy, t, life, color, size }
 let trees = [];          // Deko am Streckenrand
@@ -255,7 +324,7 @@ function makeKart(d, slot, human) {
     color: human ? d.color : ['#4f8ad6', '#b45fc0', '#d8c23c'][slot % 3],
     x: px, y: py, ang: p.ang, velAng: p.ang, speed: 0,
     drift: 0, driftDir: 0, driftCharge: 0,
-    boostT: 0, slowT: 0, spinT: 0, hopT: 0,
+    boostT: 0, slowT: 0, spinT: 0, hopT: 0, oilT: 0, smallT: 0, wallT: 0,
     item: null, lap: 0, node: 0, prevNode: 0, place: 1,
     lapTime: 0, bestLap: 0, lapTimes: [], finished: false, finishT: 0,
     skill: 1, wobble: Math.random() * TAU,
@@ -263,7 +332,7 @@ function makeKart(d, slot, human) {
 }
 
 function startRace(seed) {
-  if (!texData) buildTrack();
+  buildTrack(game.track);
   if (seed !== undefined) rngState = seed >>> 0 || 1;
   const d = driverOf(game.driver);
   karts = [makeKart(d, game.cpu, true)];      // Spieler startet vom letzten Platz
@@ -274,7 +343,7 @@ function startRace(seed) {
     karts.push(k);
   }
   for (const k of karts) { k.node = nearestNode(k, true); k.prevNode = k.node; }
-  bananas = []; shells = []; puffs = [];
+  bananas = []; shells = []; oils = []; puffs = [];
   boxes = [];
   for (const node of [70, 150, 230, 330, 400, 450]) {
     for (const off of [-18, 0, 18]) {
@@ -284,10 +353,11 @@ function startRace(seed) {
   }
   trees = [];
   for (let i = 0; i < N; i += 11) {
-    const off = (ROAD_HW + 26 + (i % 7) * 5) * (i % 2 ? 1 : -1);
+    // hinter der Bande, damit die Deko nicht im Weg steht
+    const off = (WALL_OFF + 16 + (i % 5) * 7) * (i % 2 ? 1 : -1);
     const p = sidePoint(i, off);
-    if (surfAt(p.x, p.y) !== SURF.GRASS) continue;
-    trees.push({ x: p.x, y: p.y, kind: i % 5 === 0 ? 'sign' : 'tree', h: 26 + (i % 4) * 5 });
+    if (wallAt(p.x, p.y) || p.x < 8 || p.y < 8 || p.x > MAP - 8 || p.y > MAP - 8) continue;
+    trees.push({ x: p.x, y: p.y, kind: decoKinds[(i / 11 | 0) % decoKinds.length], h: 26 + (i % 4) * 5 });
   }
   game.state = 'count'; game.count = 3.2; game.t = 0; game.flash = null;
   game.best = loadBest(d.key);
@@ -337,12 +407,18 @@ function updateKart(k, dt, input) {
   if (k.boostT > 0) k.boostT -= dt;
   if (k.slowT > 0) k.slowT -= dt;
   if (k.hopT > 0) k.hopT -= dt;
+  if (k.oilT > 0) k.oilT -= dt;
+  if (k.smallT > 0) {
+    k.smallT -= dt;
+    if (k.smallT <= 0 && k.human) flash('Wieder normal groß!');
+  }
 
   // Höchstgeschwindigkeit je nach Untergrund, Turbo und Blitz
   let maxV = d.top * k.skill;
   if (slow) maxV *= s === SURF.SAND ? 0.42 : 0.5;
   if (k.boostT > 0) maxV *= 1.45;
   if (k.slowT > 0) maxV *= 0.52;
+  if (k.smallT > 0) maxV *= 0.62;
   if (game.state === 'count') maxV = 0;
 
   // Im Countdown fährt niemand; nach dem Zieleinlauf rollt nur der Spieler aus
@@ -376,11 +452,27 @@ function updateKart(k, dt, input) {
   }
   if (k.drift) k.ang += k.driftDir * 0.55 * dt;
 
-  // Bewegungsrichtung folgt der Blickrichtung (beim Driften träger)
-  const follow = k.drift ? 2.6 : (slow ? 7 : 11);
+  // Bewegungsrichtung folgt der Blickrichtung (beim Driften träger, auf Öl
+  // rutscht das Kart fast ungebremst weiter)
+  const follow = k.oilT > 0 ? 0.7 : k.drift ? 2.6 : (slow ? 7 : 11);
   k.velAng += norm(k.ang - k.velAng) * Math.min(1, follow * dt);
-  k.x += Math.cos(k.velAng) * k.speed * dt;
-  k.y += Math.sin(k.velAng) * k.speed * dt;
+  const nx = k.x + Math.cos(k.velAng) * k.speed * dt;
+  const ny = k.y + Math.sin(k.velAng) * k.speed * dt;
+  if (!wallAt(nx, ny)) { k.x = nx; k.y = ny; }
+  else {
+    // Bande: an ihr entlangschrammen statt durchfahren
+    if (!wallAt(nx, k.y)) k.x = nx;
+    else if (!wallAt(k.x, ny)) k.y = ny;
+    k.speed *= 0.55;
+    k.drift = 0; k.driftCharge = 0;
+    // Nase von der Bande wegdrehen
+    const free = (a) => !wallAt(k.x + Math.cos(a) * 14, k.y + Math.sin(a) * 14);
+    const turn = free(k.velAng - 0.7) ? -1 : free(k.velAng + 0.7) ? 1 : 0;
+    k.ang += turn * 2.2 * dt * 60 * dt;
+    k.velAng = k.ang;
+    if (k.wallT <= 0) { puff(k.x, k.y, '#ffffff'); Sfx.play('bump', k.human ? 0.8 : 0.3); k.wallT = 0.25; }
+  }
+  k.wallT = Math.max(0, (k.wallT || 0) - dt);
 
   // Boost-Feld
   if (s === SURF.BOOST && k.speed > 20) { k.boostT = Math.max(k.boostT, 0.8); }
@@ -438,6 +530,11 @@ function kartCollisions() {
       b.y += ny * push * (wa / (wa + wb)) * 2;
       const slower = wa > wb ? b : a;
       slower.speed *= 0.93;
+      // Geschrumpfte werden von normal großen Karts überrollt
+      if (a.smallT > 0 !== b.smallT > 0) {
+        const small = a.smallT > 0 ? a : b;
+        if (small.spinT <= 0) spinOut(small, '🧪 Überrollt!');
+      }
       if (Math.abs(a.speed - b.speed) > 40) Sfx.play('bump');
     }
   }
@@ -449,16 +546,32 @@ function rollItem(k) {
   // Wer hinten fährt, bekommt die stärkeren Items (wie im Vorbild)
   const n = Math.max(1, karts.length - 1);
   const back = (k.place - 1) / n;
+  const first = k.place === 1;
   const w = [
-    ['banana', 0.42 - 0.24 * back],
-    ['shell', 0.3],
-    ['mushroom', 0.16 + 0.22 * back],
-    ['bolt', k.place === 1 ? 0 : 0.04 + 0.2 * back],
+    ['banana', 0.26 - 0.14 * back],
+    ['oil', 0.18 - 0.1 * back],
+    ['shell', 0.2],
+    ['ball', 0.08 + 0.08 * back],
+    ['rocket', first ? 0 : 0.05 + 0.18 * back],
+    ['mushroom', 0.12 + 0.16 * back],
+    ['shrink', first ? 0 : 0.03 + 0.14 * back],
+    ['bolt', first ? 0 : 0.02 + 0.12 * back],
   ];
   const sum = w.reduce((a, x) => a + x[1], 0);
   let r = rng() * sum;
   for (const [key, p] of w) { r -= p; if (r <= 0) return key; }
   return 'banana';
+}
+// Ziel für die Lenkrakete: das nächste Kart vor einem
+function aheadOf(k) {
+  let best = null, bd = Infinity;
+  for (const o of karts) {
+    if (o === k || o.finished) continue;
+    const d = progress(o) - progress(k);
+    if (d <= 0) continue;
+    if (d < bd) { bd = d; best = o; }
+  }
+  return best;
 }
 
 function pickBoxes(dt) {
@@ -482,15 +595,33 @@ function useItem(k) {
   if (it === 'banana') {
     bananas.push({ x: k.x - Math.cos(k.ang) * 22, y: k.y - Math.sin(k.ang) * 22, t: 0 });
     if (k.human) Sfx.play('drop');
-  } else if (it === 'shell') {
+  } else if (it === 'oil') {
+    oils.push({ x: k.x - Math.cos(k.ang) * 24, y: k.y - Math.sin(k.ang) * 24, t: 0 });
+    if (k.human) Sfx.play('drop');
+  } else if (it === 'shell' || it === 'rocket' || it === 'ball') {
+    const spec = {
+      shell: { v: 268, life: 6, r: 12, spin: 1.25 },
+      rocket: { v: 300, life: 7, r: 13, spin: 1.5, homing: aheadOf(k) },
+      ball: { v: 185, life: 12, r: 20, spin: 1.7, heavy: true },
+    }[it];
     shells.push({
-      x: k.x + Math.cos(k.ang) * 18, y: k.y + Math.sin(k.ang) * 18,
-      ang: k.ang, v: 268, owner: k, life: 6,
+      kind: it, x: k.x + Math.cos(k.ang) * 20, y: k.y + Math.sin(k.ang) * 20,
+      ang: k.ang, v: spec.v, owner: k, life: spec.life, r: spec.r,
+      spin: spec.spin, heavy: !!spec.heavy, target: spec.homing || null, armed: 0,
     });
-    Sfx.play('shoot');
+    Sfx.play(it === 'ball' ? 'bump' : 'shoot');
+    if (k.human && it === 'rocket') flash(spec.homing ? '🚀 Rakete unterwegs!' : '🚀 Abgefeuert!');
   } else if (it === 'mushroom') {
     k.boostT = Math.max(k.boostT, 1.5);
     Sfx.play('boost');
+  } else if (it === 'shrink') {
+    for (const o of karts) {
+      if (o === k || o.finished) continue;
+      o.smallT = 7; o.speed *= 0.8;
+      puff(o.x, o.y, '#b8f0ff');
+    }
+    if (k.human) flash('🧪 Alle geschrumpft!');
+    Sfx.play('shrink');
   } else if (it === 'bolt') {
     for (const o of karts) {
       if (o === k || o.finished) continue;
@@ -526,25 +657,78 @@ function updateItems(dt) {
     }
   }
   bananas = bananas.filter((b) => !b.dead && b.t < 90);
-  // Panzer fliegen geradeaus und verpuffen im Gelände
+
+  // Öllachen: kein Dreher, aber das Kart verliert die Haftung und schlittert
+  for (const o of oils) {
+    o.t += dt;
+    for (const k of karts) {
+      if (k.finished || Math.hypot(k.x - o.x, k.y - o.y) > 16) continue;
+      if (k.oilT <= 0 && k.human) { flash('🛢️ Öl – keine Haftung!'); Sfx.play('slip'); }
+      k.oilT = Math.max(k.oilT, 2.4);
+      k.speed *= 1 - 0.5 * dt;
+      k.drift = 0; k.driftCharge = 0;
+      if (rng() < dt * 6) puff(k.x, k.y, '#2b2b33');
+    }
+  }
+  oils = oils.filter((o) => o.t < 60);
+
+  // Panzer, Raketen und Rollkugeln
   for (const sh of shells) {
     sh.life -= dt;
-    const steps = Math.max(1, Math.ceil(sh.v * dt / 6));
+    sh.armed += dt;
+    // Die Rakete zieht zu ihrem Ziel, solange es vor ihr liegt
+    if (sh.kind === 'rocket') {
+      if (!sh.target || sh.target.finished || sh.target.spinT > 0) sh.target = aheadOf(sh.owner);
+      if (sh.target) {
+        const want = Math.atan2(sh.target.y - sh.y, sh.target.x - sh.x);
+        sh.ang += clamp(norm(want - sh.ang), -2.4 * dt, 2.4 * dt);
+      }
+      if (rng() < dt * 40) puff(sh.x, sh.y, '#d8d8e0');
+    }
+    const steps = Math.max(1, Math.ceil(sh.v * dt / 5));
     for (let i = 0; i < steps && !sh.dead; i++) {
-      sh.x += Math.cos(sh.ang) * sh.v * dt / steps;
-      sh.y += Math.sin(sh.ang) * sh.v * dt / steps;
-      for (const k of karts) {
-        if (k === sh.owner || k.spinT > 0 || k.finished) continue;
-        if (Math.hypot(k.x - sh.x, k.y - sh.y) > 12) continue;
-        sh.dead = true;
-        spinOut(k, '🐢 Panzer getroffen!');
+      const nx = sh.x + Math.cos(sh.ang) * sh.v * dt / steps;
+      const ny = sh.y + Math.sin(sh.ang) * sh.v * dt / steps;
+      if (wallAt(nx, ny)) {
+        // Panzer und Kugel prallen ab, die Rakete zerschellt
+        if (sh.kind === 'rocket') { sh.dead = true; boomAt(sh.x, sh.y); break; }
+        if (wallAt(nx, sh.y)) sh.ang = Math.PI - sh.ang;
+        else if (wallAt(sh.x, ny)) sh.ang = -sh.ang;
+        else sh.ang += Math.PI;
+        sh.ang = norm(sh.ang);
+        sh.bounces = (sh.bounces || 0) + 1;
+        sh.v *= sh.heavy ? 0.97 : 0.92;
+        puff(sh.x, sh.y, '#ffffff');
+        if (!sh.heavy && sh.bounces > 4) sh.dead = true;
         break;
       }
-      if (isSlow(surfAt(sh.x, sh.y))) { sh.dead = true; puff(sh.x, sh.y, '#8ee07a'); }
+      sh.x = nx; sh.y = ny;
+      for (const k of karts) {
+        // Die eigene Kugel kann einen nach dem Abprall selbst erwischen
+        if (k.spinT > 0 || k.finished) continue;
+        if (k === sh.owner && !(sh.heavy && sh.armed > 1.2)) continue;
+        if (Math.hypot(k.x - sh.x, k.y - sh.y) > sh.r) continue;
+        if (!sh.heavy) sh.dead = true; else sh.v *= 0.85;
+        k.spinT = 0; spinOut(k, sh.kind === 'rocket' ? '🚀 Rakete getroffen!'
+          : sh.kind === 'ball' ? '🎳 Von der Kugel überrollt!' : '🐢 Panzer getroffen!');
+        k.spinT = sh.spin;
+        if (sh.kind === 'rocket') boomAt(sh.x, sh.y);
+        break;
+      }
+      // Der Panzer bleibt im Gelände liegen, die Kugel wird dort langsamer –
+      // die Rakete fliegt drüber hinweg
+      const slowGround = isSlow(surfAt(sh.x, sh.y));
+      if (sh.kind === 'shell' && slowGround) { sh.dead = true; puff(sh.x, sh.y, '#8ee07a'); }
+      else if (sh.heavy && slowGround) sh.v *= 1 - 0.8 * dt;
     }
     if (sh.life <= 0) sh.dead = true;
   }
   shells = shells.filter((s) => !s.dead);
+}
+// kleine Explosion (Rakete)
+function boomAt(x, y) {
+  for (let i = 0; i < 10; i++) puff(x, y, i % 2 ? '#ffd166' : '#ff8d2e');
+  Sfx.play('boom');
 }
 
 function puff(x, y, color) {
@@ -576,13 +760,17 @@ function aiInput(k, dt) {
   // lange Kurven werden gedriftet
   inp.drift = Math.abs(ahead) > 0.42 && Math.abs(inp.steer) > 0.5 && k.speed > 110;
 
-  // Items: Banane legen, wenn jemand dicht dahinter ist; Panzer nach vorn
+  // Items: Fallen legen, wenn jemand dicht dahinter ist; Geschosse nach vorn
   if (k.item && rng() < dt * 1.6) {
     const near = karts.find((o) => o !== k && Math.hypot(o.x - k.x, o.y - k.y) < 150);
-    if (k.item === 'mushroom' && Math.abs(ahead) < 0.25) useItem(k);
-    else if (k.item === 'bolt') useItem(k);
-    else if (k.item === 'shell' && near && norm(Math.atan2(near.y - k.y, near.x - k.x) - k.ang) < 0.3) useItem(k);
-    else if (k.item === 'banana' && near) useItem(k);
+    const inFront = near && Math.abs(norm(Math.atan2(near.y - k.y, near.x - k.x) - k.ang)) < 0.4;
+    const it = k.item;
+    if (it === 'mushroom' && Math.abs(ahead) < 0.25) useItem(k);
+    else if (it === 'bolt' || it === 'shrink') useItem(k);
+    else if (it === 'rocket' && k.place > 1) useItem(k);
+    else if ((it === 'shell') && inFront) useItem(k);
+    else if (it === 'ball' && Math.abs(ahead) < 0.3) useItem(k);
+    else if ((it === 'banana' || it === 'oil') && near) useItem(k);
   }
   return inp;
 }
@@ -846,6 +1034,22 @@ const Sfx = {
       case 'hit': this.tone(t, 180, 0.3, 'sawtooth', 0.24 * vol, 0.4); break;
       case 'bump': this.tone(t, 120, 0.12, 'triangle', 0.14 * vol, 0.7); break;
       case 'bolt': this.tone(t, 900, 0.45, 'sawtooth', 0.2 * vol, 0.25); break;
+      case 'shrink': this.tone(t, 1200, 0.4, 'triangle', 0.18 * vol, 0.22); break;
+      case 'slip': this.tone(t, 420, 0.5, 'sine', 0.12 * vol, 0.45); break;
+      case 'boom': {
+        this.tone(t, 140, 0.4, 'sawtooth', 0.26 * vol, 0.25);
+        if (this.noise) {
+          const src = this.ctx.createBufferSource(), f = this.ctx.createBiquadFilter(), g = this.ctx.createGain();
+          src.buffer = this.noise;
+          f.type = 'lowpass'; f.frequency.setValueAtTime(2200, t);
+          f.frequency.exponentialRampToValueAtTime(220, t + 0.35);
+          g.gain.setValueAtTime(0.3 * vol, t);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+          src.connect(f); f.connect(g); g.connect(this.master);
+          src.start(t, Math.random() * 0.2); src.stop(t + 0.45);
+        }
+        break;
+      }
       case 'fanfare': [523, 659, 784, 1046].forEach((f, i) => this.tone(t + i * 0.13, f, 0.3, 'triangle', 0.2 * vol)); break;
       default: break;
     }
@@ -992,7 +1196,8 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-const SKY_TOP = [96, 174, 232], SKY_BOT = [198, 228, 244];
+// Himmel- und Hügelfarben kommen aus dem Streckenthema
+const skyTop = () => theme.sky[0], skyBot = () => theme.sky[1];
 // Mode-7: Fluchtpunkt bei 42 % Höhe, Brennweite leicht weitwinklig
 const horizonRow = () => Math.round(RH * 0.42);
 const focal = () => RW * 0.62;
@@ -1007,14 +1212,15 @@ function renderGround() {
   const skyOff = (cam.ang / TAU) * RW * 3;
   for (let y = 0; y < hy; y++) {
     const t = y / hy;
-    const r = lerp(SKY_TOP[0], SKY_BOT[0], t), g = lerp(SKY_TOP[1], SKY_BOT[1], t), b = lerp(SKY_TOP[2], SKY_BOT[2], t);
+    const st = skyTop(), sb2 = skyBot();
+    const r = lerp(st[0], sb2[0], t), g = lerp(st[1], sb2[1], t), b = lerp(st[2], sb2[2], t);
     for (let x = 0; x < RW; x++) {
       const p = (y * RW + x) * 4;
       const wx = x + skyOff;
       const hill = hy - (14 + Math.sin(wx * 0.013) * 9 + Math.sin(wx * 0.031 + 1.7) * 5);
       const hill2 = hy - (7 + Math.sin(wx * 0.021 + 4) * 6);
-      if (y > hill2) { d[p] = 104; d[p + 1] = 142; d[p + 2] = 96; }
-      else if (y > hill) { d[p] = 126; d[p + 1] = 158; d[p + 2] = 178; }
+      if (y > hill2) { d[p] = theme.hillsNear[0]; d[p + 1] = theme.hillsNear[1]; d[p + 2] = theme.hillsNear[2]; }
+      else if (y > hill) { d[p] = theme.hills[0]; d[p + 1] = theme.hills[1]; d[p + 2] = theme.hills[2]; }
       else { d[p] = r; d[p + 1] = g; d[p + 2] = b; }
       d[p + 3] = 255;
     }
@@ -1028,12 +1234,13 @@ function renderGround() {
     const stepX = rgtX * dz / F, stepY = rgtY * dz / F;
     let wx = cam.x + dirX * dz - stepX * (RW / 2);
     let wy = cam.y + dirY * dz - stepY * (RW / 2);
-    const sr = lerp(SKY_BOT[0], 150, 0.25), sg = lerp(SKY_BOT[1], 170, 0.25), sb = lerp(SKY_BOT[2], 180, 0.25);
+    const sb2 = skyBot();
+    const sr = lerp(sb2[0], 150, 0.25), sg = lerp(sb2[1], 170, 0.25), sb = lerp(sb2[2], 180, 0.25);
     let p = y * RW * 4;
     for (let x = 0; x < RW; x++, p += 4) {
       const u = wx | 0, v = wy | 0;
       let r, g, b;
-      if (u < 0 || v < 0 || u >= MAP || v >= MAP) { r = 62; g = 104; b = 58; }
+      if (u < 0 || v < 0 || u >= MAP || v >= MAP) { r = theme.outside[0]; g = theme.outside[1]; b = theme.outside[2]; }
       else {
         const i = ((v << 10) + u) << 2;
         r = texData[i]; g = texData[i + 1]; b = texData[i + 2];
@@ -1071,7 +1278,7 @@ function drawShadow(p, w) {
 
 // Kart als Billboard: Breite und Räder richten sich nach dem Blickwinkel
 function drawKart(k, p) {
-  const sc = p.s;
+  const sc = p.s * (k.smallT > 0 ? 0.55 : 1);
   const rel = norm(k.ang - cam.ang);
   const side = Math.abs(Math.sin(rel)), front = Math.cos(rel);
   const w = (13 + 11 * side) * sc;
@@ -1132,6 +1339,7 @@ function drawSprites(time) {
   const list = [];
   for (const k of karts) { const p = project(k.x, k.y); if (p) list.push({ p, kind: 'kart', o: k }); }
   for (const b of bananas) { const p = project(b.x, b.y); if (p) list.push({ p, kind: 'banana', o: b }); }
+  for (const o of oils) { const p = project(o.x, o.y); if (p) list.push({ p, kind: 'oil', o }); }
   for (const s of shells) { const p = project(s.x, s.y); if (p) list.push({ p, kind: 'shell', o: s }); }
   for (const b of boxes) { if (b.t > 0) continue; const p = project(b.x, b.y); if (p) list.push({ p, kind: 'box', o: b }); }
   for (const t of trees) { const p = project(t.x, t.y); if (p) list.push({ p, kind: t.kind, o: t }); }
@@ -1157,11 +1365,38 @@ function drawSprites(time) {
       ctx.fillText('🍌', p.x, p.y);
       continue;
     }
+    if (e.kind === 'oil') {
+      // flache Lache auf dem Asphalt
+      const w = 17 * p.s;
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#17171d';
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, w, w * 0.34, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(90,110,150,0.45)';
+      ctx.beginPath(); ctx.ellipse(p.x - w * 0.2, p.y - w * 0.06, w * 0.4, w * 0.13, 0, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      continue;
+    }
     if (e.kind === 'shell') {
+      if (o.kind === 'ball') {
+        // große rollende Kugel mit Glanzlicht
+        const r = 15 * p.s;
+        drawShadow(p, r * 1.9);
+        const g = ctx.createRadialGradient(p.x - r * 0.35, p.y - r * 1.3, r * 0.2, p.x, p.y - r, r);
+        g.addColorStop(0, '#f0f2f6'); g.addColorStop(0.5, '#9aa2ad'); g.addColorStop(1, '#4b525c');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(p.x, p.y - r, r, 0, TAU); ctx.fill();
+        ctx.strokeStyle = 'rgba(30,32,38,0.5)'; ctx.lineWidth = Math.max(1, p.s * 0.5);
+        ctx.beginPath(); ctx.arc(p.x, p.y - r, r, 0, TAU); ctx.stroke();
+        continue;
+      }
       drawShadow(p, 9 * p.s);
-      ctx.font = Math.max(7, 11 * p.s) + 'px system-ui';
+      ctx.save();
+      ctx.translate(p.x, p.y - 5 * p.s);
+      if (o.kind === 'rocket') ctx.rotate(norm(o.ang - cam.ang) * 0.35);
+      ctx.font = Math.max(7, 12 * p.s) + 'px system-ui';
       ctx.textAlign = 'center';
-      ctx.fillText('🐢', p.x, p.y);
+      ctx.fillText(o.kind === 'rocket' ? '🚀' : '🐢', 0, 5 * p.s);
+      ctx.restore();
       continue;
     }
     if (e.kind === 'box') {
@@ -1192,6 +1427,28 @@ function drawSprites(time) {
       ctx.beginPath(); ctx.arc(p.x, p.y - hpx * 0.62, hpx * 0.3, 0, TAU); ctx.fill();
       ctx.fillStyle = '#3c9a4c';
       ctx.beginPath(); ctx.arc(p.x - hpx * 0.12, p.y - hpx * 0.72, hpx * 0.22, 0, TAU); ctx.fill();
+    } else if (e.kind === 'cactus') {
+      ctx.fillStyle = '#3f8f4a';
+      roundRect(p.x - hpx * 0.1, p.y - hpx * 0.9, hpx * 0.2, hpx * 0.9, hpx * 0.1); ctx.fill();
+      roundRect(p.x - hpx * 0.34, p.y - hpx * 0.62, hpx * 0.24, hpx * 0.12, hpx * 0.06); ctx.fill();
+      roundRect(p.x - hpx * 0.34, p.y - hpx * 0.62, hpx * 0.12, hpx * 0.34, hpx * 0.06); ctx.fill();
+      roundRect(p.x + hpx * 0.12, p.y - hpx * 0.74, hpx * 0.22, hpx * 0.12, hpx * 0.06); ctx.fill();
+      roundRect(p.x + hpx * 0.22, p.y - hpx * 0.74, hpx * 0.12, hpx * 0.3, hpx * 0.06); ctx.fill();
+    } else if (e.kind === 'rock') {
+      ctx.fillStyle = '#8d7355';
+      ctx.beginPath();
+      ctx.moveTo(p.x - hpx * 0.4, p.y);
+      ctx.lineTo(p.x - hpx * 0.22, p.y - hpx * 0.46);
+      ctx.lineTo(p.x + hpx * 0.1, p.y - hpx * 0.58);
+      ctx.lineTo(p.x + hpx * 0.38, p.y - hpx * 0.2);
+      ctx.lineTo(p.x + hpx * 0.3, p.y);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.beginPath();
+      ctx.moveTo(p.x - hpx * 0.22, p.y - hpx * 0.46);
+      ctx.lineTo(p.x + hpx * 0.1, p.y - hpx * 0.58);
+      ctx.lineTo(p.x + hpx * 0.02, p.y - hpx * 0.3);
+      ctx.closePath(); ctx.fill();
     } else {
       ctx.fillStyle = '#d9d9e0';
       ctx.fillRect(p.x - hpx * 0.04, p.y - hpx * 0.5, hpx * 0.08, hpx * 0.5);
@@ -1462,6 +1719,11 @@ const refreshers = [
     try { localStorage.setItem('kart_laps', String(game.laps)); } catch { /* egal */ }
     startRace();
   }),
+  bindOpts('opt-track', () => game.track, (v) => {
+    game.track = trackOf(v).key;
+    try { localStorage.setItem('kart_track', game.track); } catch { /* egal */ }
+    startRace();
+  }),
   bindOpts('opt-sfx', () => (Sfx.on ? 1 : 0), (v) => {
     Sfx.toggle(v === '1');
     if (Sfx.on) { Sfx.unlock(); if (game.state === 'race') { Sfx.engine(true); Sfx.startMusic(); } }
@@ -1483,6 +1745,8 @@ try {
   if (Number.isFinite(c) && c >= 0 && c <= 3) game.cpu = c;
   const l = parseInt(localStorage.getItem('kart_laps'), 10);
   if (Number.isFinite(l) && l > 0 && l <= 5) game.laps = l;
+  const tr = localStorage.getItem('kart_track');
+  if (tr && TRACKS.some((x) => x.key === tr)) game.track = tr;
 } catch { /* egal */ }
 Sfx.load();
 refreshSound();
@@ -1521,4 +1785,6 @@ window.__kart = {
   surfAt, nodeAt, sidePoint, project, update, updateCam, startRace, useItem,
   spinOut, rollItem, nearestNode, progress, input, pressed, buttons,
   setDriver, driverOf, resize, Sfx, isSlow, finishLap, updatePlaces, steerPad,
+  TRACKS, trackOf, buildTrack, wallAt, oils: () => oils, aheadOf, WALL_OFF, ROAD_HW,
+  path: () => PATH, nodes: () => N,
 };

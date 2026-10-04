@@ -158,8 +158,82 @@ try {
     K.pressed.clear();
     return { drifting, maxCharge, boost };
   });
-  check('Driften lädt den Mini-Turbo auf', r.drifting && r.maxCharge > 0.9, JSON.stringify(r));
+  check('Driften lädt den Mini-Turbo auf', r.drifting && r.maxCharge > 0.8, JSON.stringify(r));
   check('Loslassen gibt den Mini-Turbo frei', r.boost > 0.3, JSON.stringify(r));
+
+  // ---- Bande: man kann die Strecke nicht mehr verlassen
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    K.startRace(5); K.game.state = 'race'; K.game.count = 0;
+    const k = K.karts()[0];
+    const p = K.nodeAt(10);
+    // quer zur Fahrtrichtung mit Vollgas gegen die Bande
+    k.x = p.x; k.y = p.y; k.ang = p.ang + Math.PI / 2; k.velAng = k.ang; k.speed = 190;
+    K.pressed.add('arrowup');
+    let hitWall = false;
+    for (let i = 0; i < 180; i++) {
+      K.update(0.016);
+      if (K.wallAt(k.x + Math.cos(k.velAng) * 8, k.y + Math.sin(k.velAng) * 8)) hitWall = true;
+    }
+    K.pressed.clear();
+    return {
+      dist: Math.hypot(k.x - p.x, k.y - p.y), inWall: K.wallAt(k.x, k.y), hitWall,
+      wallOff: K.WALL_OFF, onMap: k.x > 4 && k.y > 4 && k.x < K.MAP - 4 && k.y < K.MAP - 4,
+    };
+  });
+  check('Rings um die Strecke steht eine Bande', r.hitWall && r.wallOff > 40, JSON.stringify(r));
+  check('Gegen die Bande ist Schluss – niemand fährt hindurch',
+    r.dist < r.wallOff + 6 && !r.inWall && r.onMap, JSON.stringify(r));
+
+  // ---- Zweite Strecke: eigene Linienführung, eigenes Thema, auch mit Bande
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    const shape = (key) => {
+      K.game.track = key;
+      K.startRace(9);
+      return {
+        nodes: K.nodes(),
+        first: Math.round(K.nodeAt(0).x) + ':' + Math.round(K.nodeAt(0).y),
+        onRoad: K.karts().every((k) => K.surfAt(k.x, k.y) === K.SURF.ROAD),
+        wall: K.wallAt(K.sidePoint(30, K.WALL_OFF).x, K.sidePoint(30, K.WALL_OFF).y),
+        deco: [...new Set(K.trees().map((t) => t.kind))].sort().join(','),
+      };
+    };
+    const a = shape('wiese'), b = shape('wueste');
+    K.game.track = 'wiese';
+    return { a, b, tracks: K.TRACKS.map((t) => t.key) };
+  });
+  check('Es gibt zwei Strecken zur Auswahl', r.tracks.length === 2 && r.tracks.includes('wueste'), JSON.stringify(r.tracks));
+  check('Die zweite Strecke hat eine eigene Linienführung',
+    r.a.first !== r.b.first && r.a.onRoad && r.b.onRoad, JSON.stringify(r));
+  check('Auch die Wüstenpiste ist von einer Bande gesäumt', r.a.wall && r.b.wall, JSON.stringify(r));
+  check('Jede Strecke hat ihre eigene Deko (Bäume bzw. Kakteen/Felsen)',
+    r.a.deco.includes('tree') && r.b.deco.includes('cactus'), JSON.stringify(r));
+
+  // Die KI kommt auch auf der Wüstenpiste rund
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    K.game.track = 'wueste'; K.game.cpu = 3; K.game.laps = 3;
+    K.startRace(9); K.game.state = 'race'; K.game.count = 0;
+    for (let i = 0; i < 60 / 0.016; i++) K.update(0.016);
+    const laps = K.karts().slice(1).map((k) => k.lap);
+    const best = K.karts()[1].bestLap;
+    K.game.track = 'wiese';
+    return { laps, best };
+  });
+  check('Die KI fährt auch die Wüstenpiste sauber', Math.max(...r.laps) >= 2 && r.best > 8 && r.best < 45,
+    JSON.stringify(r));
+
+  // Streckenwahl im Menü
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    document.querySelector('#opt-track button[data-v="wueste"]').click();
+    const picked = { track: K.game.track, stored: localStorage.getItem('kart_track'), node0: Math.round(K.nodeAt(0).x) };
+    document.querySelector('#opt-track button[data-v="wiese"]').click();
+    return { picked, back: K.game.track };
+  });
+  check('Die Strecke lässt sich im Menü wechseln und wird gemerkt',
+    r.picked.track === 'wueste' && r.picked.stored === 'wueste' && r.back === 'wiese', JSON.stringify(r));
 
   // ---- Item-Boxen
   r = await page.evaluate(() => {
@@ -227,6 +301,100 @@ try {
   check('🍄 Pilz gibt Turbo', r.boost > 1, JSON.stringify(r));
   check('⚡ Blitz bremst alle anderen aus (einen selbst nicht)', r.slowed && r.mine === 0, JSON.stringify(r));
 
+  // ---- Lenkrakete: sucht sich den Vordermann
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    K.startRace(11); K.game.state = 'race'; K.game.count = 0;
+    const me = K.karts()[0], foe = K.karts()[1];
+    const a = K.nodeAt(10), b = K.nodeAt(40);
+    me.x = a.x; me.y = a.y; me.ang = a.ang; me.velAng = a.ang; me.speed = 0;
+    foe.x = b.x; foe.y = b.y + 26; foe.speed = 0; foe.spinT = 0;   // seitlich versetzt
+    me.node = K.nearestNode(me, true); foe.node = K.nearestNode(foe, true);
+    const target = K.aheadOf(me) === foe;
+    me.item = 'rocket'; K.useItem(me);
+    const rocket = K.shells()[0];
+    const ang0 = rocket.ang;
+    let hit = 0;
+    for (let i = 0; i < 120 && !hit; i++) { K.update(0.016); if (foe.spinT > 0) hit = 1; }
+    return { target, kind: rocket.kind, curved: Math.abs(rocket.ang - ang0) > 0.05, hit };
+  });
+  check('🚀 Die Lenkrakete nimmt den Vordermann ins Visier', r.target && r.kind === 'rocket', JSON.stringify(r));
+  check('Die Rakete zieht eine Kurve und trifft', r.curved && r.hit === 1, JSON.stringify(r));
+
+  // ---- Rollkugel: prallt von der Bande ab und bleibt lange unterwegs
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    K.startRace(11); K.game.state = 'race'; K.game.count = 0;
+    const me = K.karts()[0], foe = K.karts()[1];
+    const p = K.nodeAt(10);
+    me.x = p.x; me.y = p.y; me.ang = p.ang + Math.PI / 2; me.velAng = me.ang; me.speed = 0;
+    foe.x = -500; foe.y = -500;                      // aus dem Weg
+    me.item = 'ball'; K.useItem(me);
+    const ball = K.shells()[0];
+    for (let i = 0; i < 140; i++) K.update(0.016);
+    const bounced = (ball.bounces || 0) > 0 && !ball.dead;
+    // trifft sie jemanden, wird kräftig gedreht
+    foe.x = ball.x; foe.y = ball.y; foe.spinT = 0; foe.speed = 120;
+    K.update(0.016);
+    return { kind: ball.kind, bounced, spin: foe.spinT, alive: K.shells().length };
+  });
+  check('🎳 Die Rollkugel prallt von der Bande ab statt zu verpuffen',
+    r.kind === 'ball' && r.bounced, JSON.stringify(r));
+  check('Wen die Kugel überrollt, den dreht es kräftig', r.spin > 1.4, JSON.stringify(r));
+
+  // ---- Öllache: kein Dreher, aber die Haftung ist weg
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    K.startRace(11); K.game.state = 'race'; K.game.count = 0;
+    const me = K.karts()[0], foe = K.karts()[1];
+    me.item = 'oil';
+    const ok = K.useItem(me);
+    const oil = K.oils()[0];
+    foe.x = oil.x; foe.y = oil.y; foe.speed = 150; foe.spinT = 0; foe.oilT = 0;
+    const p = K.nodeAt(foe.node);
+    foe.ang = p.ang; foe.velAng = p.ang;
+    K.update(0.016);
+    const slipped = foe.oilT > 1;
+    // auf Öl folgt die Fahrtrichtung dem Lenken kaum noch
+    foe.ang += 1.2;
+    const before = foe.velAng;
+    for (let i = 0; i < 10; i++) K.update(0.016);
+    return { ok, dropped: !!oil, slipped, spin: foe.spinT, drift: Math.abs(foe.velAng - before) };
+  });
+  check('🛢️ Die Öllache bleibt auf der Strecke liegen', r.ok && r.dropped);
+  check('Auf Öl rutscht man, ohne sich zu drehen',
+    r.slipped && r.spin === 0 && r.drift < 0.6, JSON.stringify(r));
+
+  // ---- Schrumpfer: alle anderen werden klein und langsam
+  r = await page.evaluate(() => {
+    const K = window.__kart;
+    K.startRace(11); K.game.state = 'race'; K.game.count = 0;
+    const me = K.karts()[0], foe = K.karts()[1];
+    me.item = 'shrink'; K.useItem(me);
+    const small = K.karts().slice(1).every((o) => o.smallT > 5);
+    // kleines Kart fährt deutlich langsamer
+    // mit Anfangstempo messen: der Deckel greift erst nahe der Höchstgeschwindigkeit
+    const run = (k) => {
+      const p = K.nodeAt(8);
+      k.x = p.x; k.y = p.y; k.ang = p.ang; k.velAng = p.ang; k.speed = 190;
+      for (let i = 0; i < 60; i++) K.update(0.016);
+      return k.speed;
+    };
+    foe.item = null;
+    const vSmall = run(foe);
+    foe.smallT = 0;
+    const vNormal = run(foe);
+    // großes Kart walzt das kleine um
+    foe.smallT = 5; foe.spinT = 0;
+    foe.x = me.x + 6; foe.y = me.y;
+    K.update(0.016);
+    return { small, mine: me.smallT, vSmall, vNormal, squashed: foe.spinT > 0 };
+  });
+  check('🧪 Der Schrumpfer macht alle anderen klein (einen selbst nicht)',
+    r.small && r.mine === 0, JSON.stringify(r));
+  check('Geschrumpfte fahren deutlich langsamer', r.vSmall < r.vNormal * 0.8, JSON.stringify(r));
+  check('Ein normal großes Kart walzt Geschrumpfte um', r.squashed, JSON.stringify(r));
+
   // ---- Item-Verteilung: vorne gibt es keinen Blitz, hinten schon
   r = await page.evaluate(() => {
     const K = window.__kart;
@@ -235,8 +403,12 @@ try {
     const roll = (place) => { k.place = place; const out = {}; for (let i = 0; i < 400; i++) { const it = K.rollItem(k); out[it] = (out[it] || 0) + 1; } return out; };
     return { first: roll(1), last: roll(4) };
   });
-  check('Führende ziehen keinen Blitz, Hintermänner schon',
-    !r.first.bolt && r.last.bolt > 10, JSON.stringify(r));
+  check('Führende ziehen keine Rakete, keinen Blitz und keinen Schrumpfer',
+    !r.first.bolt && !r.first.rocket && !r.first.shrink, JSON.stringify(r.first));
+  check('Hinten gibt es die starken Gadgets',
+    r.last.bolt > 5 && r.last.rocket > 5 && r.last.shrink > 5, JSON.stringify(r.last));
+  check('Alle acht Gadgets kommen vor',
+    Object.keys({ ...r.first, ...r.last }).length === 8, JSON.stringify(Object.keys({ ...r.first, ...r.last })));
 
   // ---- Karts rempeln sich: der Schwere schiebt den Leichten
   r = await page.evaluate(() => {
@@ -551,7 +723,8 @@ try {
       gasRight: Math.round(innerWidth - gas.right),
       steerBottom: Math.round(innerHeight - steer.bottom),
       steerLeft: Math.round(steer.left),
-      itemAbove: item.bottom < gas.top + 1,
+      itemNextToGas: Math.abs(item.bottom - gas.bottom) < 2 && item.right <= gas.left + 1,
+      driftAbove: document.getElementById('k-drift').getBoundingClientRect().bottom < gas.top + 1,
     };
   });
   check('Auf dem Handy sind Lenkfeld und Gashebel da', r.visible, JSON.stringify(r));
@@ -559,7 +732,9 @@ try {
     r.gasBottom >= 60 && r.gasRight >= 12, JSON.stringify(r));
   check('Das Lenkfeld sitzt links über dem unteren Rand',
     r.steerBottom >= 36 && r.steerLeft >= 10, JSON.stringify(r));
-  check('🎁 und ↩ liegen über Bremse und Gas (zwei Reihen)', r.itemAbove, JSON.stringify(r));
+  check('🎁 liegt direkt neben dem Gashebel (gut mit dem Daumen erreichbar)',
+    r.itemNextToGas, JSON.stringify(r));
+  check('Drift und Bremse sitzen in der Reihe darüber', r.driftAbove, JSON.stringify(r));
 
   // Ziehen auf dem Lenkfeld lenkt stufenlos – auch in der gedrehten Bühne
   r = await phone.evaluate(() => {

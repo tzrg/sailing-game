@@ -32,11 +32,11 @@
   </div>
   <div id="wctrl-right">
     <div class="krow">
-      <button id="k-item" title="Item einsetzen">🎁</button>
       <button id="k-drift" title="Driften (gedrückt halten)">↩</button>
+      <button id="k-brake" title="Bremse">🛑</button>
     </div>
     <div class="krow">
-      <button id="k-brake" title="Bremse">🛑</button>
+      <button id="k-item" title="Item einsetzen">🎁</button>
       <button id="k-gas" title="Gas">🚀</button>
     </div>
   </div>
@@ -72,6 +72,14 @@
         <div class="opt-row" id="opt-driver"></div>
         <p class="muted small" style="margin:6px 0 0">Jeder Fahrer fährt sich anders –
           Topspeed, Beschleunigung und Kurvenlage unterscheiden sich.</p>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Strecke</div>
+        <div class="opt-row" id="opt-track">
+          <button data-v="wiese">🌳 Wiesenring</button>
+          <button data-v="wueste">🌵 Wüstenpiste</button>
+        </div>
       </div>
 
       <div class="menu-group">
@@ -121,13 +129,25 @@
           <b>← →</b> lenken · <b>Leertaste</b> Item · <b>Shift</b> driften</li>
         <li><b>📱 Touch:</b> links auf das <b>Lenkfeld</b> tippen und den Daumen nach
           links/rechts ziehen – der Einschlag folgt <b>stufenlos</b> der Bewegung
-          (wo du aufsetzt, ist geradeaus). Rechts <b>🚀</b> Gas, <b>🛑</b> Bremse,
-          <b>↩</b> driften, <b>🎁</b> Item. ⟳ dreht ins Querformat.</li>
+          (wo du aufsetzt, ist geradeaus). Rechts unten <b>🎁</b> Item direkt neben
+          <b>🚀</b> Gas, darüber <b>↩</b> driften und <b>🛑</b> Bremse.
+          ⟳ dreht ins Querformat.</li>
         <li><b>↩ Drift:</b> in der Kurve halten – die Funken werden erst blau, dann orange.
           Loslassen gibt den <b>Mini-Turbo</b>.</li>
-        <li><b>❓ Item-Boxen</b> einsammeln: 🍌 Banane (fällt nach hinten), 🐢 Panzer
-          (fliegt nach vorn), 🍄 Pilz (Turbo), ⚡ Blitz (bremst alle anderen aus).
+        <li><b>❓ Item-Boxen</b> einsammeln – acht Gadgets:
+          🍌 <b>Banane</b> (fällt nach hinten, wer reinfährt dreht sich),
+          🛢️ <b>Öllache</b> (keine Haftung mehr, das Kart schlittert),
+          🐢 <b>Panzer</b> (fliegt geradeaus nach vorn),
+          🚀 <b>Lenkrakete</b> (sucht sich den Vordermann),
+          🎳 <b>Rollkugel</b> (schwer und langsam, prallt von den Banden ab und
+          walzt alles um – auch dich selbst),
+          🍄 <b>Pilz</b> (Turbo), 🧪 <b>Schrumpfer</b> (alle anderen werden klein
+          und langsam und lassen sich überrollen) und ⚡ <b>Blitz</b>.
           Wer hinten liegt, zieht die besseren Items.</li>
+        <li><b>🧱 Banden</b> säumen die ganze Strecke: Man schrammt an ihnen entlang
+          und verliert Tempo, von der Strecke fliegt aber niemand mehr.</li>
+        <li><b>Zwei Strecken</b> im ☰-Menü: der grüne <b>🌳 Wiesenring</b> und die
+          kurvige <b>🌵 Wüstenpiste</b> mit Kakteen, Felsen und Sand.</li>
         <li><b>Gras und Sand</b> bremsen kräftig – bleib auf dem Asphalt und nimm die
           <b>⏩ Boost-Felder</b> mit.</li>
         <li><b>🎵 Musik:</b> ein treibender Renn-Beat läuft ab dem Start – in der
