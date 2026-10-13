@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Rechen-Rallye</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E🧮%3C/text%3E%3C/svg%3E">
+</head>
+<body class="rechnen">
+ <div id="stage">
+  <canvas id="fx"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+    <button id="btn-sound" title="Ton an/aus">🔊</button>
+  </div>
+
+  <div id="rw">
+    <!-- Kopfzeile: Punkte, Stufe, Serie, Herzen -->
+    <div id="hud">
+      <div class="hud-box"><span class="hl">🏆 Punkte</span><b id="h-points">0</b></div>
+      <div class="hud-box"><span class="hl">🎯 Stufe</span><b id="h-level">1</b></div>
+      <div class="hud-box"><span class="hl">🔥 Serie</span><b id="h-streak">0</b></div>
+      <div class="hud-box" id="h-hearts-box"><span class="hl">❤️ Leben</span><b id="h-hearts">❤️❤️❤️</b></div>
+    </div>
+    <div id="levelbar"><div id="levelfill"></div><span id="levelname">Plus und Minus bis 10</span></div>
+
+    <!-- Aufgabe -->
+    <div id="card">
+      <div id="task">7 + 8 = ?</div>
+      <div id="answer"><span id="answer-text"></span><span id="caret">|</span></div>
+      <div id="feedback"></div>
+      <div id="timerbar"><div id="timerfill"></div></div>
+    </div>
+
+    <!-- Zehnerblock -->
+    <div id="pad">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button data-k="del" class="pad-side">⌫</button>
+      <button data-k="0">0</button>
+      <button data-k="ok" class="pad-ok">✓</button>
+    </div>
+  </div>
+
+  <!-- Auswertung -->
+  <div id="over" class="hidden">
+    <div class="panel">
+      <h1 id="over-title">🎉 Geschafft!</h1>
+      <div id="over-stats"></div>
+      <p id="over-note" class="muted small"></p>
+      <button id="btn-again">Nochmal rechnen</button>
+    </div>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>🧮 Rechen-Rallye</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link" href="index.html">🏠</a>
+          <a class="game-link" href="sail.html">⛵</a>
+          <a class="game-link" href="auto.html">🏎</a>
+          <a class="game-link" href="mtb.html">🚵</a>
+          <a class="game-link" href="wurm.html">🐛</a>
+          <a class="game-link" href="lemminge.html">🐭</a>
+          <a class="game-link" href="gorilla.html">🦍</a>
+          <a class="game-link" href="mampf.html">🟡</a>
+          <a class="game-link" href="maze.html">🧩</a>
+          <a class="game-link" href="snake.html">🐍</a>
+          <a class="game-link" href="td.html">🏰</a>
+          <a class="game-link" href="clonk.html">⛏️</a>
+          <a class="game-link" href="kart.html">🏁</a>
+          <a class="game-link active" href="rechnen.html">🧮</a>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spielart</div>
+        <div class="opt-row" id="opt-mode">
+          <button data-v="rallye">🏁 Rallye</button>
+          <button data-v="ueben">🧘 Üben</button>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Rallye: drei Leben, Punkte für die
+          Bestenliste. Üben: ohne Leben und ohne Zeitdruck, so lange du magst.</p>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Startstufe</div>
+        <div class="opt-row" id="opt-start">
+          <button data-v="1">1</button>
+          <button data-v="4">4</button>
+          <button data-v="8">8</button>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Zeitbonus</div>
+        <div class="opt-row" id="opt-timer">
+          <button data-v="1">⏱ an</button>
+          <button data-v="0">aus</button>
+        </div>
+      </div>
+
+      <button class="menu-btn" id="btn-restart">🔄 Neue Runde</button>
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>🧮 Rechen-Rallye</h1>
+      <p>Rechnen üben wie in der <b>2. Klasse</b>: Plus, Minus, das kleine Einmaleins,
+        Teilen, Platzhalter und kleine Sachaufgaben – und mit jeder Stufe wird es
+        ein bisschen kniffliger.</p>
+      <ul>
+        <li><b>So geht's:</b> Die Aufgabe steht groß in der Mitte. Tippe die Antwort
+          auf dem <b>Zahlenblock</b> ein und drücke <b>✓</b> (oder die Eingabetaste).
+          <b>⌫</b> löscht die letzte Ziffer.</li>
+        <li><b>🏆 Punkte</b> gibt es für jede richtige Aufgabe – je höher die Stufe,
+          desto mehr. Eine <b>🔥 Serie</b> ohne Fehler bringt Zusatzpunkte, der
+          <b>⏱ Zeitbonus</b> belohnt schnelles Rechnen.</li>
+        <li><b>🎯 Stufe:</b> Nach <b>fünf richtigen</b> Aufgaben geht es eine Stufe
+          weiter – und es kommt eine neue Rechenart dazu.</li>
+        <li><b>❤️ Leben:</b> In der Rallye hast du drei. Bei einer falschen Antwort
+          siehst du das richtige Ergebnis und verlierst ein Leben. Im Modus
+          <b>🧘 Üben</b> kann nichts passieren.</li>
+        <li>Tastatur: <b>Zahlen</b> eingeben, <b>Enter</b> abschicken,
+          <b>Rücktaste</b> löschen.</li>
+      </ul>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+ </div>
+
+  <script type="module" src="js/rechnen.js"></script>
+</body>
+</html>

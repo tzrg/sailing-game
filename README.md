@@ -279,6 +279,26 @@ Docker-Container deployt.
   und eine Oktave höher spielt. Der 🔊-Knopf schaltet alles stumm, im
   ☰-Menü lässt sich die Musik getrennt abstellen (beides wird gemerkt).
 
+- **`rechnen.html` – 🧮 Rechen-Rallye**: ein Lernspiel zum Kopfrechnen auf
+  dem Stand der **2. Klasse**. Der Aufgaben-Generator kennt rund zwanzig
+  Aufgabenarten – Plus und Minus im Zahlenraum bis 100 (mit und ohne
+  Zehnerübergang), Verdoppeln/Halbieren, Zehnerzahlen, das kleine
+  Einmaleins (erst 2/5/10, dann 3/4, dann 6–9), Teilen ohne Rest,
+  Platzhalter-Aufgaben (`12 − ☐ = 3`), Rechenketten und kleine
+  **Sachaufgaben** mit Emojis. Jede **Stufe** schaltet eine neue Art frei;
+  gerechnet wird überwiegend mit dem zuletzt Gelernten, älterer Stoff
+  kommt zur Wiederholung dazwischen – so wird es Schritt für Schritt
+  schwerer. **Nach fünf richtigen Aufgaben** geht es eine Stufe weiter
+  (14 Stufen). **Punkte** gibt es je nach Stufe, dazu Zuschläge für eine
+  **🔥 Serie** ohne Fehler und für schnelles Rechnen (⏱ Zeitbonus,
+  abschaltbar); der Punkte-Rekord und die höchste Stufe zählen für die
+  Bestenliste. In der **🏁 Rallye** hat man drei ❤️ Leben – bei einem
+  Fehler wird das richtige Ergebnis gezeigt –, im Modus **🧘 Üben** kann
+  nichts passieren. Eingegeben wird über einen großen **Zahlenblock**
+  (oder die Tastatur: Ziffern, Rücktaste, Enter), dazu Konfetti,
+  freundliche Klänge und eine Auswertung am Ende. Startstufe (1/4/8) und
+  Spielart stehen im ☰-Menü.
+
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
 (🏠 führt zurück zur Landing-Page). Neue Spiele lassen sich analog ergänzen.
@@ -430,6 +450,7 @@ public/            statische Spielesammlung
   snake.html       🐍 Snake (Klassiker)
   clonk.html       ⛏️ Klonk · Goldrausch (Clonk-Hommage, 2 Spieler)
   kart.html        🏁 Kart-Rennen (Mode-7-Rennspiel mit Items)
+  rechnen.html     🧮 Rechen-Rallye (Lernspiel Kopfrechnen, 2. Klasse)
   style.css
   js/
     lib.js         Auth + Scores (Server mit localStorage-Fallback)
@@ -452,6 +473,7 @@ public/            statische Spielesammlung
     clonk.js       Klonk (Material-Maske, Graben/Klettern, Feuersteine)
     sfx.js         Klonk: synthetische Geräusche + Musik (Web Audio)
     kart.js        Kart-Rennen (Mode-7-Renderer, Fahrphysik, Items, KI)
+    rechnen.js     Rechen-Rallye (Aufgaben-Generator, Punkte, Stufen)
 Dockerfile
 railway.json
 ```
@@ -514,6 +536,17 @@ railway.json
   (anteiliger Einschlag, Rückstellung, richtige Achse in der gedrehten
   Bühne) und genug Abstand von Gashebel und Lenkfeld zur unteren
   Bildschirmecke.
+
+- **`test/rechnen.test.mjs`** – Rechen-Rallye (37 Checks) über den
+  Test-Hook `window.__rechnen`: der Aufgaben-Generator wird über alle
+  Stufen geprüft (ganzzahlige Ergebnisse, nie negativ, Zahlenraum bis
+  100/120, Division immer ohne Rest) und **4000 Aufgaben werden
+  nachgerechnet**; dazu Sach- und Platzhalter-Aufgaben, Punkte- und
+  Serienlogik, Stufenaufstieg nach fünf richtigen Aufgaben, mehr Punkte
+  auf höheren Stufen, Zeitbonus, Leben und Rundenende samt Bestwert,
+  Übungsmodus ohne Leben, Zahlenblock und Tastatur, Konfetti,
+  Menü-Optionen, Tonschalter sowie die Einbindung in Navigation,
+  Landing-Page und Highscore-Übersicht.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
 zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird

@@ -1392,3 +1392,178 @@ body.kart #k-item { background: #c9962b; border-color: #fff; }
   .kart-picks { gap: 5px; }
   .kp-note { display: none; }
 }
+
+/* -------------------------------------------------------- Rechen-Rallye --- */
+/* Lernspiel: große Aufgabe, Zehnerblock zum Antippen. Alles DOM statt Canvas,
+   damit die Tasten auf Tablets angenehm groß und gut lesbar sind. */
+body.rechnen { background: linear-gradient(180deg, #123f63 0%, #0d2b44 100%); }
+body.rechnen #fx {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 15;
+}
+#rw {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: calc(64px + env(safe-area-inset-top, 0)) 14px calc(14px + env(safe-area-inset-bottom, 0));
+  max-width: 560px;
+  margin: 0 auto;
+  color: #eaf3fa;
+}
+
+#hud { display: flex; gap: 7px; }
+.hud-box {
+  flex: 1;
+  background: rgba(8, 25, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 11px;
+  padding: 6px 4px;
+  text-align: center;
+  line-height: 1.25;
+}
+.hud-box .hl { display: block; font-size: 10px; color: #9fc0d8; letter-spacing: 0.03em; }
+.hud-box b { font-size: 17px; }
+.hud-box#h-hearts-box.empty b { animation: rwPulse 1s infinite; }
+@keyframes rwPulse { 50% { opacity: 0.35; } }
+
+#levelbar {
+  position: relative;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(8, 25, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+#levelfill {
+  position: absolute; inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(90deg, #2f9e6e, #8ee07a);
+  transition: width 0.25s ease;
+}
+#levelname {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: #eaf3fa;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+#card {
+  position: relative;
+  flex: 1;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(10, 30, 50, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 14px 16px 18px;
+  transition: border-color 0.2s, background 0.2s;
+}
+#card.good { border-color: #8ee07a; background: rgba(28, 70, 48, 0.72); }
+#card.bad { border-color: #ff8a7a; background: rgba(78, 34, 34, 0.72); animation: rwShake 0.3s; }
+@keyframes rwShake {
+  25% { transform: translateX(-7px); } 75% { transform: translateX(7px); }
+}
+#task {
+  font-size: clamp(26px, 8vw, 44px);
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.2;
+}
+#task.story { font-size: clamp(16px, 4.4vw, 22px); font-weight: 600; line-height: 1.4; }
+#answer {
+  min-width: 128px;
+  min-height: 52px;
+  padding: 4px 18px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
+  font-size: 32px; font-weight: 700;
+  letter-spacing: 0.06em;
+}
+#caret { animation: rwBlink 1s steps(2) infinite; color: #9fc0d8; }
+@keyframes rwBlink { 50% { opacity: 0; } }
+#feedback { min-height: 20px; font-size: 15px; font-weight: 600; }
+#feedback.good { color: #8ee07a; }
+#feedback.bad { color: #ff9b8f; }
+#timerbar {
+  position: absolute; left: 14px; right: 14px; bottom: 8px;
+  height: 4px; border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+#timerfill { height: 100%; width: 100%; background: #6fd0ff; transition: width 0.2s linear; }
+
+#pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+#pad button {
+  padding: 14px 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+#pad button:active { background: rgba(255, 255, 255, 0.26); transform: translateY(1px); }
+#pad .pad-ok { background: #2f9e6e; border-color: #8ee07a; }
+#pad .pad-side { background: rgba(255, 255, 255, 0.06); font-size: 20px; }
+
+#over {
+  position: fixed; inset: 0;
+  background: rgba(4, 16, 28, 0.72);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 20; padding: 16px;
+}
+#over.hidden { display: none; }
+#over .panel {
+  background: rgba(10, 30, 50, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  padding: 20px 22px;
+  width: min(360px, 92vw);
+  color: #eaf3fa;
+  text-align: center;
+}
+#over h1 { font-size: 22px; margin-bottom: 12px; }
+.ov-row {
+  display: flex; justify-content: space-between;
+  padding: 7px 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 15px;
+}
+.ov-row b { color: #ffd166; }
+#over button {
+  margin-top: 14px;
+  width: 100%;
+  background: #2f9e6e; color: #fff; border: none;
+  border-radius: 10px; padding: 12px 18px;
+  font-size: 16px; cursor: pointer;
+}
+
+/* Querformat: Aufgabe links, Zehnerblock rechts */
+@media (min-width: 680px) and (orientation: landscape) {
+  #rw {
+    max-width: 880px;
+    display: grid;
+    grid-template-columns: 1fr 260px;
+    grid-template-rows: auto auto 1fr;
+    align-items: start;
+  }
+  #hud, #levelbar { grid-column: 1 / -1; }
+  #card { grid-column: 1; grid-row: 3; height: 100%; }
+  #pad { grid-column: 2; grid-row: 3; align-content: start; }
+}

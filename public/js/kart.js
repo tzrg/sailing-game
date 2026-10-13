@@ -327,7 +327,7 @@ function makeKart(d, slot, human) {
     boostT: 0, slowT: 0, spinT: 0, hopT: 0, oilT: 0, smallT: 0, wallT: 0,
     item: null, lap: 0, node: 0, prevNode: 0, place: 1,
     lapTime: 0, bestLap: 0, lapTimes: [], finished: false, finishT: 0,
-    skill: 1, wobble: Math.random() * TAU,
+    skill: 1, wobble: rng() * TAU,
   };
 }
 
@@ -749,7 +749,7 @@ function aiInput(k, dt) {
   // Zielpunkt ein Stück voraus, leicht versetzt (damit es natürlicher wirkt)
   k.wobble += dt * 0.7;
   const look = 7 + Math.min(12, k.speed / 14);
-  const off = Math.sin(k.wobble) * 13;
+  const off = Math.sin(k.wobble) * 8;
   const t = sidePoint(k.node + look, off);
   const want = Math.atan2(t.y - k.y, t.x - k.x);
   const err = norm(want - k.ang);
