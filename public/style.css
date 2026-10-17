@@ -95,9 +95,31 @@ html, body {
   background: rgba(255, 255, 255, 0.18);
 }
 
+/* Spiel-Navigation: nach Genre gruppiert, damit die Liste nicht erschlägt */
 .game-nav {
   display: flex;
-  flex-wrap: wrap;   /* bei vielen Spielen zweizeilig */
+  flex-direction: column;
+  gap: 10px;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ng-title {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9fc0d8;
+}
+
+/* Raster statt Flexzeile: so bleiben alle Kacheln gleich groß, auch wenn
+   eine Gruppe nur ein Spiel enthält */
+.ng-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
   gap: 6px;
 }
 
@@ -111,6 +133,12 @@ html, body {
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 8px;
   font-size: 14px;
+}
+
+.game-link.wide {
+  flex: 1 0 100%;
+  font-size: 13px;
+  padding: 9px 0;
 }
 
 .game-link.active {
@@ -1012,10 +1040,28 @@ body.landing {
 .panel-details[open] > summary::after { transform: rotate(90deg); }
 .pd-body { padding: 4px 16px 16px; }
 
-/* --- Game cards --- */
+/* --- Game cards, nach Genre gruppiert --- */
+.game-group { margin-bottom: 18px; }
+.gg-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 9px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #a9c8de;
+}
+.gg-title::after {           /* Trennlinie, die den Rest der Zeile füllt */
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
 .games {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 10px;
 }
 .game-card {
@@ -1032,7 +1078,9 @@ body.landing {
 }
 .game-card:active { transform: scale(0.98); background: rgba(255, 255, 255, 0.13); }
 .gc-emoji { font-size: 28px; line-height: 1; }
+.gc-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gc-name { font-size: 16px; font-weight: 600; }
+.gc-sub { font-size: 12px; color: #a9c8de; }
 
 /* --- Caterpillar sessions --- */
 .cat {
@@ -1282,6 +1330,17 @@ body.landing {
 @media (max-width: 480px) {
   .cat-forms { grid-template-columns: 1fr; }
   .lp-head h1 { font-size: 25px; }
+}
+
+/* Auf dem Handy zwei Kacheln nebeneinander, dafür ohne Untertitel –
+   sonst wird die Liste mit allen Gruppen zu lang. */
+@media (max-width: 560px) {
+  .game-group { margin-bottom: 14px; }
+  .games { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .game-card { padding: 11px 12px; gap: 9px; }
+  .gc-emoji { font-size: 24px; }
+  .gc-name { font-size: 14px; }
+  .gc-sub { display: none; }
 }
 
 /* ---------------------------------------------------------- Kart-Rennen --- */

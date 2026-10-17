@@ -6,7 +6,9 @@ Multiplayer-Vorbereitung**. Alles läuft komplett im Browser
 Docker-Container deployt.
 
 - **`index.html` – 🎮 Landing-Page „Tims Game Library"**: Login
-  (Registrieren/Anmelden), Spielekacheln, aggregierte **Highscores** aus
+  (Registrieren/Anmelden), **nach Genre gruppierte** Spielekacheln
+  (Arcade & Action, Racing, Klassiker, Simulation, Lernspiele, Treffpunkt),
+  aggregierte **Highscores** aus
   allen Spielen und der **Caterpillars-Multiplayer**-Bereich (Session
   erstellen/beitreten). Login, Sessions und Highscores laufen **vorerst
   komplett lokal** (localStorage) – die Logik ist in `js/lib.js`
@@ -334,6 +336,13 @@ Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
 (🏠 führt zurück zur Landing-Page). Neue Spiele lassen sich analog ergänzen.
 
+**Gruppen:** Landing-Page und „Spiel wechseln“-Navigation sind nach Genre
+sortiert – 🕹️ Arcade & Action, 🏁 Racing, 👾 Klassiker, 🌍 Simulation,
+🧠 Lernspiele (und auf der Landing-Page 💬 Treffpunkt fürs Forum). Ein neues
+Spiel gehört in **beide** Listen: als `<section class="game-group">`-Kachel in
+`index.html` und als `<a class="game-link">` in der passenden `.nav-group`
+jeder Spiel-Seite.
+
 ---
 
 ## ⛵ Segelspiel
@@ -518,8 +527,11 @@ railway.json
 - **`test/api.test.mjs`** – Backend-API: Konten (Registrierung mit
   Proof-of-Work, Login, Honeypot), Scores + Top-10-Bestenliste,
   Spielstand- und Historien-Slots, Auth-/Validierungs-Wächter.
-- **`test/landing.test.mjs`** – Landing-Page im Headless-Browser:
-  Datenbank-Warnbanner im In-Memory-Modus, aufklappbare Top-10-Liste.
+- **`test/landing.test.mjs`** – Landing-Page im Headless-Browser (10 Checks):
+  Datenbank-Warnbanner im In-Memory-Modus, aufklappbare Top-10-Liste,
+  Spiel-Historie – und die **Genre-Gruppierung**: alle Kacheln liegen in
+  genau einer Gruppe, keine doppelt, und die „Spiel wechseln“-Navigation
+  im Spielmenü führt dieselben fünf Gruppen ohne leere Reihe.
 - **`test/td.test.mjs`** – Tower Defense komplett (95+ Checks) über den
   Test-Hook `window.__td`: Spezialisierungen, Flammen-/Strahlenkegel,
   Superwaffen, Windmaschinen-Regel, Querformat-Eingaben, Stufe-4-Ausbau,

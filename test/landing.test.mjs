@@ -83,6 +83,41 @@ try {
     h.n === 2 && h.first.includes('Welle 12') && h.second.includes('Welle 4'), JSON.stringify(h));
   check('Partie aufklappen zeigt Turm-Tabelle + Monster-Matrix',
     h.open && h.hasTowers && h.hasMatrix, JSON.stringify(h));
+
+  // ---- Spiele sind nach Genre gruppiert, und jede Kachel steckt in einer Gruppe
+  const grp = await page.evaluate(() => {
+    const titles = [...document.querySelectorAll('.game-group .gg-title')].map((e) => e.textContent.trim());
+    const cards = [...document.querySelectorAll('.game-card')];
+    return {
+      titles,
+      cards: cards.length,
+      alleGruppiert: cards.every((c) => c.closest('.game-group')),
+      doppelt: new Set(cards.map((c) => c.getAttribute('href'))).size !== cards.length,
+    };
+  });
+  check('Die Landing-Page gruppiert die Spiele nach Genre',
+    grp.titles.length >= 5 && grp.titles.some((t) => t.includes('Racing'))
+    && grp.titles.some((t) => t.includes('Klassiker'))
+    && grp.titles.some((t) => t.includes('Lernspiele')), JSON.stringify(grp.titles));
+  check('Jede Spielkachel steckt in genau einer Gruppe',
+    grp.cards >= 15 && grp.alleGruppiert && !grp.doppelt, JSON.stringify(grp));
+
+  // ---- Die „Spiel wechseln"-Navigation im Spielmenü ist genauso gruppiert
+  await page.goto(B + '/snake.html');
+  const nav = await page.evaluate(() => {
+    const groups = [...document.querySelectorAll('.game-nav .nav-group')];
+    const links = [...document.querySelectorAll('.game-nav .ng-links a')];
+    return {
+      groups: groups.length,
+      titel: groups.map((g) => g.querySelector('.ng-title').textContent.trim()),
+      links: links.length,
+      leer: groups.some((g) => !g.querySelectorAll('a').length),
+      aktiv: !!document.querySelector('.game-nav a[href="snake.html"].active'),
+      heim: !!document.querySelector('.game-nav a[href="index.html"]'),
+    };
+  });
+  check('Das Spielmenü führt die Spiele in denselben Gruppen',
+    nav.groups === 5 && nav.links === 14 && !nav.leer && nav.aktiv && nav.heim, JSON.stringify(nav));
 } finally {
   await browser.close();
   srv.stop();
