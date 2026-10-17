@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Flugsimulator</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E✈️%3C/text%3E%3C/svg%3E">
+</head>
+<body class="flug">
+ <div id="stage">
+  <canvas id="scene"></canvas>
+  <canvas id="hud"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+    <button id="btn-rotate" title="Querformat">⟳</button>
+    <button id="btn-sound" title="Ton an/aus">🔊</button>
+  </div>
+
+  <!-- Touch-Steuerung: links der Steuerknüppel, rechts Gashebel und Knöpfe -->
+  <div id="fctrl-left">
+    <div id="stick" title="Höhen- und Querruder">
+      <div class="st-cross"></div>
+      <div id="stick-knob"></div>
+    </div>
+    <div class="frow">
+      <button id="t-left" title="Seitenruder links">↰</button>
+      <button id="t-right" title="Seitenruder rechts">↱</button>
+    </div>
+  </div>
+  <div id="fctrl-right">
+    <div id="thr" title="Gashebel"><span>GAS</span></div>
+    <div class="fcol">
+      <button id="t-flapd" title="Klappen ausfahren">🛬</button>
+      <button id="t-flapu" title="Klappen einfahren">🛫</button>
+      <button id="t-brake" title="Bremse">🅱</button>
+      <button id="t-view" title="Sicht wechseln">👁</button>
+    </div>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>✈️ Flugsimulator</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link wide" href="index.html">🏠 Übersicht</a>
+          <div class="nav-group">
+            <span class="ng-title">🕹️ Arcade &amp; Action</span>
+            <div class="ng-links">
+              <a class="game-link" href="wither.html" title="Wither-Duell">💀</a>
+              <a class="game-link" href="td.html" title="Tower Defense">🏰</a>
+              <a class="game-link" href="maze.html" title="Super Maze">🧩</a>
+            </div>
+          </div>
+          <div class="nav-group">
+            <span class="ng-title">🏁 Racing</span>
+            <div class="ng-links">
+              <a class="game-link" href="kart.html" title="Kart-Rennen">🏁</a>
+              <a class="game-link" href="auto.html" title="Autorennen">🏎</a>
+              <a class="game-link" href="mtb.html" title="Mountainbike">🚵</a>
+            </div>
+          </div>
+          <div class="nav-group">
+            <span class="ng-title">👾 Klassiker</span>
+            <div class="ng-links">
+              <a class="game-link" href="mampf.html" title="Mampf">🟡</a>
+              <a class="game-link" href="snake.html" title="Snake">🐍</a>
+              <a class="game-link" href="wurm.html" title="Raupen">🐛</a>
+              <a class="game-link" href="gorilla.html" title="Gorillas">🦍</a>
+              <a class="game-link" href="lemminge.html" title="Lemminge">🐭</a>
+            </div>
+          </div>
+          <div class="nav-group">
+            <span class="ng-title">🌍 Simulation</span>
+            <div class="ng-links">
+              <a class="game-link active" href="flug.html" title="Flugsimulator">✈️</a>
+              <a class="game-link" href="sail.html" title="Segeln">⛵</a>
+              <a class="game-link" href="clonk.html" title="Klonk">⛏️</a>
+            </div>
+          </div>
+          <div class="nav-group">
+            <span class="ng-title">🧠 Lernspiele</span>
+            <div class="ng-links">
+              <a class="game-link" href="rechnen.html" title="Rechen-Rallye">🧮</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Startposition</div>
+        <div class="opt-row" id="opt-start">
+          <button data-v="runway">🛫 Piste</button>
+          <button data-v="approach">🛬 Anflug</button>
+          <button data-v="city">🏙 Stadt</button>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Piste: Start vom Rollhalt der 36.
+          Anflug: 5 km südlich in 450 m Höhe, Klappen schon auf 10°.</p>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Wind</div>
+        <div class="opt-row" id="opt-wind">
+          <button data-v="calm">🍃 ruhig</button>
+          <button data-v="breeze">💨 böig</button>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Sicht</div>
+        <div class="opt-row" id="opt-view">
+          <button data-v="cockpit">🎛 Cockpit</button>
+          <button data-v="chase">🎥 von hinten</button>
+        </div>
+      </div>
+
+      <button class="menu-btn" id="btn-restart">🔄 Neuer Flug</button>
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>✈️ Flugsimulator</h1>
+      <p>Eine <b>Cessna</b> über europäischer Landschaft: Felder, Wälder, ein See,
+        Dörfer, eine Stadt mit Hochhäusern – und mittendrin dein Flugplatz mit
+        1300-Meter-Piste. Starten, eine Runde drehen und wieder landen.</p>
+      <ul>
+        <li><b>🛫 Starten:</b> <b>W</b> gibt Gas. Bei etwa <b>60 kt</b> sanft
+          <b>ziehen</b> (Pfeil ↓), dann mit ~10° Nase hoch steigen.</li>
+        <li><b>🎛 Steuern:</b> <b>↑/↓</b> Höhenruder (↓ zieht, wie am Steuerhorn),
+          <b>←/→</b> Querruder, <b>, / .</b> oder <b>Y / X</b> Seitenruder,
+          <b>W/S</b> Gas, <b>Q/E</b> Trimmung.</li>
+        <li><b>🛬 Klappen:</b> <b>F</b> fährt sie stufenweise aus (10/20/30°),
+          <b>G</b> wieder ein. Sie geben Auftrieb und Widerstand – zum Landen
+          fliegst du damit langsamer und steiler.</li>
+        <li><b>🅱 Bremse</b> auf <b>B</b> – nur am Boden.</li>
+        <li><b>👁 Sicht</b> mit <b>C</b> umschalten: Cockpit mit Instrumenten
+          (Fahrtmesser, künstlicher Horizont, Höhenmesser, Variometer, Kurskreisel,
+          Drehzahl) oder Blick von hinten aufs Flugzeug.</li>
+        <li><b>⚠ Überziehen:</b> zu langsam und zu steil – der Auftrieb reißt ab,
+          die Nase kippt weg. Nachdrücken und Fahrt aufnehmen!</li>
+        <li><b>🛬 Landen:</b> mit ~65 kt und wenig Sinken aufsetzen, mittig auf der
+          Piste. Je sanfter und genauer, desto mehr <b>Punkte</b>. Über 4,5 m/s
+          Sinkrate gibt es Bruch.</li>
+        <li><b>📱 Touch:</b> links der <b>Steuerknüppel</b>, rechts der
+          <b>Gashebel</b> zum Schieben, daneben Klappen, Bremse und Sicht.
+          ⟳ dreht ins Querformat.</li>
+        <li><b>R</b> startet einen neuen Versuch.</li>
+      </ul>
+      <button id="btn-start">Los geht's</button>
+    </div>
+  </div>
+ </div>
+
+  <script type="module" src="js/flug.js"></script>
+</body>
+</html>

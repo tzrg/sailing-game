@@ -332,6 +332,33 @@ Docker-Container deployt.
   **Enter/F** schießen, **Leertaste** Schild. Schwierigkeit (leicht/normal/
   hart) und Startstufe (1/3/5) stehen im ☰-Menü.
 
+- **`flug.html` – ✈️ Flugsimulator**: eine **Cessna** über europäischer
+  Landschaft, in **echtem 3D**. Die Welt misst 15 × 15 km: Hügel, ein
+  Patchwork aus Feldern (Wiese, Acker, Raps, Stoppel), Wälder, ein See,
+  vier Dörfer mit Kirchtürmen, eine Straße und eine **Stadt mit Hochhäusern**
+  bis über 200 m – dazu der Flugplatz mit **1300-Meter-Piste** (Mittellinie,
+  Schwellenbalken, Befeuerung), Rollweg, Vorfeld, zwei Hangars, Tower und
+  Windsack. **Flugmechanik:** Auftrieb und Widerstand aus Anstellwinkel und
+  Staudruck (inkl. induziertem Widerstand), Propellerschub, Luftdichte nach
+  Höhe, **Strömungsabriss** bei 16° mit wegkippender Nase, Längs-, Richtungs-
+  und Rollstabilität mit Dämpfung, Schiebe-Roll-Moment und ein Fahrwerk aus
+  drei gefederten Rädern mit Rollreibung, Bremse und Bugradlenkung. Die
+  Abrissgeschwindigkeit liegt bei ~49 kt, mit vollen **Klappen** (0/10/20/30°)
+  bei ~41 kt; gestartet wird nach gut 15 s Rollstrecke, gestiegen mit rund
+  800 ft/min. Gesteuert wird mit **Höhen-, Seiten- und Querruder**, Gashebel
+  und Trimmung. **Zwei Sichten:** Cockpit mit vollem Instrumentenbrett
+  (Fahrtmesser mit Farbbögen, künstlicher Horizont, Höhenmesser, Variometer,
+  Kurskreisel mit Schiebekugel, Drehzahlmesser, Hebel für Gas/Klappen/Trimm)
+  oder Verfolgerkamera von hinten. **Crashdetektion:** zu hartes Aufsetzen
+  (über 4,5 m/s), Flügel- oder Propellerberührung, Einschlag im Gelände und
+  Kollision mit Gebäuden. **Landungen werden bewertet** – Sinkrate,
+  Abstand zur Mittellinie, Aufsetzzone und Querlage ergeben die Punkte für
+  die Bestenliste. Im ☰-Menü: Startposition (Piste, Anflug aus 5 km, über
+  der Stadt), Wind (ruhig/böig) und Sicht. 📱 Touch mit Steuerknüppel,
+  Gashebel zum Schieben und Knöpfen für Klappen, Bremse und Sicht.
+  Gerendert wird über einen **eigenen kleinen WebGL-Kern** (`js/gl3d.js`) –
+  ohne Bibliothek und ohne Build-Schritt, passend zum Rest der Sammlung.
+
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
 (🏠 führt zurück zur Landing-Page). Neue Spiele lassen sich analog ergänzen.
@@ -492,6 +519,7 @@ public/            statische Spielesammlung
   kart.html        🏁 Kart-Rennen (Mode-7-Rennspiel mit Items)
   rechnen.html     🧮 Rechen-Rallye (Lernspiel Kopfrechnen, 2. Klasse)
   wither.html      💀 Wither-Duell (Ego-Shooter gegen den Wither)
+  flug.html        ✈️ Flugsimulator (Cessna in 3D, WebGL)
   style.css
   js/
     lib.js         Auth + Scores (Server mit localStorage-Fallback)
@@ -516,6 +544,9 @@ public/            statische Spielesammlung
     kart.js        Kart-Rennen (Mode-7-Renderer, Fahrphysik, Items, KI)
     rechnen.js     Rechen-Rallye (Aufgaben-Generator, Punkte, Stufen)
     wither.js      Wither-Duell (Ego-Perspektive, Armbrust/Schild, Level)
+    gl3d.js        kleiner WebGL-Kern (Matrizen, Quaternionen, Meshes)
+    flugwelt.js    Flugsim: Gelände, Flugplatz, Stadt, Cessna-Modell
+    flug.js        Flugsim: Flugmechanik, Instrumente, Kameras, Steuerung
 Dockerfile
 railway.json
 ```
@@ -604,6 +635,20 @@ railway.json
   Spielende mit Rekord im Speicher, Stufenaufstieg, Eingabe über Zeiger,
   Knöpfe und Tastatur, Menü-Optionen, Tonschalter, Querformat, die
   gezeichnete Darstellung des Ungetüms sowie die Einbindung in
+  Navigation, Landing-Page und Highscore-Übersicht.
+
+- **`test/flug.test.mjs`** – Flugsimulator (41 Checks) über den Test-Hook
+  `window.__flug`: Aufbau der Welt (sieben Meshes, ebener Flugplatz über die
+  ganze Piste, See und Hügel, Stadt mit Hochhäusern über 150 m), Aerodynamik
+  (Auftrieb über den Anstellwinkel samt Abriss, Abrissgeschwindigkeit im
+  Cessna-Bereich, Wirkung der Klappen, dünnere Luft mit der Höhe), Startlauf,
+  Abheben und Steigrate, Eigenstabilität im Geradeausflug, Wirkung von
+  Quer-, Seiten- und Höhenruder in beide Richtungen, Überziehen, Bremse,
+  ein kompletter Anflug bis zur bewerteten Landung mit Rekord im Speicher,
+  die Bruchfälle (zu hartes Aufsetzen, Hochhaus, Hang), beide Kameras,
+  Tastatur (Gas, Klappen, Sicht), Touch-Knüppel, Menü-Optionen samt Wind,
+  Tonschalter, Querformat, das gerenderte Bild (Himmel oben, Landschaft
+  unten) und das gezeichnete Instrumentenbrett sowie die Einbindung in
   Navigation, Landing-Page und Highscore-Übersicht.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem

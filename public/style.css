@@ -1659,3 +1659,116 @@ body.wither #w-shoot:active { background: #c0392b; }
     bottom: calc(54px + env(safe-area-inset-bottom, 0));
   }
 }
+
+/* --------------------------------------------------------- Flugsimulator - */
+/* Zwei übereinanderliegende Canvas: unten die 3D-Szene, darüber das
+   Instrumentenbrett und das HUD als 2D-Ebene. */
+body.flug { background: #0b1118; }
+body.flug #scene, body.flug #hud {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+body.flug #hud { pointer-events: none; }
+
+/* Schmal halten: die Instrumente brauchen die Mitte, deshalb stapelt sich
+   die Steuerung senkrecht statt in die Breite zu laufen. */
+body.flug #fctrl-left, body.flug #fctrl-right {
+  position: absolute;
+  bottom: calc(60px + env(safe-area-inset-bottom, 0));
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  z-index: 6;
+}
+body.flug #fctrl-left { flex-direction: column-reverse; }
+body.flug #fctrl-right { flex-direction: row; align-items: flex-end; }
+body.flug.touch #fctrl-left, body.flug.touch #fctrl-right { display: flex; }
+body.flug #fctrl-left { left: 16px; }
+body.flug #fctrl-right { right: 16px; }
+
+/* Steuerknüppel: Daumen aufsetzen und ziehen – Nick und Rollen zugleich */
+body.flug #stick {
+  position: relative;
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  background: rgba(8, 20, 34, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  touch-action: none;
+  user-select: none;
+}
+body.flug .st-cross {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+}
+body.flug #stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: rgba(240, 245, 250, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* Gashebel: senkrechter Schieber */
+body.flug #thr {
+  position: relative;
+  width: 52px;
+  height: 148px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(224, 122, 42, 0.18), rgba(8, 20, 34, 0.6));
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  touch-action: none;
+  user-select: none;
+}
+body.flug #thr span {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #cfe2f0;
+}
+
+body.flug .frow { display: flex; gap: 10px; }
+body.flug .fcol { display: flex; flex-direction: column; gap: 10px; }
+body.flug #fctrl-left button, body.flug #fctrl-right button {
+  width: 58px;
+  height: 58px;
+  font-size: 24px;
+  border-radius: 14px;
+  background: rgba(8, 25, 42, 0.55);
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+body.flug #fctrl-left button.held, body.flug #fctrl-right button.held {
+  background: #2f6fae;
+  border-color: #9fd0ff;
+}
+
+@media (max-width: 560px) {
+  body.flug #stick { width: 104px; height: 104px; }
+  body.flug #stick-knob { width: 40px; height: 40px; margin: -20px 0 0 -20px; }
+  body.flug #thr { width: 46px; height: 120px; }
+  body.flug #fctrl-left button, body.flug #fctrl-right button {
+    width: 50px; height: 50px; font-size: 20px;
+  }
+  body.flug #fctrl-left, body.flug #fctrl-right {
+    bottom: calc(50px + env(safe-area-inset-bottom, 0));
+  }
+}

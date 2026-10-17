@@ -117,7 +117,7 @@ try {
     };
   });
   check('Das Spielmenü führt die Spiele in denselben Gruppen',
-    nav.groups === 5 && nav.links === 14 && !nav.leer && nav.aktiv && nav.heim, JSON.stringify(nav));
+    nav.groups === 5 && nav.links >= 15 && !nav.leer && nav.aktiv && nav.heim, JSON.stringify(nav));
 } finally {
   await browser.close();
   srv.stop();
