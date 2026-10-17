@@ -1567,3 +1567,36 @@ body.rechnen #fx {
   #card { grid-column: 1; grid-row: 3; height: 100%; }
   #pad { grid-column: 2; grid-row: 3; align-content: start; }
 }
+
+/* --------------------------------------------------------- Wither-Duell --- */
+/* Bosskampf aus der Ich-Perspektive: Schild links halten, rechts schießen.
+   Beide Tasten sitzen über dem unteren Rand (Android-Dreh-Knopf). */
+body.wither { background: #1d0b0b; }
+body.wither #wctrl-left, body.wither #wctrl-right {
+  bottom: calc(68px + env(safe-area-inset-bottom, 0));
+  flex-direction: row;
+  align-items: center;
+}
+body.wither #wctrl-left { left: 18px; }
+body.wither #wctrl-right { right: 18px; }
+body.wither #w-shield, body.wither #w-shoot {
+  width: 84px;
+  height: 84px;
+  font-size: 34px;
+  border-radius: 50%;
+  background: rgba(8, 25, 42, 0.55);
+  color: #fff;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+body.wither #w-shield.held { background: #2f6fae; border-color: #9fd0ff; }
+body.wither #w-shoot { background: #8c3327; border-color: #ffb0a0; }
+body.wither #w-shoot:active { background: #c0392b; }
+@media (max-width: 560px) {
+  body.wither #w-shield, body.wither #w-shoot { width: 70px; height: 70px; font-size: 28px; }
+  body.wither #wctrl-left, body.wither #wctrl-right {
+    bottom: calc(54px + env(safe-area-inset-bottom, 0));
+  }
+}

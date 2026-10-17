@@ -299,6 +299,37 @@ Docker-Container deployt.
   freundliche Klänge und eine Auswertung am Ende. Startstufe (1/4/8) und
   Spielart stehen im ☰-Menü.
 
+- **`wither.html` – 💀 Wither-Duell**: ein Duell in der **Ego-Perspektive**
+  (Moorhuhn-Prinzip) gegen den brennenden **Wither** – nach einer
+  Kinderzeichnung, deshalb lodert das Ungetüm in Orange, Gelb und Pink statt
+  in Kohlegrau. Links unten das **🛡️ Schild**, rechts unten die
+  **🏹 Armbrust**: zielen, schießen, nachladen (0,72 s), Treffer auf einen
+  der **drei Schädel** zählen doppelt. Der Haken ist die **Regeneration** –
+  der Wither heilt sich ständig, jeder Treffer unterbricht die Heilung nur
+  kurz (0,45 s). Man muss ihn also in den Pausen zwischen seinen Angriffen
+  schnell und oft treffen. Angegriffen wird mit **💥 Wither-Schädeln**
+  (heranfliegende Geschosse, perspektivisch wachsend) und ab Stufe 3 mit
+  **🔥 Feueratem**. Das Schild blockt beides, aber solange es oben ist, wird
+  nicht nachgeladen – und ein **perfekter Block** kurz vor dem Einschlag lädt
+  die Armbrust sofort wieder. Man hat **drei ❤️ Leben**; wer den Wither auf
+  null bringt, kommt eine **Stufe** weiter: mehr Leben beim Gegner, mehr
+  Heilung, häufigere Angriffe, mehr Schädel gleichzeitig (ab Stufe 4 zwei, ab
+  Stufe 8 drei) und schnellere Geschosse. Punkte gibt es pro Treffer und für
+  jede geschaffte Stufe; Punkte-Rekord und höchste Stufe zählen für die
+  Bestenliste. Die ganze Darstellung ist **Klötzchen-Grafik**: Schädel,
+  Rippenkäfig, Schulterbalken, Armbrust und Schild entstehen als
+  Pixelvorlagen (ein Pixel = ein Block) mit Körnung sowie Licht- und
+  Schattenkanten, werden einmal in Offscreen-Canvas gemalt und danach nur
+  noch ungeglättet skaliert. Die Arena im **Nether-Look** – Felskämme mit
+  Glühstein, blubbernder Lavasee mit Wellenkämmen, Basaltsäulen und eine
+  Netherziegel-Plattform in Blockperspektive – wird als zwei feste Ebenen
+  vorgerendert; pro Bild kommen nur Lava, Asche, Glut und Flammen dazu.
+  Sound (Armbrust, Spannen, Treffer, Blocken, Feuer) wird live synthetisiert.
+  Steuerung: **Maus/Finger** zum Zielen und Schießen, rechte Maustaste oder
+  🛡️-Knopf fürs Schild; Tastatur: **Pfeiltasten/WASD** zielen,
+  **Enter/F** schießen, **Leertaste** Schild. Schwierigkeit (leicht/normal/
+  hart) und Startstufe (1/3/5) stehen im ☰-Menü.
+
 Gemeinsame Struktur: jedes Spiel hat sein `js/<spiel>.js` und seine
 `<spiel>.html`, teilt sich `style.css` und die „Spiel wechseln“-Navigation
 (🏠 führt zurück zur Landing-Page). Neue Spiele lassen sich analog ergänzen.
@@ -451,6 +482,7 @@ public/            statische Spielesammlung
   clonk.html       ⛏️ Klonk · Goldrausch (Clonk-Hommage, 2 Spieler)
   kart.html        🏁 Kart-Rennen (Mode-7-Rennspiel mit Items)
   rechnen.html     🧮 Rechen-Rallye (Lernspiel Kopfrechnen, 2. Klasse)
+  wither.html      💀 Wither-Duell (Ego-Shooter gegen den Wither)
   style.css
   js/
     lib.js         Auth + Scores (Server mit localStorage-Fallback)
@@ -474,6 +506,7 @@ public/            statische Spielesammlung
     sfx.js         Klonk: synthetische Geräusche + Musik (Web Audio)
     kart.js        Kart-Rennen (Mode-7-Renderer, Fahrphysik, Items, KI)
     rechnen.js     Rechen-Rallye (Aufgaben-Generator, Punkte, Stufen)
+    wither.js      Wither-Duell (Ego-Perspektive, Armbrust/Schild, Level)
 Dockerfile
 railway.json
 ```
@@ -547,6 +580,19 @@ railway.json
   Übungsmodus ohne Leben, Zahlenblock und Tastatur, Konfetti,
   Menü-Optionen, Tonschalter sowie die Einbindung in Navigation,
   Landing-Page und Highscore-Übersicht.
+
+- **`test/wither.test.mjs`** – Wither-Duell (43 Checks) über den Test-Hook
+  `window.__wither`: die Level-Kurve (mehr Leben, mehr Heilung, kürzere
+  Angriffspausen, mehr Schädel, Feueratem ab Stufe 3) samt
+  Schwierigkeitsfaktor, Armbrust und Nachladezeit, Kopftreffer als Crit,
+  Trefferzonen (Schädel/Körper/daneben), die Regeneration und ihre
+  Unterbrechung durch Treffer, Wither-Schädel als Geschosse (geblockt,
+  ungeblockt, perfekter Block lädt sofort nach), Schild-Regeln (kein
+  Nachladen mit erhobenem Schild), Feueratem, drei Leben bis zum
+  Spielende mit Rekord im Speicher, Stufenaufstieg, Eingabe über Zeiger,
+  Knöpfe und Tastatur, Menü-Optionen, Tonschalter, Querformat, die
+  gezeichnete Darstellung des Ungetüms sowie die Einbindung in
+  Navigation, Landing-Page und Highscore-Übersicht.
 
 Jede Datei startet ihren eigenen Server (In-Memory, `POW_BITS=4`) auf einem
 zufälligen Port und einen Headless-Chromium via Playwright. Playwright wird

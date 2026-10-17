@@ -169,6 +169,8 @@ function parseKey(key, raw) {
   if (m) return { game: 'mtb', variant: `time_${m[1]}_${m[2]}`, label: BIKE_NAMES[m[2]] || m[2], sub: (MTB_TRACKS[m[1]] || m[1]) + ' · Zeit', value: raw, better: 'low' };
   m = key.match(/^kart_(fuchs|baer|frosch)$/);
   if (m) return { game: 'kart', variant: m[1], label: KART_NAMES[m[1]], sub: 'Beste Runde', value: raw, better: 'low' };
+  if (key === 'wither_best') return { game: 'wither', variant: 'best', label: 'Punkte-Rekord', sub: 'Bosskampf', value: raw, better: 'high' };
+  if (key === 'wither_level') return { game: 'wither', variant: 'level', label: 'Höchstes Level', sub: 'Bosskampf', value: raw, better: 'high' };
   if (key === 'rechnen_best') return { game: 'rechnen', variant: 'best', label: 'Punkte-Rekord', sub: 'Kopfrechnen', value: raw, better: 'high' };
   if (key === 'rechnen_maxlevel') return { game: 'rechnen', variant: 'level', label: 'Höchste Stufe', sub: 'Kopfrechnen', value: raw, better: 'high' };
   if (key === 'mampf_best') return { game: 'mampf', variant: 'best', label: 'Highscore', sub: 'Arcade', value: raw, better: 'high' };
@@ -180,7 +182,7 @@ function parseKey(key, raw) {
   return null;
 }
 
-const GAME_TITLES = { sail: '⛵ Segeln', auto: '🏎 Autorennen', mtb: '🚵 Mountainbike', mampf: '🟡 Mampf', lem: '🐭 Lemminge', maze: '🧩 Super Maze', snake: '🐍 Snake', td: '🏰 Tower Defense', kart: '🏁 Kart-Rennen', rechnen: '🧮 Rechen-Rallye' };
+const GAME_TITLES = { sail: '⛵ Segeln', auto: '🏎 Autorennen', mtb: '🚵 Mountainbike', mampf: '🟡 Mampf', lem: '🐭 Lemminge', maze: '🧩 Super Maze', snake: '🐍 Snake', td: '🏰 Tower Defense', kart: '🏁 Kart-Rennen', rechnen: '🧮 Rechen-Rallye', wither: '💀 Wither-Duell' };
 
 export const Scores = {
   // Alle lokalen Bestwerte als flache Liste.

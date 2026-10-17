@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Wither-Duell</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E💀%3C/text%3E%3C/svg%3E">
+</head>
+<body class="wither">
+ <div id="stage">
+  <canvas id="game"></canvas>
+
+  <div id="toolbar">
+    <button id="btn-menu">☰</button>
+    <button id="btn-rotate" title="Querformat">⟳</button>
+    <button id="btn-sound" title="Ton an/aus">🔊</button>
+  </div>
+
+  <!-- Touch: Schild halten (links), Armbrust schießen (rechts) -->
+  <div id="wctrl-left">
+    <button id="w-shield" title="Schild hochhalten">🛡️</button>
+  </div>
+  <div id="wctrl-right">
+    <button id="w-shoot" title="Armbrust abfeuern">🏹</button>
+  </div>
+
+  <div id="menu" class="hidden">
+    <div class="menu-panel">
+      <div class="menu-head">
+        <h2>💀 Wither-Duell</h2>
+        <button id="btn-menu-close">✕</button>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Spiel wechseln</div>
+        <div class="game-nav">
+          <a class="game-link" href="index.html">🏠</a>
+          <a class="game-link" href="sail.html">⛵</a>
+          <a class="game-link" href="auto.html">🏎</a>
+          <a class="game-link" href="mtb.html">🚵</a>
+          <a class="game-link" href="wurm.html">🐛</a>
+          <a class="game-link" href="lemminge.html">🐭</a>
+          <a class="game-link" href="gorilla.html">🦍</a>
+          <a class="game-link" href="mampf.html">🟡</a>
+          <a class="game-link" href="maze.html">🧩</a>
+          <a class="game-link" href="snake.html">🐍</a>
+          <a class="game-link" href="td.html">🏰</a>
+          <a class="game-link" href="clonk.html">⛏️</a>
+          <a class="game-link" href="kart.html">🏁</a>
+          <a class="game-link" href="rechnen.html">🧮</a>
+          <a class="game-link active" href="wither.html">💀</a>
+        </div>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Schwierigkeit</div>
+        <div class="opt-row" id="opt-diff">
+          <button data-v="leicht">🙂 Leicht</button>
+          <button data-v="normal">😐 Normal</button>
+          <button data-v="hart">😤 Hart</button>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Leicht: weniger Regeneration und
+          seltenere Angriffe. Hart: der Wither heilt schnell und greift oft an.</p>
+      </div>
+
+      <div class="menu-group">
+        <div class="group-title">Startlevel</div>
+        <div class="opt-row" id="opt-start">
+          <button data-v="1">1</button>
+          <button data-v="3">3</button>
+          <button data-v="5">5</button>
+        </div>
+      </div>
+
+      <button class="menu-btn" id="btn-restart">🔄 Neuer Kampf</button>
+      <button class="menu-btn" id="btn-help">❓ Hilfe</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <div class="panel">
+      <h1>💀 Wither-Duell</h1>
+      <p>Du stehst dem <b>Wither</b> gegenüber – mit <b>🏹 Armbrust</b> und
+        <b>🛡️ Schild</b>, aus der Ich-Perspektive. Triff ihn so oft wie möglich,
+        bevor er sich wieder vollheilt!</p>
+      <ul>
+        <li><b>🏹 Schießen:</b> Mit der Maus zielen und <b>klicken</b> (oder auf dem
+          Handy dorthin <b>tippen</b>, wo du treffen willst). Danach muss die Armbrust
+          <b>nachgeladen</b> werden – der Balken unten zeigt es.</li>
+        <li><b>🛡️ Schild:</b> <b>Rechte Maustaste</b>, <b>Leertaste</b> oder der
+          🛡️-Knopf – halten! Hinter dem Schild kann dir nichts passieren, aber du
+          kannst <b>weder schießen noch nachladen</b>.</li>
+        <li><b>🛡️ Perfekter Block:</b> Wer das Schild erst <b>kurz vor dem Einschlag</b>
+          hochreißt, blockt perfekt – das gibt Extrapunkte und die Armbrust ist
+          sofort wieder geladen.</li>
+        <li><b>💚 Regeneration:</b> Der Wither heilt sich dauernd. Jeder Treffer stoppt
+          die Heilung kurz – nur wer in den Angriffspausen mutig draufhält, kommt durch.</li>
+        <li><b>💀 Kopftreffer</b> auf eine der drei Schädel machen deutlich mehr Schaden
+          als Treffer auf den Rumpf.</li>
+        <li><b>🔥 Angriffe:</b> Wither-Schädel fliegen auf dich zu (blocken!), später
+          speit er zusätzlich <b>Feuer</b> – da hilft nur das Schild, und zwar die ganze
+          Zeit über.</li>
+        <li><b>❤️❤️❤️ Drei Leben.</b> Jeder Level danach: mehr Leben beim Wither,
+          mehr Regeneration, mehr Angriffe.</li>
+        <li>Tastatur: <b>Pfeiltasten/WASD</b> zielen, <b>Leertaste</b> Schild,
+          <b>Enter/F</b> schießen.</li>
+      </ul>
+      <button id="btn-start">Kampf starten</button>
+    </div>
+  </div>
+ </div>
+
+  <script type="module" src="js/wither.js"></script>
+</body>
+</html>
