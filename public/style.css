@@ -1772,3 +1772,25 @@ body.flug #fctrl-left button.held, body.flug #fctrl-right button.held {
     bottom: calc(50px + env(safe-area-inset-bottom, 0));
   }
 }
+
+/* Die Werkzeugleiste liegt über dem Hilfefenster: so lässt sich schon vor
+   dem Start ins Querformat drehen. */
+body.flug #toolbar { z-index: 22; }
+
+/* "Neuer Versuch" sitzt unten im Ergebniskasten des HUD */
+body.flug #btn-again {
+  position: absolute;
+  left: 50%;
+  top: calc(30% + 134px);
+  transform: translateX(-50%);
+  z-index: 8;
+  padding: 11px 26px;
+  font-size: 17px;
+  font-weight: 700;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  background: #2f6fae;
+  color: #fff;
+  cursor: pointer;
+}
+body.flug #btn-again.hidden { display: none; }

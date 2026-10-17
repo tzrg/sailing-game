@@ -637,7 +637,7 @@ railway.json
   gezeichnete Darstellung des Ungetüms sowie die Einbindung in
   Navigation, Landing-Page und Highscore-Übersicht.
 
-- **`test/flug.test.mjs`** – Flugsimulator (41 Checks) über den Test-Hook
+- **`test/flug.test.mjs`** – Flugsimulator (46 Checks) über den Test-Hook
   `window.__flug`: Aufbau der Welt (sieben Meshes, ebener Flugplatz über die
   ganze Piste, See und Hügel, Stadt mit Hochhäusern über 150 m), Aerodynamik
   (Auftrieb über den Anstellwinkel samt Abriss, Abrissgeschwindigkeit im
@@ -646,6 +646,9 @@ railway.json
   Quer-, Seiten- und Höhenruder in beide Richtungen, Überziehen, Bremse,
   ein kompletter Anflug bis zur bewerteten Landung mit Rekord im Speicher,
   die Bruchfälle (zu hartes Aufsetzen, Hochhaus, Hang), beide Kameras,
+  kein falsches „Gelandet“ beim Einfedern auf der Piste (geprüft von
+  30 bis 144 Hz), der Handy-Ablauf (schon im Hilfefenster drehen, starten,
+  nach Bruch per Knopf neu anfangen),
   Tastatur (Gas, Klappen, Sicht), Touch-Knüppel, Menü-Optionen samt Wind,
   Tonschalter, Querformat, das gerenderte Bild (Himmel oben, Landschaft
   unten) und das gezeichnete Instrumentenbrett sowie die Einbindung in

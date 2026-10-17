@@ -92,6 +92,7 @@ const plane = {
   vs: 0, agl: 0,
   stall: false,
   touchVS: 0,
+  airT: 0,                   // Sekunden seit dem letzten Bodenkontakt
 };
 
 // Steuereingaben, -1..1 (von Tastatur, Touch oder Test gesetzt)
@@ -335,7 +336,7 @@ function rateLanding(vs) {
   return { score: Math.max(0, Math.round(s)), sink, dx, fromThr };
 }
 
-function checkEvents(res) {
+function checkEvents(res, dt) {
   if (game.state !== 'fly') return;
   const p = plane.pos;
 
@@ -357,8 +358,10 @@ function checkEvents(res) {
     }
   }
 
-  // Aufsetzen
-  if (res.contact && !plane.wasOnGround) {
+  // Aufsetzen – zählt nur nach echtem Flug. Ein kurzes Abheben beim
+  // Einfedern oder Rollen (bei 120-Hz-Bildschirmen schon im ersten Bild)
+  // ist keine Landung.
+  if (res.contact && !plane.wasOnGround && plane.airT > 1) {
     const vs = plane.touchVS;
     Sfx.play(Math.abs(vs) > 2 ? 'thud' : 'touch');
     if (Math.abs(vs) > 4.6) { crash('Zu hart aufgesetzt'); return; }
@@ -374,6 +377,7 @@ function checkEvents(res) {
   }
   plane.wasOnGround = res.contact;
   if (!res.contact) plane.touchVS = plane.vel[1];
+  plane.airT = res.contact ? 0 : plane.airT + dt;
 
   // Landung gilt als geschafft, wenn das Flugzeug danach ausgerollt ist
   if (plane.pendingLanding && res.contact && V3.len(plane.vel) < 6) {
@@ -403,12 +407,14 @@ function reset(mode) {
   plane.pendingLanding = null;
   plane.wasOnGround = true;
   plane.touchVS = 0;
+  plane.airT = 0;
   ctl.elevator = 0; ctl.aileron = 0; ctl.rudder = 0;
   game.result = null;
   game.time = 0;
 
   if (game.startMode === 'runway') {
-    plane.pos = [AIRPORT.x, RUNWAY.y + 2.52, RUNWAY.z1 - 120];
+    // schon eingefedert hinstellen, damit sie nicht erst auf die Räder fällt
+    plane.pos = [AIRPORT.x, RUNWAY.y + 2.52 - 0.07, RUNWAY.z1 - 120];
     plane.throttle = 0;
     plane.onGround = true;
   } else if (game.startMode === 'approach') {
@@ -419,6 +425,7 @@ function reset(mode) {
     plane.flapStep = 1;
     plane.onGround = false;
     plane.wasOnGround = false;
+    plane.airT = 30;
   } else {
     // über der Stadt
     plane.pos = [CITY.x - 900, CITY.elev + 620, CITY.z + 1500];
@@ -428,6 +435,7 @@ function reset(mode) {
     plane.throttle = 0.6;
     plane.onGround = false;
     plane.wasOnGround = false;
+    plane.airT = 30;
   }
   game.state = 'fly';
   flash(game.startMode === 'runway' ? '🛫 Gas geben mit W – bei 60 kt sanft ziehen'
@@ -444,7 +452,7 @@ function update(dt) {
     const n = Math.min(4, Math.max(1, Math.ceil(dt / 0.012)));
     let res = { contact: plane.onGround };
     for (let i = 0; i < n; i++) res = step(dt / n);
-    checkEvents(res);
+    checkEvents(res, dt);
   } else {
     // Nach Bruch oder Landung rollt nur noch die Zeit
     plane.rpm += (600 - plane.rpm) * Math.min(1, dt * 2);
@@ -889,9 +897,11 @@ function drawHUD() {
       hctx.fillStyle = '#ffd3cd';
       hctx.fillText(r.why || '', CW / 2, by + 80);
     }
-    hctx.fillStyle = '#9fb0c0';
-    hctx.font = `600 14px ${FONT}`;
-    hctx.fillText('R oder ☰ Menü – neuer Versuch', CW / 2, by + bh - 22);
+    if (!IS_TOUCH) {
+      hctx.fillStyle = '#9fb0c0';
+      hctx.font = `600 13px ${FONT}`;
+      hctx.fillText('oder Taste R', CW / 2, by + bh - 8);
+    }
   }
 }
 
@@ -1185,6 +1195,8 @@ soundBtn?.addEventListener('click', () => {
 });
 
 const stage = document.getElementById('stage');
+const againBtn = document.getElementById('btn-again');
+againBtn.addEventListener('click', () => { Sfx.init(); reset(); });
 document.getElementById('btn-rotate')?.addEventListener('click', () => {
   stage.classList.toggle('rot');
   requestAnimationFrame(resize);
@@ -1202,6 +1214,7 @@ function frame(now) {
   }
   render();
   drawHUD();
+  againBtn.classList.toggle('hidden', game.state !== 'crash' && game.state !== 'landed');
   requestAnimationFrame(frame);
 }
 

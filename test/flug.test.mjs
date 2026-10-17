@@ -149,6 +149,21 @@ try {
     r.stall && r.aoa > 12 && r.vs < -2,
     JSON.stringify({ aoa: +r.aoa.toFixed(0), kt: Math.round(r.kt), vs: +r.vs.toFixed(1) }));
 
+  // Einfedern beim Start ist keine Landung – auch nicht bei 120 Hz
+  r = await page.evaluate(() => {
+    const F = window.__flug, out = {};
+    F.game.paused = true;
+    for (const dt of [1 / 144, 1 / 120, 1 / 60, 1 / 30, 0.06]) {
+      F.reset('runway');
+      let t = 0;
+      while (t < 6 && F.game.state === 'fly') { F.update(dt); t += dt; }
+      out[Math.round(1 / dt) + ' Hz'] = F.game.state;
+    }
+    return out;
+  });
+  check('Auf der Piste stehen bleibt „fliegen“ – bei jeder Bildrate',
+    Object.values(r).every((s) => s === 'fly'), JSON.stringify(r));
+
   /* ------------------------------------------------ Boden und Bremse --- */
   r = await page.evaluate(() => {
     const F = window.__flug;
@@ -377,6 +392,37 @@ try {
     return { hell, px: d.length / 4 };
   });
   check('Das Instrumentenbrett wird gezeichnet', r.hell > 400, JSON.stringify(r));
+
+  /* ------------------------------------------------ Handy-Ablauf ------ */
+  // Öffnen, schon im Hilfefenster drehen, starten – und nach einem Bruch
+  // per Knopf neu anfangen (eine Taste R gibt es auf dem Handy nicht).
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  phone.on('pageerror', (e) => check('Handy-Seite ohne JS-Fehler', false, e.message));
+  await phone.goto(srv.url + '/flug.html');
+  await phone.waitForFunction(() => window.__flug, null, { timeout: 30000 });
+  await phone.tap('#btn-rotate', { timeout: 4000 }).catch(() => {});
+  r = await phone.evaluate(() => document.getElementById('stage').classList.contains('rot'));
+  check('⟳ lässt sich schon im Hilfefenster antippen', r === true);
+  await phone.tap('#btn-start');
+  await phone.waitForTimeout(1800);
+  r = await phone.evaluate(() => ({
+    state: window.__flug.game.state,
+    knopf: !document.getElementById('btn-again').classList.contains('hidden'),
+  }));
+  check('Nach dem Start steht die Cessna bereit statt „gelandet“',
+    r.state === 'fly' && !r.knopf, JSON.stringify(r));
+  await phone.evaluate(() => window.__flug.crash('Test'));
+  await phone.waitForTimeout(150);
+  r = await phone.evaluate(() => !document.getElementById('btn-again').classList.contains('hidden'));
+  check('Nach einem Bruch erscheint „Neuer Versuch“', r === true);
+  await phone.tap('#btn-again');
+  await phone.waitForTimeout(600);
+  r = await phone.evaluate(() => ({
+    state: window.__flug.game.state,
+    knopf: !document.getElementById('btn-again').classList.contains('hidden'),
+  }));
+  check('Ein Tipp darauf startet den nächsten Flug', r.state === 'fly' && !r.knopf, JSON.stringify(r));
+  await phone.close();
 
   /* ----------------------------------------------------- Einbindung --- */
   r = await page.evaluate(() => ({
