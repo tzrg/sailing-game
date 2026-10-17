@@ -1794,3 +1794,9 @@ body.flug #btn-again {
   cursor: pointer;
 }
 body.flug #btn-again.hidden { display: none; }
+/* Rechte Hand: Klappen/Bremse/Sicht als 2x2-Block, Seitenruder darunter */
+body.flug .fgrid {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 10px;
+}

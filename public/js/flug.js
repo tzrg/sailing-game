@@ -762,8 +762,8 @@ function drawPanel() {
   }
 
   // Auf Touch-Geräten bleiben Knüppel und Gashebel links und rechts frei
-  const padL = IS_TOUCH ? Math.min(w * 0.34, 158) : 0;
-  const padR = IS_TOUCH ? Math.min(w * 0.34, 158) : 0;
+  const padL = IS_TOUCH ? Math.min(w * 0.3, 140) : 0;
+  const padR = IS_TOUCH ? Math.min(w * 0.38, 196) : 0;
   const frei = w - padL - padR;
   if (frei < 240) {
     // Hochformat auf dem Handy: für Instrumente ist kein Platz
@@ -1009,7 +1009,8 @@ function applyKeys(dt) {
   if (want('yawRight')) r += 1;
   if (want('yawLeft')) r -= 1;
   // Touch-Stick überschreibt die Tastatur, wenn er benutzt wird
-  if (stick.active) { e = -stick.y; a = stick.x; }
+  // Knüppel wie die Pfeiltasten: Daumen nach unten zieht die Nase hoch
+  if (stick.active) { e = stick.y; a = stick.x; }
   if (touchRudder) r = touchRudder;
 
   const toward = (cur, target, sp) => {
@@ -1230,7 +1231,7 @@ requestAnimationFrame(frame);
 /* -------------------------------------------------------- Test-Hook ----- */
 window.__flug = {
   game, plane, ctl, AC, FLAPS, GEAR,
-  update, step, reset, render, drawHUD, resize, setFlaps, toggleView,
+  update, step, reset, applyKeys, render, drawHUD, resize, setFlaps, toggleView,
   terrainH, liftCoef, density, cameraFor, rateLanding, crash, landed,
   hitsBuilding, nearRunway, flash, Sfx,
   world: () => world,

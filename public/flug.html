@@ -23,23 +23,27 @@
   <button id="btn-again" class="hidden">🔄 Neuer Versuch</button>
 
   <!-- Touch-Steuerung: links der Steuerknüppel, rechts Gashebel und Knöpfe -->
+  <!-- Linker Daumen: nur der Knüppel. Rechter Daumen: Gas, Seitenruder
+       (unten, wo der Daumen liegt) und darüber Klappen, Bremse, Sicht. -->
   <div id="fctrl-left">
-    <div id="stick" title="Höhen- und Querruder">
+    <div id="stick" title="Höhen- und Querruder (nach unten ziehen = Nase hoch)">
       <div class="st-cross"></div>
       <div id="stick-knob"></div>
-    </div>
-    <div class="frow">
-      <button id="t-left" title="Seitenruder links">↰</button>
-      <button id="t-right" title="Seitenruder rechts">↱</button>
     </div>
   </div>
   <div id="fctrl-right">
     <div id="thr" title="Gashebel"><span>GAS</span></div>
     <div class="fcol">
-      <button id="t-flapd" title="Klappen ausfahren">🛬</button>
-      <button id="t-flapu" title="Klappen einfahren">🛫</button>
-      <button id="t-brake" title="Bremse">🅱</button>
-      <button id="t-view" title="Sicht wechseln">👁</button>
+      <div class="fgrid">
+        <button id="t-flapd" title="Klappen ausfahren">🛬</button>
+        <button id="t-flapu" title="Klappen einfahren">🛫</button>
+        <button id="t-brake" title="Bremse">🅱</button>
+        <button id="t-view" title="Sicht wechseln">👁</button>
+      </div>
+      <div class="frow">
+        <button id="t-left" title="Seitenruder links">↰</button>
+        <button id="t-right" title="Seitenruder rechts">↱</button>
+      </div>
     </div>
   </div>
 
@@ -153,8 +157,10 @@
         <li><b>🛬 Landen:</b> mit ~65 kt und wenig Sinken aufsetzen, mittig auf der
           Piste. Je sanfter und genauer, desto mehr <b>Punkte</b>. Über 4,5 m/s
           Sinkrate gibt es Bruch.</li>
-        <li><b>📱 Touch:</b> links der <b>Steuerknüppel</b>, rechts der
-          <b>Gashebel</b> zum Schieben, daneben Klappen, Bremse und Sicht.
+        <li><b>📱 Touch:</b> linker Daumen auf den <b>Steuerknüppel</b> – nach unten
+          ziehen hebt die Nase, seitlich legt sich die Maschine in die Kurve.
+          Rechter Daumen: <b>Gashebel</b> zum Schieben, daneben unten das
+          <b>Seitenruder ↰ ↱</b>, darüber Klappen, Bremse und Sicht.
           ⟳ dreht ins Querformat.</li>
         <li><b>R</b> startet einen neuen Versuch.</li>
       </ul>

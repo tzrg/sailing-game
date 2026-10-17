@@ -354,8 +354,9 @@ Docker-Container deployt.
   Kollision mit Gebäuden. **Landungen werden bewertet** – Sinkrate,
   Abstand zur Mittellinie, Aufsetzzone und Querlage ergeben die Punkte für
   die Bestenliste. Im ☰-Menü: Startposition (Piste, Anflug aus 5 km, über
-  der Stadt), Wind (ruhig/böig) und Sicht. 📱 Touch mit Steuerknüppel,
-  Gashebel zum Schieben und Knöpfen für Klappen, Bremse und Sicht.
+  der Stadt), Wind (ruhig/böig) und Sicht. 📱 Touch: der linke Daumen hat
+  nur den Steuerknüppel (nach unten ziehen = Nase hoch, wie am Steuerhorn),
+  der rechte Gashebel, Seitenruder ↰ ↱ sowie Klappen, Bremse und Sicht.
   Gerendert wird über einen **eigenen kleinen WebGL-Kern** (`js/gl3d.js`) –
   ohne Bibliothek und ohne Build-Schritt, passend zum Rest der Sammlung.
 
@@ -637,7 +638,7 @@ railway.json
   gezeichnete Darstellung des Ungetüms sowie die Einbindung in
   Navigation, Landing-Page und Highscore-Übersicht.
 
-- **`test/flug.test.mjs`** – Flugsimulator (46 Checks) über den Test-Hook
+- **`test/flug.test.mjs`** – Flugsimulator (48 Checks) über den Test-Hook
   `window.__flug`: Aufbau der Welt (sieben Meshes, ebener Flugplatz über die
   ganze Piste, See und Hügel, Stadt mit Hochhäusern über 150 m), Aerodynamik
   (Auftrieb über den Anstellwinkel samt Abriss, Abrissgeschwindigkeit im
@@ -649,7 +650,8 @@ railway.json
   kein falsches „Gelandet“ beim Einfedern auf der Piste (geprüft von
   30 bis 144 Hz), der Handy-Ablauf (schon im Hilfefenster drehen, starten,
   nach Bruch per Knopf neu anfangen),
-  Tastatur (Gas, Klappen, Sicht), Touch-Knüppel, Menü-Optionen samt Wind,
+  Tastatur (Gas, Klappen, Sicht), Touch-Knüppel (Richtung, Seitenruder
+  beim rechten Daumen), Menü-Optionen samt Wind,
   Tonschalter, Querformat, das gerenderte Bild (Himmel oben, Landschaft
   unten) und das gezeichnete Instrumentenbrett sowie die Einbindung in
   Navigation, Landing-Page und Highscore-Übersicht.

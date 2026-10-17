@@ -307,16 +307,27 @@ try {
   r = await page.evaluate(() => {
     const F = window.__flug;
     F.game.paused = true;
-    F.reset('runway');
-    F.stick.active = true; F.stick.x = 0.8; F.stick.y = -0.6;
-    // applyKeys ist nicht öffentlich; der Stick wirkt über denselben Weg
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowRight', bubbles: true }));
-    const aktiv = F.stick.active;
-    F.stick.active = false; F.stick.x = 0; F.stick.y = 0;
-    return aktiv;
+    const knueppel = (x, y) => {
+      F.reset('approach');
+      F.stick.active = true; F.stick.x = x; F.stick.y = y;
+      for (let i = 0; i < 40; i++) F.applyKeys(1 / 50);
+      const c = { ...F.ctl };
+      F.stick.active = false; F.stick.x = 0; F.stick.y = 0;
+      return c;
+    };
+    return { runter: knueppel(0, 0.9), hoch: knueppel(0, -0.9), rechts: knueppel(0.9, 0) };
   });
-  check('Der Touch-Steuerknüppel wird erfasst', r === true, String(r));
+  check('Knüppel nach unten zieht die Nase hoch, nach oben drückt sie',
+    r.runter.elevator > 0.5 && r.hoch.elevator < -0.5, JSON.stringify(r));
+  check('Knüppel nach rechts rollt nach rechts', r.rechts.aileron > 0.5, JSON.stringify(r.rechts));
+  r = await page.evaluate(() => ({
+    links: !!document.querySelector('#fctrl-right #t-left'),
+    rechts: !!document.querySelector('#fctrl-right #t-right'),
+    knueppelLinks: !!document.querySelector('#fctrl-left #stick'),
+    sonstLinks: document.querySelectorAll('#fctrl-left button').length,
+  }));
+  check('Seitenruder sitzt beim rechten Daumen, links nur der Knüppel',
+    r.links && r.rechts && r.knueppelLinks && r.sonstLinks === 0, JSON.stringify(r));
 
   // Menü-Optionen merken sich ihre Wahl
   await page.click('#btn-menu');
